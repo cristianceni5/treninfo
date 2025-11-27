@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="color-scheme" content="light">
+    <title>Treninfo</title>
+    <link rel="shortcut icon" type="image/png" href="img/orario.png" />
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <div class="app-inner">
+      <header class="app-header">
+        <div class="app-title">
+          <img src="/img/bigliettonero.png" alt="" class="icon-img" />
+          <div>
+            <h1>Treninfo</h1>
+            <p class="small muted">
+              Dati in tempo reale sullo stato dei treni RFI.
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <main class="stack">
+        <!-- AUTOCOMPLETE STAZIONI (per future estensioni) -->
+        <section class="card">
+          <h2 class="card-title">
+            <img src="/img/orarionero.png" alt="" class="icon-img" />
+            <span>Stazioni</span>
+          </h2>
+          
+          <div class="form-row">
+            <div class="input-root autocomplete-wrapper">
+              <input
+                id="stationQuery"
+                type="search"
+                placeholder="Firenze Santa Maria Novella, Roma Termini…"
+                autocomplete="off"
+              />
+              <ul id="stationList" class="autocomplete"></ul>
+            </div>
+          </div>
+
+          <div id="stationSelected"></div>
+
+          <p class="small muted">
+            La stazione selezionata non è ancora usata dalle chiamate attive, ma è già pronta
+            per integrazioni future (tabellone, soluzioni di viaggio, ecc.).
+          </p>
+        </section>
+
+        <!-- RICERCA TRENO -->
+        <section class="card">
+          <h2 class="card-title">
+            <img src="/img/alert.png" alt="" class="icon-img" />
+            <span>Stato treno</span>
+          </h2>
+
+          <div class="form-row">
+            <div class="input-root">
+              <input
+                id="trainNumber"
+                type="text"
+                inputmode="numeric"
+                placeholder="Numero treno"
+                autocomplete="off"
+              />
+            </div>
+            <button type="button" id="trainSearchBtn">
+              Cerca
+            </button>
+          </div>
+
+          <div id="trainError" class="error"></div>
+          <div id="trainResult"></div>
+
+          <!-- Visti di recente -->
+          <div id="recentTrains" class="recent-trains"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
