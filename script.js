@@ -318,6 +318,117 @@ function getLastRealStopIndex(fermate) {
   return last;
 }
 
+function getLastDepartedStopIndex(fermate) {
+  let last = -1;
+  const finalIdx = fermate.length - 1;
+  fermate.forEach((f, i) => {
+    const depRealMs = parseToMillis(f.partenzaReale);
+    if (depRealMs) {
+      last = i;
+      return;
+    }
+    if (i === finalIdx) {
+      const arrRealMs = parseToMillis(f.arrivoReale ?? f.effettiva);
+      if (arrRealMs) last = i;
+    }
+  });
+  return last;
+}
+
+function clamp01(value) {
+  if (!Number.isFinite(value)) return 0;
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
+function pickFirstValidTime(...values) {
+  for (const raw of values) {
+    if (raw == null) continue;
+    const ms = parseToMillis(raw);
+    if (ms != null) return ms;
+  }
+  return null;
+}
+
+function computeTravelProgress(fermate, lastDepartedIdx, now = Date.now()) {
+  const nextIdx = lastDepartedIdx + 1;
+  if (lastDepartedIdx < 0 || nextIdx >= fermate.length) {
+    return { nextIdx: -1, progress: null };
+  }
+
+  const from = fermate[lastDepartedIdx];
+  const to = fermate[nextIdx];
+
+  const depMs = pickFirstValidTime(
+    from.partenzaReale,
+    from.partenzaPrevista,
+    from.partenza_teorica,
+    from.partenzaTeorica,
+    from.programmata
+  );
+
+  const arrMs = pickFirstValidTime(
+    to.arrivoReale,
+    to.effettiva,
+    to.arrivoPrevista,
+    to.arrivo_teorico,
+    to.arrivoTeorico,
+    to.programmata
+  );
+
+  if (depMs == null || arrMs == null || arrMs <= depMs) {
+    return { nextIdx, progress: null };
+  }
+
+  const rawProgress = (now - depMs) / (arrMs - depMs);
+  return { nextIdx, progress: clamp01(rawProgress) };
+}
+
+function getTimelineGapRange() {
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    const isCompact = window.matchMedia('(max-width: 640px)').matches;
+    if (isCompact) {
+      return { min: 6, max: 58 };
+    }
+  }
+  return { min: 3, max: 28 };
+}
+
+function mapProgressToGapPx(progress, range) {
+  const ratio = clamp01(progress);
+  const span = Math.max(range.max - range.min, 1);
+  return Math.round(range.max - span * ratio);
+}
+
+function getTimelineGapSize(idx, lastDepartedIdx, timelineProgress, gapRange) {
+  if (idx <= lastDepartedIdx) return 4;
+  if (
+    timelineProgress &&
+    timelineProgress.nextIdx === idx &&
+    typeof timelineProgress.progress === 'number'
+  ) {
+    return mapProgressToGapPx(timelineProgress.progress, gapRange);
+  }
+  return null;
+}
+
+function getTimelineClassNames(idx, totalStops, lastDepartedIdx) {
+  const safeLastDeparted = typeof lastDepartedIdx === 'number' ? lastDepartedIdx : -1;
+  const hasPrevious = idx > 0;
+  const hasNext = idx < totalStops - 1;
+
+  const topClass = hasPrevious
+    ? (idx - 1 <= safeLastDeparted ? 'line-top-past' : 'line-top-future')
+    : 'line-top-none';
+
+  const bottomClass = hasNext
+    ? (idx <= safeLastDeparted ? 'line-bottom-past' : 'line-bottom-future')
+    : 'line-bottom-none';
+
+  return `${topClass} ${bottomClass}`;
+}
+
 function computeJourneyState(d) {
   const fermate = Array.isArray(d.fermate) ? d.fermate : [];
   const now = Date.now();
@@ -333,7 +444,6 @@ function computeJourneyState(d) {
   const firstProg = parseToMillis(first.partenza_teorica ?? first.partenzaTeorica ?? first.programmata);
   const lastArrReal = parseToMillis(last.arrivoReale ?? last.effettiva);
 
-  // <<< QUI la magia: tutte le fermate <= lastRealIdx sono considerate "fatte"
   const lastRealIdx = getLastRealStopIndex(fermate);
   const pastCount = lastRealIdx >= 0 ? lastRealIdx + 1 : 0;
 
@@ -348,7 +458,6 @@ function computeJourneyState(d) {
       state = 'PLANNED';
     }
   } else if (pastCount >= total && lastArrReal) {
-    // corsa conclusa solo se l'ultima ha effettivi (come prima)
     state = 'COMPLETED';
   } else {
     state = 'RUNNING';
@@ -444,11 +553,17 @@ function buildPrimaryStatus(d, journey, currentInfo) {
       const { currentIndex, currentStop } = currentInfo;
       if (currentStop && currentIndex >= 0) {
         const name = currentStop.stazione || 'stazione sconosciuta';
-        const next = fermate[currentIndex + 1];
-        if (next) {
-          mainLine = `Il treno è in viaggio tra ${name} e ${next.stazione || 'stazione successiva'}.`;
+        const depReal = parseToMillis(currentStop.partenzaReale);
+        const arrReal = parseToMillis(currentStop.arrivoReale ?? currentStop.effettiva);
+        if (arrReal && !depReal) {
+          mainLine = `Il treno è fermo a ${name}.`;
         } else {
-          mainLine = `Il treno è in prossimità di ${name}.`;
+          const next = fermate[currentIndex + 1];
+          if (next) {
+            mainLine = `Il treno è in viaggio tra ${name} e ${next.stazione || 'stazione successiva'}.`;
+          } else {
+            mainLine = `Il treno è in prossimità di ${name}.`;
+          }
         }
       } else {
         mainLine = 'Il treno è in viaggio.';
@@ -607,6 +722,9 @@ function renderTrainStatus(payload) {
   let tableHtml = '';
   if (fermate.length > 0) {
     const lastRealIdx = getLastRealStopIndex(fermate);
+    const lastDepartedIdx = getLastDepartedStopIndex(fermate);
+    const timelineProgress = computeTravelProgress(fermate, lastDepartedIdx);
+    const timelineGapRange = getTimelineGapRange();
 
     const rows = fermate.map((f, idx) => {
       const isCurrent = currentInfo.currentIndex === idx;
@@ -649,6 +767,8 @@ function renderTrainStatus(payload) {
         if (baseMs2 != null) depPredRaw = baseMs2 + globalDelay * 60000;
       }
 
+      const arrProgMs = arrProgRaw ? parseToMillis(arrProgRaw) : null;
+      const depProgMs = depProgRaw ? parseToMillis(depProgRaw) : null;
       const arrProg = arrProgRaw ? formatTimeFlexible(arrProgRaw) : '-';
       const depProg = depProgRaw ? formatTimeFlexible(depProgRaw) : '-';
 
@@ -659,6 +779,30 @@ function renderTrainStatus(payload) {
 
       const ritArr = typeof f.ritardoArrivo === 'number' ? f.ritardoArrivo : globalDelay;
       const ritDep = typeof f.ritardoPartenza === 'number' ? f.ritardoPartenza : globalDelay;
+
+      const shouldForecastArrival =
+        journey.state === 'RUNNING' &&
+        typeof globalDelay === 'number' &&
+        globalDelay > 0 &&
+        !hasRealArrival &&
+        idx >= currentIndex &&
+        arrProgMs != null;
+
+      const shouldForecastDeparture =
+        journey.state === 'RUNNING' &&
+        typeof globalDelay === 'number' &&
+        globalDelay > 0 &&
+        !hasRealDeparture &&
+        idx >= currentIndex &&
+        depProgMs != null;
+
+      if (shouldForecastArrival) {
+        arrPredRaw = arrProgMs + globalDelay * 60000;
+      }
+
+      if (shouldForecastDeparture) {
+        depPredRaw = depProgMs + globalDelay * 60000;
+      }
 
       const bin =
         f.binarioEffettivoArrivoDescrizione ||
@@ -671,12 +815,16 @@ function renderTrainStatus(payload) {
       let rowClass = '';
       if (isCurrent) {
         rowClass = 'stop-current';
-      } else if (lastRealIdx >= 0 && idx <= lastRealIdx) {
+      } else if (lastDepartedIdx >= 0 && idx <= lastDepartedIdx) {
         // tutte le fermate fino all'ultima con effettivi → passate
         rowClass = 'stop-past';
       } else {
         rowClass = 'stop-future';
       }
+
+      const timelineClasses = getTimelineClassNames(idx, fermate.length, lastDepartedIdx);
+      const gapSize = getTimelineGapSize(idx, lastDepartedIdx, timelineProgress, timelineGapRange);
+      const timelineStyleAttr = gapSize != null ? ` style="--timeline-gap-size: ${gapSize}px"` : '';
 
 
       // effettivi: verde solo se HHmm coincide con il programmato
@@ -703,16 +851,8 @@ function renderTrainStatus(payload) {
       // ARRIVO: riga effettivo / previsto
       let arrivalLine = '';
       if (hasRealArrival && arrRealRaw) {
-        // effettivo (verde / arancio scuro / azzurro)
         arrivalLine = `<span class="time-actual ${arrivalEffClass}">${formatTimeFlexible(arrRealRaw)}</span>`;
-      } else if (
-        journey.state === 'RUNNING' &&
-        arrPredRaw != null &&
-        ritArr != null &&
-        ritArr !== 0 &&
-        idx >= currentIndex
-      ) {
-        // previsto (giallo / azzurrino chiaro)
+      } else if (arrPredRaw != null && ritArr != null && ritArr !== 0 && idx >= currentIndex) {
         const forecastClass = ritArr > 0 ? 'forecast-late' : 'forecast-early';
         arrivalLine = `<span class="time-actual ${forecastClass}">${formatTimeFlexible(arrPredRaw)}</span>`;
       }
@@ -721,20 +861,16 @@ function renderTrainStatus(payload) {
       let departLine = '';
       if (hasRealDeparture && depRealRaw) {
         departLine = `<span class="time-actual ${departEffClass}">${formatTimeFlexible(depRealRaw)}</span>`;
-      } else if (
-        journey.state === 'RUNNING' &&
-        depPredRaw != null &&
-        ritDep != null &&
-        ritDep !== 0 &&
-        idx >= currentIndex
-      ) {
+      } else if (depPredRaw != null && ritDep != null && ritDep !== 0 && idx >= currentIndex) {
         const forecastClass = ritDep > 0 ? 'forecast-late' : 'forecast-early';
         departLine = `<span class="time-actual ${forecastClass}">${formatTimeFlexible(depPredRaw)}</span>`;
       }
 
       return `
         <tr class="${rowClass}">
-          <td class="col-idx" aria-label="Fermata ${idx + 1}"></td>
+          <td class="col-idx" aria-label="Fermata ${idx + 1}">
+            <span class="timeline-line ${timelineClasses}"${timelineStyleAttr}></span>
+          </td>
           <td>
             <div class="st-name">${f.stazione || '-'}</div>
           </td>
@@ -751,31 +887,175 @@ function renderTrainStatus(payload) {
             </div>
           </td>
           <td class="col-track">
-            ${bin
-          ? `<span class="col-track-pill">${bin}</span>`
-          : '<span class="soft"></span>'
-        }
+            ${bin ? `<span class="col-track-pill">${bin}</span>` : '<span class="soft"></span>'}
           </td>
         </tr>
       `;
     }).join('');
 
+    // Generate mobile card HTML
+    const cardRows = fermate.map((f, idx) => {
+      const isCurrent = currentInfo.currentIndex === idx;
+
+      const arrProgRaw = f.arrivo_teorico ?? f.arrivoTeorico ?? f.programmata;
+      const depProgRaw = f.partenza_teorica ?? f.partenzaTeorica ?? f.programmata;
+
+      const hasRealArrival = f.arrivoReale != null || f.effettiva != null;
+      const hasRealDeparture = f.partenzaReale != null;
+
+      const arrRealRaw = f.arrivoReale ?? f.effettiva ?? null;
+      const depRealRaw = f.partenzaReale ?? null;
+
+      const arrProgMs = arrProgRaw ? parseToMillis(arrProgRaw) : null;
+      const depProgMs = depProgRaw ? parseToMillis(depProgRaw) : null;
+
+      let arrPredRaw = !hasRealArrival ? (f.arrivoPrevista ?? null) : null;
+      let depPredRaw = !hasRealDeparture ? (f.partenzaPrevista ?? null) : null;
+
+      const shouldForecastArrival =
+        journey.state === 'RUNNING' &&
+        typeof globalDelay === 'number' &&
+        globalDelay > 0 &&
+        !hasRealArrival &&
+        idx >= currentIndex &&
+        arrProgMs != null;
+
+      const shouldForecastDeparture =
+        journey.state === 'RUNNING' &&
+        typeof globalDelay === 'number' &&
+        globalDelay > 0 &&
+        !hasRealDeparture &&
+        idx >= currentIndex &&
+        depProgMs != null;
+
+      if (shouldForecastArrival) {
+        arrPredRaw = arrProgMs + globalDelay * 60000;
+      }
+
+      if (shouldForecastDeparture) {
+        depPredRaw = depProgMs + globalDelay * 60000;
+      }
+
+      const arrProg = arrProgRaw ? formatTimeFlexible(arrProgRaw) : '-';
+      const depProg = depProgRaw ? formatTimeFlexible(depProgRaw) : '-';
+
+      const arrProgHH = hhmmFromRaw(arrProgRaw);
+      const depProgHH = hhmmFromRaw(depProgRaw);
+      const arrRealHH = hhmmFromRaw(arrRealRaw);
+      const depRealHH = hhmmFromRaw(depRealRaw);
+
+      const ritArr = typeof f.ritardoArrivo === 'number' ? f.ritardoArrivo : globalDelay;
+      const ritDep = typeof f.ritardoPartenza === 'number' ? f.ritardoPartenza : globalDelay;
+
+      const bin =
+        f.binarioEffettivoArrivoDescrizione ||
+        f.binarioEffettivoPartenzaDescrizione ||
+        f.binarioProgrammatoArrivoDescrizione ||
+        f.binarioProgrammatoPartenzaDescrizione ||
+        '';
+
+      let rowClass = '';
+      if (isCurrent) {
+        rowClass = 'stop-current';
+      } else if (lastDepartedIdx >= 0 && idx <= lastDepartedIdx) {
+        rowClass = 'stop-past';
+      } else {
+        rowClass = 'stop-future';
+      }
+
+      const timelineClasses = getTimelineClassNames(idx, fermate.length, lastDepartedIdx);
+      const gapSize = getTimelineGapSize(idx, lastDepartedIdx, timelineProgress, timelineGapRange);
+      const timelineStyleAttr = gapSize != null ? ` style="--timeline-gap-size: ${gapSize}px"` : '';
+
+      let arrivalEffClass = '';
+      if (hasRealArrival && arrRealRaw) {
+        if (arrProgHH && arrRealHH && arrProgHH === arrRealHH) {
+          arrivalEffClass = 'delay-ok';
+        } else if (ritArr != null) {
+          if (ritArr < 0) arrivalEffClass = 'delay-early';
+          else arrivalEffClass = 'delay-mid';
+        }
+      }
+
+      let departEffClass = '';
+      if (hasRealDeparture && depRealRaw) {
+        if (depProgHH && depRealHH && depProgHH === depRealHH) {
+          departEffClass = 'delay-ok';
+        } else if (ritDep != null) {
+          if (ritDep < 0) departEffClass = 'delay-early';
+          else departEffClass = 'delay-mid';
+        }
+      }
+
+      let arrivalActual = '';
+      let arrivalActualClass = '';
+      if (hasRealArrival && arrRealRaw) {
+        arrivalActual = formatTimeFlexible(arrRealRaw);
+        arrivalActualClass = arrivalEffClass || 'delay-ok';
+      } else if (arrPredRaw != null && ritArr != null && ritArr !== 0 && idx >= currentIndex) {
+        arrivalActual = formatTimeFlexible(arrPredRaw);
+        arrivalActualClass = ritArr > 0 ? 'forecast-late' : 'forecast-early';
+      }
+
+      let departureActual = '';
+      let departureActualClass = '';
+      if (hasRealDeparture && depRealRaw) {
+        departureActual = formatTimeFlexible(depRealRaw);
+        departureActualClass = departEffClass || 'delay-ok';
+      } else if (depPredRaw != null && ritDep != null && ritDep !== 0 && idx >= currentIndex) {
+        departureActual = formatTimeFlexible(depPredRaw);
+        departureActualClass = ritDep > 0 ? 'forecast-late' : 'forecast-early';
+      }
+
+      if (!arrivalActual) {
+        arrivalActualClass = 'soft';
+      }
+      if (!departureActual) {
+        departureActualClass = 'soft';
+      }
+
+      const arrivalActualDisplay = arrivalActual || '--:--';
+      const departureActualDisplay = departureActual || '--:--';
+
+      const stazioneName = f.stazione || f.stazioneNome || '-';
+
+      return `
+        <div class="stop-card ${rowClass}">
+          <div class="stop-card-timeline">
+            <div class="timeline-line stop-card-line ${timelineClasses}"${timelineStyleAttr}></div>
+            <div class="stop-card-dot"></div>
+          </div>
+          <div class="stop-card-content">
+            <div class="stop-card-header">
+              <div class="stop-card-name">${stazioneName}</div>
+              ${bin ? `<div class="stop-card-track">${bin}</div>` : ''}
+            </div>
+            <div class="stop-card-times">
+              <div class="stop-card-time">
+                <div class="stop-card-time-label">Arrivo</div>
+                <div class="stop-card-time-values">
+                  <span class="stop-card-time-planned">${arrProg}</span>
+                  <span class="stop-card-time-actual ${arrivalActualClass}">${arrivalActualDisplay}</span>
+                </div>
+              </div>
+              <div class="stop-card-time">
+                <div class="stop-card-time-label">Partenza</div>
+                <div class="stop-card-time-values">
+                  <span class="stop-card-time-planned">${depProg}</span>
+                  <span class="stop-card-time-actual ${departureActualClass}">${departureActualDisplay}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
     tableHtml = `
       <div class="stops-table-wrapper">
-        <table class="stops-table">
-          <thead>
-            <tr>
-              <th aria-label="Progressione"></th>
-              <th>Stazione</th>
-              <th>Arrivo</th>
-              <th>Partenza</th>
-              <th>Binario</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-        </table>
+        <div class="stops-table-cards stops-table-cards--full">
+          ${cardRows}
+        </div>
       </div>
     `;
   }
