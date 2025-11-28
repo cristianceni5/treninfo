@@ -121,11 +121,8 @@ body {
 .app-inner {
   width: 100%;
   max-width: 720px;
-  background: var(--bg-card);
   border-radius: 20px;
   padding: 16px 14px;
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-soft);
 }
 
 @media (min-width: 768px) {
