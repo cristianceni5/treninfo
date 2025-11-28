@@ -13,6 +13,10 @@
   "dependencies": {
     "api-trenitalia": "^2.0.2",
     "cors": "^2.8.5",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "serverless-http": "^4.0.0"
+  },
+  "devDependencies": {
+    "netlify-cli": "^23.12.1"
   }
 }
