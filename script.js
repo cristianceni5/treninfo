@@ -1,4 +1,8 @@
-const API_BASE = 'http://localhost:3000';
+const API_BASE =
+  window.location.hostname === 'localhost'
+    ? 'http://localhost:3000'            // quando sviluppi in locale
+    : '/.netlify/functions/server';      // quando sei su Netlify
+
 const RECENT_KEY = 'monitor_treno_recent';
 
 // DOM ----------------------------------------------------------------
