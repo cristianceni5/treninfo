@@ -5,24 +5,17 @@ const cors = require('cors');
 
 const app = express();
 
-// CORS: su Netlify potresti anche non usarlo, ma non fa danni
+// CORS (su Netlify potresti anche non averne bisogno, ma non fa danni)
 app.use(cors());
 
-// Base per la maggior parte delle API ViaggiaTreno "classiche"
+// Base per le API ViaggiaTreno "classiche"
 const BASE_URL =
   'http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno';
-// Base "new" usata per alcuni endpoint HTML/tabellone
+// Base "new" per tabellone HTML
 const BASE_URL_BOARD =
   'http://www.viaggiatreno.it/viaggiatrenonew/resteasy/viaggiatreno';
 
-// Log minimale delle richieste in ingresso
-app.use((req, _res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  next();
-});
-
-// ----------------- Helpers -----------------
-
+// Helper per fetch testo
 async function fetchText(url) {
   const resp = await fetch(url);
   if (!resp.ok) {
@@ -33,6 +26,7 @@ async function fetchText(url) {
   return resp.text();
 }
 
+// Helper per fetch JSON
 async function fetchJson(url) {
   const resp = await fetch(url);
   if (resp.status === 204) {
@@ -50,11 +44,10 @@ async function fetchJson(url) {
 
 // ----------------- ROUTE API -----------------
 
-// 1) Autocomplete stazioni
-//    GET /stations/autocomplete?query=FIRENZE
-app.get('/stations/autocomplete', async (req, res) => {
+// Autocomplete stazioni
+// GET /api/stations/autocomplete?query=FIREN
+app.get('/api/stations/autocomplete', async (req, res) => {
   const query = (req.query.query || '').trim();
-
   if (query.length < 2) {
     return res.json({ ok: true, data: [] });
   }
@@ -75,13 +68,11 @@ app.get('/stations/autocomplete', async (req, res) => {
       return { name: name || '', code: code || '' };
     });
 
-    return res.json({ ok: true, data });
+    res.json({ ok: true, data });
   } catch (err) {
     console.error('Errore autocomplete stazioni:', err);
-    const status =
-      err.status && Number.isInteger(err.status) ? err.status : 500;
-    return res
-      .status(status)
+    res
+      .status(err.status || 500)
       .json({
         ok: false,
         error: 'Errore nel recupero autocomplete stazioni',
@@ -90,9 +81,9 @@ app.get('/stations/autocomplete', async (req, res) => {
   }
 });
 
-// 2) Stato treno per numero
-//    GET /trains/status?trainNumber=666
-app.get('/trains/status', async (req, res) => {
+// Stato treno per numero
+// GET /api/trains/status?trainNumber=666
+app.get('/api/trains/status', async (req, res) => {
   const trainNumber = (req.query.trainNumber || '').trim();
 
   if (!trainNumber) {
@@ -105,14 +96,13 @@ app.get('/trains/status', async (req, res) => {
     const urlSearch = `${BASE_URL}/cercaNumeroTrenoTrenoAutocomplete/${encodeURIComponent(
       trainNumber
     )}`;
-
     const textSearch = await fetchText(urlSearch);
     const lines = textSearch
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean);
 
-    if (lines.length === 0) {
+    if (!lines.length) {
       return res.json({
         ok: true,
         data: null,
@@ -153,7 +143,7 @@ app.get('/trains/status', async (req, res) => {
       throw errStatus;
     }
 
-    return res.json({
+    res.json({
       ok: true,
       originCode,
       rawSearchLine: first,
@@ -161,10 +151,8 @@ app.get('/trains/status', async (req, res) => {
     });
   } catch (err) {
     console.error('Errore trains/status backend:', err);
-    const status =
-      err.status && Number.isInteger(err.status) ? err.status : 500;
-    return res
-      .status(status)
+    res
+      .status(err.status || 500)
       .json({
         ok: false,
         error: 'Errore interno train status',
@@ -173,9 +161,9 @@ app.get('/trains/status', async (req, res) => {
   }
 });
 
-// 3) Tabellone stazione (HTML grezzo)
-//    GET /stations/board?stationCode=S06000
-app.get('/stations/board', async (req, res) => {
+// Tabellone stazione (HTML grezzo)
+// GET /api/stations/board?stationCode=S06000
+app.get('/api/stations/board', async (req, res) => {
   const stationCode = (req.query.stationCode || '').trim();
 
   if (!stationCode) {
@@ -191,13 +179,11 @@ app.get('/stations/board', async (req, res) => {
     )}/${encodeURIComponent(now.toString())}`;
 
     const html = await fetchText(url);
-    return res.type('text/html').send(html);
+    res.type('text/html').send(html);
   } catch (err) {
     console.error('Errore board backend:', err);
-    const status =
-      err.status && Number.isInteger(err.status) ? err.status : 500;
-    return res
-      .status(status)
+    res
+      .status(err.status || 500)
       .json({
         ok: false,
         error: 'Errore interno tabellone',
@@ -206,25 +192,29 @@ app.get('/stations/board', async (req, res) => {
   }
 });
 
-// 4) News RFI / rete
-//    GET /news
-app.get('/news', async (_req, res) => {
+// News
+// GET /api/news
+app.get('/api/news', async (_req, res) => {
   try {
     const url = `${BASE_URL}/news/0/it`;
     const data = await fetchJson(url);
-    return res.json({ ok: true, data });
+    res.json({ ok: true, data });
   } catch (err) {
     console.error('Errore news backend:', err);
-    const status =
-      err.status && Number.isInteger(err.status) ? err.status : 500;
-    return res
-      .status(status)
+    res
+      .status(err.status || 500)
       .json({
         ok: false,
         error: 'Errore interno news',
         details: err.message,
       });
   }
+});
+
+// Fallback 404, così se sbagli path lo vedi nel log
+app.use((req, res) => {
+  console.warn('404 Express su path:', req.path);
+  res.status(404).json({ ok: false, error: 'Route non trovata', path: req.path });
 });
 
 module.exports = app;
