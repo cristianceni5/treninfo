@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test)",
+      "Bash(node:*)",
+      "Bash(timeout 30 npm test)",
+      "Bash(timeout 15 npx mocha test/buffer.js --timeout 5000)",
+      "Bash(timeout 15 npx mocha test/check.js --timeout 5000)",
+      "Bash(timeout 15 npx mocha test/childClient.js --timeout 5000)",
+      "Bash(timeout 15 npx mocha test/close.js --timeout 5000)",
+      "Bash(timeout 15 npx mocha test/errorHandling.js --timeout 5000)",
+      "Bash(timeout 15 npx mocha test/event.js --timeout 5000)",
+      "Bash(timeout 15 npx mocha test/globalTags.js --timeout 5000)",
+      "Bash(timeout 15 npx mocha test/init.js --timeout 5000)",
+      "Bash(timeout 15 npx mocha test/send.js --timeout 5000)",
+      "Bash(timeout 15 npx mocha test/statsFunctions.js --timeout 5000)",
+      "Bash(timeout 15 npx mocha test/timer.js --timeout 5000)",
+      "Bash(timeout 20 npx mocha test/mock-close.js --timeout 5000)",
+      "Bash(timeout 15 npx mocha test/udpDnsCacheTransport.js --timeout 5000)",
+      "Bash(timeout 15 npx mocha test/udpSocketOptions.js --timeout 5000)",
+      "Bash(timeout 15 npx mocha test/helpers/helpers.js --timeout 5000)",
+      "Bash(timeout 20 npx mocha test/close.js test/mock-close.js --timeout 5000)",
+      "Bash(timeout 30 npx mocha test/buffer.js test/check.js test/childClient.js test/close.js test/errorHandling.js --timeout 5000)",
+      "Bash(timeout 60 npx mocha test/buffer.js test/check.js test/childClient.js test/close.js test/errorHandling.js test/event.js test/globalTags.js test/init.js test/send.js test/statsFunctions.js test/timer.js test/udpDnsCacheTransport.js test/udpSocketOptions.js test/helpers/helpers.js --timeout 5000)",
+      "Bash(timeout 30 npx mocha test/timer.js test/udpDnsCacheTransport.js test/udpSocketOptions.js test/helpers/helpers.js test/mock-close.js --timeout 5000)",
+      "Bash(npm install:*)",
+      "Bash(ls:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(docker-compose run:*)",
+      "Bash(npm run test:*)",
+      "Bash(npm run lint)",
+      "Bash(npm rebuild:*)",
+      "Bash(npx mocha test:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(npm test:*)",
+      "Bash(timeout 30 npx mocha test/helpers.js --timeout 5000)"
+    ],
+    "deny": []
+  }
+}
