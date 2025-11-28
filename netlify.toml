@@ -1,0 +1,11 @@
+[build]
+  # Non hai una "build" vera, sono file statici
+  command = "echo No build"
+  publish = "."
+  functions = "netlify/functions"
+
+# Proxy: /api/* → funzione serverless "api"
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200

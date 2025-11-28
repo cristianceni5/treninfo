@@ -1,7 +1,7 @@
 const API_BASE =
   window.location.hostname === 'localhost'
-    ? 'http://localhost:3000'            // quando sviluppi in locale
-    : '/.netlify/functions/server';      // quando sei su Netlify
+    ? 'http://localhost:3000'      // sviluppo locale con node server.js
+    : '/.netlify/functions/api';   // in produzione su Netlify (funzione "api")
 
 const RECENT_KEY = 'monitor_treno_recent';
 
