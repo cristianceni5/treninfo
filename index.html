@@ -1,4 +1,5 @@
-<!doctype html>
+<!--Developer by Cristian Ceni 2025 dhn-->
+<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8">
@@ -25,13 +26,13 @@
       </header>
 
       <main class="stack">
-        <!-- AUTOCOMPLETE STAZIONI (per future estensioni) -->
-        <section class="card">
+        <!-- AUTOCOMPLETE STAZIONI (per future estensioni) - anche se la vedo dura dhn -->
+        <section class="card card-station-search">
           <h2 class="card-title">
-            <img src="/img/orarionero.png" alt="" class="icon-img" />
-            <span>Stazioni</span>
+            <img src="/img/orarionero.png" alt="Seleziona stazione" class="icon-img" />
+            <span>Stazione di riferimento</span>
           </h2>
-          
+
           <div class="form-row">
             <div class="input-root autocomplete-wrapper">
               <input
@@ -53,7 +54,7 @@
         </section>
 
         <!-- RICERCA TRENO -->
-        <section class="card">
+        <section class="card card-train-search">
           <h2 class="card-title">
             <img src="/img/alert.png" alt="" class="icon-img" />
             <span>Stato treno</span>
@@ -77,13 +78,34 @@
           <div id="trainError" class="error"></div>
           <div id="trainResult"></div>
 
-          <!-- Visti di recente -->
-          <div id="recentTrains" class="recent-trains"></div>
+        </section>
+
+        <!-- FAVORITI & RECENTI -->
+        <section class="card card-train-storage">
+          <h2 class="card-title">
+            <img src="/img/stella.png" alt="Treni salvati" class="icon-img" />
+            <span>Preferiti & recenti</span>
+          </h2>
+          <p class="small muted">
+            Salva i treni che consulti più spesso e riprendi rapidamente le ultime ricerche.
+          </p>
+          <div class="train-board-grid">
+            <div id="favoriteTrains" class="storage-panel" aria-live="polite"></div>
+            <div id="recentTrains" class="storage-panel" aria-live="polite"></div>
+          </div>
         </section>
       </main>
+      <footer class="footer">
+        <div class="footer-content">
+          <span class="developer-label">Developed by</span>
+          <a href="https://cristianceni.netlify.app/" target="_blank" rel="noopener noreferrer" class="developer-link">
+            <img src="img/CS_black_all.png" alt="Cristian Ceni Logo" class="developer-logo">
+            Cristian Ceni
+          </a>
+        </div>
+      </footer>
     </div>
   </div>
-
   <script src="script.js"></script>
 </body>
 </html>

@@ -1,3 +1,5 @@
+//Developed by Cristian Ceni 2025 dhn
+
 // src/app.js - Backend ViaggiaTreno per Netlify Functions
 
 const express = require('express');
@@ -5,7 +7,7 @@ const cors = require('cors');
 
 const app = express();
 
-// CORS (su Netlify potresti anche non averne bisogno, ma non fa danni)
+// CORS
 app.use(cors());
 
 // Base per le API ViaggiaTreno "classiche"
@@ -161,7 +163,7 @@ app.get('/api/trains/status', async (req, res) => {
   }
 });
 
-// Tabellone stazione (HTML grezzo)
+// Questo non fa, andrebbe sistemato ma vaffanculo dhn
 // GET /api/stations/board?stationCode=S06000
 app.get('/api/stations/board', async (req, res) => {
   const stationCode = (req.query.stationCode || '').trim();
@@ -192,7 +194,7 @@ app.get('/api/stations/board', async (req, res) => {
   }
 });
 
-// News
+// Boh aggiornato al 2019 help
 // GET /api/news
 app.get('/api/news', async (_req, res) => {
   try {
@@ -218,3 +220,10 @@ app.use((req, res) => {
 });
 
 module.exports = app;
+
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Backend Treninfo attivo su http://localhost:${PORT}`);
+  });
+}
