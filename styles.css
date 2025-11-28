@@ -1,5 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=TikTok+Sans:opsz,wght@12..36,300..900&display=swap');
 
+/* THEME TOKENS ------------------------------------------------------ */
+/* :root – definisce palette e costanti di layout usate ovunque */
 :root {
   color-scheme: light;
 
@@ -11,25 +13,26 @@
   --text-muted: #6b7280;
   --text-soft: #9ca3af;
 
-  --state-ontime: #16a34a;    /* verde puntuale / Regionali */
-  --state-early: #0ea5e9;     /* azzurrino anticipo effettivo */
-  --state-late: #b45309;      /* arancione scuro */
-  --state-very-late: #b91c1c; /* rosso forte / Frecce */
+  --state-ontime: #16a34a;
+  --state-early: #0ea5e9;
+  --state-late: #b45309;
+  --state-very-late: #b91c1c;
   --state-badge-bg: #f9fafb;
 
-  --kind-fr: #b91c1c;  /* Frecce */
-  --kind-reg: #16a34a; /* Regionali */
-  --kind-ic: #0ea5e9;  /* Intercity */
+  --kind-fr: #b91c1c;
+  --kind-reg: #16a34a;
+  --kind-ic: #0ea5e9;
 
   --radius-card: 16px;
   --radius-pill: 999px;
-
   --shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.08);
 
   --gap: 16px;
   --timeline-gap: 10px;
 }
 
+/* TIMELINE PRIMITIVES ----------------------------------------------- */
+/* .timeline-line – linea verticale condivisa tra tabella e card */
 .timeline-line {
   --timeline-gap-size: clamp(6px, var(--timeline-gap), 22px);
   --timeline-color-top: #e5e7eb;
@@ -46,6 +49,7 @@
   pointer-events: none;
 }
 
+/* .timeline-line::before/after – metà superiore e inferiore della linea */
 .timeline-line::before,
 .timeline-line::after {
   content: '';
@@ -69,49 +73,21 @@
   opacity: var(--timeline-bottom-visible);
 }
 
-.stop-card-line {
-  top: calc(var(--card-gap, 8px) * -1);
-  bottom: calc(var(--card-gap, 8px) * -1);
-}
+/* Modificatori timeline – controllano visibilità e colore delle metà */
+.line-top-none { --timeline-top-visible: 0; }
+.line-top-past { --timeline-color-top: var(--state-ontime); }
+.line-top-future { --timeline-color-top: var(--border-subtle); }
+.line-bottom-none { --timeline-bottom-visible: 0; }
+.line-bottom-past { --timeline-color-bottom: var(--state-ontime); }
+.line-bottom-future { --timeline-color-bottom: var(--border-subtle); }
+.line-top-alert { --timeline-top-visible: 1; --timeline-color-top: var(--state-very-late); }
+.line-bottom-alert { --timeline-bottom-visible: 1; --timeline-color-bottom: var(--state-very-late); }
 
-.line-top-none {
-  --timeline-top-visible: 0;
-}
+/* GLOBAL RESET ------------------------------------------------------ */
+/* Reset base per box sizing e font */
+*, *::before, *::after { box-sizing: border-box; }
 
-.line-top-past {
-  --timeline-color-top: var(--state-ontime);
-}
-
-.line-top-future {
-  --timeline-color-top: var(--border-subtle);
-}
-
-.line-bottom-none {
-  --timeline-bottom-visible: 0;
-}
-
-.line-bottom-past {
-  --timeline-color-bottom: var(--state-ontime);
-}
-
-.line-bottom-future {
-  --timeline-color-bottom: var(--border-subtle);
-}
-
-.col-idx .timeline-line {
-  --timeline-gap-size: 10px;
-}
-
-/* RESET -------------------------------------------------------------- */
-
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html,
-body {
+html, body {
   width: 100%;
   margin: 0;
   padding: 0;
@@ -131,8 +107,8 @@ body {
   }
 }
 
-/* LAYOUT APP --------------------------------------------------------- */
-
+/* APP LAYOUT -------------------------------------------------------- */
+/* .app-shell – centra la card nell'intera viewport */
 .app-shell {
   min-height: 100vh;
   display: flex;
@@ -141,6 +117,7 @@ body {
   padding: 12px 8px;
 }
 
+/* .app-inner – contenitore principale con bordo e ombra */
 .app-inner {
   width: 100%;
   max-width: 720px;
@@ -152,17 +129,12 @@ body {
 }
 
 @media (min-width: 768px) {
-  .app-shell {
-    padding: 20px 16px;
-  }
-  
-  .app-inner {
-    padding: 18px 18px 16px;
-  }
+  .app-shell { padding: 20px 16px; }
+  .app-inner { padding: 18px 18px 16px; }
 }
 
-/* HEADER ------------------------------------------------------------- */
-
+/* PAGE HEADER ------------------------------------------------------- */
+/* .app-header – blocco con logo e payoff */
 .app-header {
   display: flex;
   align-items: center;
@@ -172,18 +144,21 @@ body {
   border-radius: 20px;
 }
 
+/* .app-title – coppia logo + testo */
 .app-title {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
+/* .icon-img – icone vettoriali usate in header e card */
 .icon-img {
   width: 32px;
   height: 32px;
   object-fit: contain;
 }
 
+/* Titolo principale e payoff */
 .app-title h1 {
   font-size: 1.05rem;
   margin: 0;
@@ -195,34 +170,15 @@ body {
   color: var(--text-muted);
 }
 
-/* UTILITY ------------------------------------------------------------ */
+/* UTILITY TEXT ------------------------------------------------------ */
+.stack { display: flex; flex-direction: column; gap: 14px; }
+.small { font-size: 0.8rem; }
+.muted { color: var(--text-muted); }
+.soft { color: var(--text-soft); }
+.error { color: var(--state-very-late); font-size: 0.9rem; margin-top: 6px; }
 
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.small {
-  font-size: 0.8rem;
-}
-
-.muted {
-  color: var(--text-muted);
-}
-
-.soft {
-  color: var(--text-soft);
-}
-
-.error {
-  color: var(--state-very-late);
-  font-size: 0.9rem;
-  margin-top: 6px;
-}
-
-/* CARD --------------------------------------------------------------- */
-
+/* GENERIC CARD ------------------------------------------------------ */
+/* .card – contenitori secondari (ricerche, liste) */
 .card {
   background: var(--bg-card);
   border-radius: var(--radius-card);
@@ -230,6 +186,7 @@ body {
   padding: 14px 14px 12px;
 }
 
+/* .card-title – titolo con icona */
 .card-title {
   display: flex;
   align-items: center;
@@ -244,8 +201,8 @@ body {
   height: 24px;
 }
 
-/* FORM --------------------------------------------------------------- */
-
+/* SEARCH FORM ------------------------------------------------------- */
+/* .form-row – singola riga label+input */
 .form-row {
   display: flex;
   align-items: center;
@@ -253,17 +210,20 @@ body {
   margin-bottom: 8px;
 }
 
+/* Label del form */
 .form-row label {
   min-width: 70px;
   font-size: 0.8rem;
   color: var(--text-muted);
 }
 
+/* .input-root – wrapper per autocomplete */
 .input-root {
   position: relative;
   flex: 1;
 }
 
+/* Input di ricerca numeri e stazioni */
 input[type='text'],
 input[type='search'],
 input[type='number'] {
@@ -274,11 +234,10 @@ input[type='number'] {
   font-size: 0.92rem;
   background: #f9fafb;
   color: var(--text-main);
+  font-family: 'DM Sans', 'TikTok Sans', system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
 }
 
-input::placeholder {
-  color: var(--text-soft);
-}
+input::placeholder { color: var(--text-soft); }
 
 input:focus {
   outline: none;
@@ -287,46 +246,29 @@ input:focus {
   box-shadow: 0 0 0 1px #e5e7eb;
 }
 
+/* Button generici del form */
 button {
   border-radius: 999px;
   border: 1px solid var(--border-strong);
   background: #ffffff;
-  padding: 7px 12px;
+  padding: 5px 12px;
   font-size: 0.9rem;
   cursor: pointer;
   display: inline-flex;
+  font-family: 'DM Sans', 'TikTok Sans', system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
   align-items: center;
   gap: 6px;
 }
 
-button:hover {
-  background: #f3f4f6;
-}
+button:hover { background: #f3f4f6; }
+button:active { background: #e5e7eb; }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
 
-button:active {
-  background: #e5e7eb;
-}
+/* AUTOCOMPLETE ------------------------------------------------------ */
+/* .autocomplete-wrapper – posiziona il dropdown */
+.autocomplete-wrapper { position: relative; }
 
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-button:active {
-  background: #e5e7eb;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-/* AUTOCOMPLETE STAZIONI ---------------------------------------------- */
-
-.autocomplete-wrapper {
-  position: relative;
-}
-
+/* ul.autocomplete – menu risultati stazione */
 ul.autocomplete {
   list-style: none;
   position: absolute;
@@ -342,10 +284,9 @@ ul.autocomplete {
   z-index: 20;
 }
 
-ul.autocomplete:empty {
-  display: none;
-}
+ul.autocomplete:empty { display: none; }
 
+/* Elemento singolo nell'autocomplete */
 ul.autocomplete li {
   padding: 6px 10px;
   font-size: 0.9rem;
@@ -356,20 +297,12 @@ ul.autocomplete li {
   gap: 10px;
 }
 
-ul.autocomplete li:hover {
-  background: #f3f4f6;
-}
+ul.autocomplete li:hover { background: #f3f4f6; }
+ul.autocomplete li .muted { font-size: 0.8rem; }
+.error-item { color: var(--state-very-late); }
 
-ul.autocomplete li .muted {
-  font-size: 0.8rem;
-}
-
-.error-item {
-  color: var(--state-very-late);
-}
-
-/* PILL --------------------------------------------------------------- */
-
+/* PILL UTILITY ------------------------------------------------------ */
+/* .pill – chip informativi per riassunti */
 .pill {
   display: inline-flex;
   align-items: baseline;
@@ -387,18 +320,17 @@ ul.autocomplete li .muted {
   color: var(--text-soft);
 }
 
-.pill-value {
-  font-weight: 500;
-}
+.pill-value { font-weight: 500; }
 
-/* TRAIN HEADER -------------------------------------------------------- */
-
+/* TRAIN HEADER ------------------------------------------------------ */
+/* .train-logo – icona aziendale della corsa */
 .train-logo {
   width: 30px;
   height: 30px;
   object-fit: contain;
 }
 
+/* .train-header – blocco con nome, logo e badge */
 .train-header {
   display: flex;
   justify-content: space-between;
@@ -407,10 +339,10 @@ ul.autocomplete li .muted {
   margin-bottom: 10px;
 }
 
-.train-main {
-  flex: 1;
-}
+/* .train-main – colonna info principali */
+.train-main { flex: 1; }
 
+/* .train-title-row – riga con nome e badge */
 .train-title-row {
   display: flex;
   align-items: center;
@@ -418,24 +350,17 @@ ul.autocomplete li .muted {
   margin-bottom: 5px;
 }
 
+/* .train-title – nome della corsa */
 .train-title {
   margin: 0;
   font-size: 1rem;
 }
 
-/* colori nome treno (RFI) */
-.train-title--fr {
-  color: var(--kind-fr);
-}
+.train-title--fr { color: var(--kind-fr); }
+.train-title--reg { color: var(--kind-reg); }
+.train-title--ic { color: var(--kind-ic); }
 
-.train-title--reg {
-  color: var(--kind-reg);
-}
-
-.train-title--ic {
-  color: var(--kind-ic);
-}
-
+/* .train-meta – colonna a destra con orari e badge */
 .train-meta {
   display: flex;
   flex-direction: column;
@@ -445,31 +370,32 @@ ul.autocomplete li .muted {
   font-size: 0.8rem;
 }
 
+/* .train-primary-subtitle – descrizione tratta */
 .train-primary-subtitle {
   margin-top: 10px;
   font-size: 0.78rem;
   color: #64748b;
   line-height: 1.3;
-
-  display: inline-flex;        /* testo + icona in riga */
-  align-items: center;         /* allineamento verticale al centro */
-  gap: 4px; 
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .train-primary-subtitle .icon-inline {
   width: 14px;
   height: 14px;
-  display: block;              /* niente spazio sotto */
-  flex-shrink: 0;              /* non si schiaccia */
+  display: block;
+  flex-shrink: 0;
 }
 
+/* .train-last – timestamp ultimo aggiornamento */
 .train-last {
   color: var(--text-soft);
   font-size: 0.78rem;
 }
 
-/* BADGE STATO + CHIP CONCLUSIONE ------------------------------------- */
-
+/* STATUS BADGES & DELAYS -------------------------------------------- */
+/* .badge-status – etichetta stato corsa */
 .badge-status {
   padding: 2px 9px;
   border-radius: 999px;
@@ -481,50 +407,58 @@ ul.autocomplete li .muted {
   color: var(--text-soft);
 }
 
-.badge-status-planned {
-  color: var(--text-soft);
+.badge-status-planned { color: var(--text-soft); }
+.badge-status-running { color: var(--state-ontime); }
+.badge-status-completed { color: var(--state-ontime); }
+.badge-status-cancelled {
+  color: var(--state-very-late);
+  background: rgba(185, 28, 28, 0.12);
+  border-color: rgba(185, 28, 28, 0.35);
+}
+.badge-status-partial { color: var(--state-late); }
+.badge-status-unknown { color: var(--text-soft); }
+
+/* Classi per colorare gli orari reali/previsioni */
+.delay-ok { color: var(--state-ontime); }
+.delay-early { color: var(--state-early); }
+.delay-mid,
+.delay-high { color: var(--state-late); }
+.forecast-late { color: #facc15; }
+.forecast-early { color: #93c5fd; }
+
+/* .delay-chip – badge riassuntivo anticipo/ritardo */
+.delay-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 500;
 }
 
-.badge-status-running {
+.delay-chip-on {
+  background: rgba(22, 163, 74, 0.18);
+  border: 1px solid var(--state-ontime);
   color: var(--state-ontime);
 }
 
-.badge-status-completed {
-  color: var(--state-ontime);
-}
-
-.badge-status-unknown {
-  color: var(--text-soft);
-}
-
-/* COLORI ORARI -------------------------------------------------------- */
-
-.delay-ok {          /* puntuale (HHmm identico) */
-  color: var(--state-ontime);
-}
-
-.delay-early {       /* anticipo effettivo */
+.delay-chip-early {
+  background: rgba(56, 189, 248, 0.18);
+  border: 1px solid var(--state-early);
   color: var(--state-early);
 }
 
-.delay-mid,
-.delay-high {        /* ritardo effettivo */
+.delay-chip-late {
+  background: rgba(234, 88, 12, 0.22);
+  border: 1px solid var(--state-late);
   color: var(--state-late);
 }
 
-.forecast-late {     /* ritardo previsto */
-  color: #eab308;    /* giallo */
-}
-
-.forecast-early {    /* anticipo previsto */
-  color: #7dd3fc;    /* azzurrino chiaro */
-}
-
-/* STATO PRINCIPALE --------------------------------------------------- */
-
-.train-primary-status {
-  margin-bottom: 12px;
-}
+/* PRIMARY STATUS BLOCK ---------------------------------------------- */
+/* .train-primary-status – testo principale sullo stato */
+.train-primary-status { margin-bottom: 12px; }
 
 .train-primary-main {
   font-size: 1rem;
@@ -544,8 +478,8 @@ ul.autocomplete li .muted {
   color: var(--text-soft);
 }
 
-/* TABELLA FERMATE + TIMELINE VERTICALE -------------------------------- */
-
+/* STOPS TABLE (DESKTOP) --------------------------------------------- */
+/* .stops-table-wrapper – contenitore della tabella */
 .stops-table-wrapper {
   border-radius: 0;
   border: none;
@@ -553,6 +487,7 @@ ul.autocomplete li .muted {
   overflow: visible;
 }
 
+/* .stops-table – tabella compatta delle fermate */
 .stops-table {
   width: 100%;
   border-collapse: collapse;
@@ -560,9 +495,7 @@ ul.autocomplete li .muted {
   table-layout: fixed;
 }
 
-.stops-table thead {
-  background: #f3f4f6;
-}
+.stops-table thead { background: #f3f4f6; }
 
 .stops-table thead th {
   text-align: left;
@@ -572,7 +505,7 @@ ul.autocomplete li .muted {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-/* Prima colonna (pallini): larghezza fissa */
+/* Colonne e larghezze dedicate */
 .stops-table th:first-child,
 .stops-table td:first-child {
   width: 40px;
@@ -580,14 +513,12 @@ ul.autocomplete li .muted {
   text-align: center;
 }
 
-/* Colonna stazione - prende lo spazio che serve */
 .stops-table th:nth-child(2),
 .stops-table td:nth-child(2) {
   width: auto;
   min-width: 100px;
 }
 
-/* Colonne orari - compatte */
 .stops-table th:nth-child(3),
 .stops-table td:nth-child(3),
 .stops-table th:nth-child(4),
@@ -596,7 +527,6 @@ ul.autocomplete li .muted {
   padding: 12px 6px;
 }
 
-/* Colonna binario */
 .stops-table th:nth-child(5),
 .stops-table td:nth-child(5) {
   width: 55px;
@@ -604,7 +534,6 @@ ul.autocomplete li .muted {
   padding: 12px 4px;
 }
 
-/* RIGHE */
 .stops-table tbody tr {
   position: relative;
   background: #ffffff;
@@ -616,17 +545,16 @@ ul.autocomplete li .muted {
   vertical-align: middle;
 }
 
-.stops-table tbody tr:last-child td {
-  border-bottom: none;
-}
+.stops-table tbody tr:last-child td { border-bottom: none; }
 
-/* TIMELINE VERTICALE - Linea base grigia chiara (sempre visibile) */
-/* PALLINI STAZIONI */
+/* .col-idx – cella che ospita timeline + dot */
 .col-idx {
   position: relative;
   min-height: 40px;
   z-index: 2;
 }
+
+.col-idx .timeline-line { --timeline-gap-size: 10px; }
 
 .col-idx::before {
   content: '';
@@ -642,52 +570,40 @@ ul.autocomplete li .muted {
   z-index: 3;
 }
 
-/* Fermate passate: pallino pieno grigio scuro */
 .stop-past .col-idx::before {
   background: #16a34a;
   border-color: #16a34a;
   box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.25);
 }
 
-/* Fermata corrente: pallino con bordo verde spesso */
 .stop-current .col-idx::before {
   background: #ffffff;
   border: 4px solid #16a34a;
   width: 16px;
   height: 16px;
   box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
+  animation: stationPulse 1.4s ease-in-out infinite;
 }
 
-/* Sfondo riga corrente */
-.stop-current td {
-  background: #f0fdf4;
+.stop-cancelled .col-idx::before {
+  background: var(--state-very-late);
+  border-color: var(--state-very-late);
+  box-shadow: 0 0 0 2px rgba(185, 28, 28, 0.25);
 }
 
+.stop-current td { background: #f0fdf4; }
 
-/* CONTENUTO CELLE */
+/* Celle della tabella */
 .st-name {
   font-size: 0.86rem;
   font-weight: 500;
   margin-bottom: 2px;
 }
 
-.time-block {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
+.time-block { display: flex; flex-direction: column; gap: 2px; }
+.time-scheduled { font-size: 0.78rem; color: var(--text-soft); }
+.time-actual { font-size: 0.86rem; font-weight: 600; }
 
-.time-scheduled {
-  font-size: 0.78rem;
-  color: var(--text-soft);
-}
-
-.time-actual {
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-
-/* Binario */
 .col-track {
   text-align: center;
   font-weight: 500;
@@ -703,71 +619,21 @@ ul.autocomplete li .muted {
   background: #e5e7eb;
   font-size: 0.78rem;
   min-width: 32px;
+  border: 1px solid transparent;
 }
 
-/* COLORI ORARI */
-.delay-ok {
-  color: #16a34a;
-}
-
-.delay-early {
-  color: #0ea5e9;
-}
-
-.delay-mid,
-.delay-high {
-  color: #b45309;
-}
-
-/* CHIP ANTICIPO/RITARDO GLOBALE (sotto posizione treno) */
-
-.delay-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 4px;
-  padding: 4px 10px;
-  border-radius: 999px;      /* bello tondo */
-  font-size: 0.78rem;
-  font-weight: 500;
-}
-
-/* In orario → verde */
-.delay-chip-on {
-  background: rgba(22, 163, 74, 0.18);
-  border: 1px solid var(--state-ontime);
+.col-track-pill--real {
+  background: rgba(34, 197, 94, 0.16);
+  border-color: var(--state-ontime);
   color: var(--state-ontime);
+  font-weight: 600;
 }
 
-/* Anticipo → azzurrino */
-.delay-chip-early {
-  background: rgba(56, 189, 248, 0.18);
-  border: 1px solid var(--state-early);
-  color: var(--state-early);
-}
+/* STOP CARDS (MOBILE) ----------------------------------------------- */
+/* .stops-table (mobile) – nasconde la tabella quando si usano le card */
+.stops-table { display: none; }
 
-/* Ritardo → arancione scuro */
-.delay-chip-late {
-  background: rgba(234, 88, 12, 0.22);
-  border: 1px solid var(--state-late);
-  color: var(--state-late);
-}
-
-.forecast-late {
-  color: #eab308;
-}
-
-.forecast-early {
-  color: #7dd3fc;
-}
-
-/* STOP CARDS (vista mobile) ----------------------------------------- */
-
-
-.stops-table {
-  display: none;
-}
-
+/* .stops-table-cards – lista verticale delle fermate */
 .stops-table-cards {
   display: flex;
   flex-direction: column;
@@ -778,6 +644,7 @@ ul.autocomplete li .muted {
   background: transparent;
 }
 
+/* .stop-card – singola card/step della timeline */
 .stop-card {
   display: flex;
   gap: 12px;
@@ -788,10 +655,9 @@ ul.autocomplete li .muted {
   will-change: transform, opacity;
 }
 
-.stop-card:last-child {
-  margin-bottom: 0;
-}
+.stop-card:last-child { margin-bottom: 0; }
 
+/* .stop-card-timeline – colonna con dot e linea */
 .stop-card-timeline {
   position: relative;
   width: 26px;
@@ -801,6 +667,13 @@ ul.autocomplete li .muted {
   justify-content: center;
 }
 
+/* Re-usa la timeline base con gap personalizzato */
+.stop-card-line {
+  top: calc(var(--card-gap, 8px) * -1);
+  bottom: calc(var(--card-gap, 8px) * -1);
+}
+
+/* .stop-card-dot – pallino della fermata mobile */
 .stop-card-dot {
   width: 14px;
   height: 14px;
@@ -822,9 +695,10 @@ ul.autocomplete li .muted {
   width: 16px;
   height: 16px;
   box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
+  animation: stationPulse 1.4s ease-in-out infinite;
 }
 
-
+/* .stop-card-content – blocco testo card mobile */
 .stop-card-content {
   flex: 1;
   border-radius: 20px;
@@ -839,6 +713,13 @@ ul.autocomplete li .muted {
   box-shadow: none;
 }
 
+.stop-card.stop-cancelled .stop-card-dot {
+  background: var(--state-very-late);
+  border-color: var(--state-very-late);
+  box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.2);
+}
+
+/* Header della card (nome + binario) */
 .stop-card-header {
   display: flex;
   justify-content: space-between;
@@ -847,10 +728,7 @@ ul.autocomplete li .muted {
   margin-bottom: 6px;
 }
 
-.stop-card-name {
-  font-size: 1rem;
-  font-weight: 500;
-}
+.stop-card-name { font-size: 1rem; font-weight: 500; }
 
 .stop-card-track {
   border-radius: 999px;
@@ -858,14 +736,18 @@ ul.autocomplete li .muted {
   padding: 2px 10px;
   font-size: 0.78rem;
   font-weight: 500;
+  border: 1px solid transparent;
 }
 
-
-.stop-card-times {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+.stop-card-track--real {
+  background: rgba(34, 197, 94, 0.16);
+  border-color: var(--state-ontime);
+  color: var(--state-ontime);
+  font-weight: 600;
 }
+
+/* Blocchi orario card */
+.stop-card-times { display: flex; flex-direction: column; gap: 0; }
 
 .stop-card-time {
   display: flex;
@@ -890,61 +772,32 @@ ul.autocomplete li .muted {
   font-weight: 500;
 }
 
-.stop-card-time-planned {
-  color: var(--text-main);
-  font-weight: 500;
-}
-
-.stop-card-time-actual {
-  font-weight: 500;
-  transition: color 0.2s ease;
-}
+.stop-card-time-planned { color: var(--text-main); font-weight: 500; }
+.stop-card-time-actual { font-weight: 500; transition: color 0.2s ease; }
 
 @keyframes stopCardEnter {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes stationPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 7px rgba(22, 163, 74, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
   }
 }
 
-/* RESPONSIVE - MOBILE */
-@media (max-width: 640px) {
-  .stops-table.desktop-view {
-    display: none;
-  }
-
-  .stops-table-cards {
-    display: flex;
-    flex-direction: column;
-    --card-gap: 12px;
-  }
-
-  .stop-card {
-    margin-bottom: 12px;
-  }
-
-  .stop-card-content {
-    padding: 12px 14px;
-  }
-
-  .stop-card-time-label {
-    font-size: 0.78rem;
-  }
-
-  .stop-card-time-values {
-    font-size: 0.88rem;
-    gap: 8px;
-  }
-}
 /* RECENT TRAINS ------------------------------------------------------ */
-
-.recent-trains {
-  margin-top: 12px;
-}
+/* .recent-trains – sezione cronologia ricerche */
+.recent-trains { margin-top: 12px; }
 
 .recent-header-row {
   display: flex;
@@ -955,9 +808,7 @@ ul.autocomplete li .muted {
 
 .recent-header-title {
   font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--text-soft);
+  color: var(--text-main);
 }
 
 .recent-clear {
@@ -987,16 +838,8 @@ ul.autocomplete li .muted {
   padding: 4px 8px 4px 10px;
 }
 
-.recent-pill-main .num {
-  font-weight: 500;
-  font-size: 0.82rem;
-}
-
-.recent-pill-main .route {
-  font-size: 0.76rem;
-  color: var(--text-soft);
-  margin-left: 6px;
-}
+.recent-pill-main .num { font-weight: 500; font-size: 0.82rem; }
+.recent-pill-main .route { font-size: 0.76rem; color: var(--text-soft); margin-left: 6px; }
 
 .recent-pill-remove {
   border-radius: 0 999px 999px 0;
@@ -1006,10 +849,8 @@ ul.autocomplete li .muted {
 }
 
 /* JSON DEBUG --------------------------------------------------------- */
-
-.json-debug {
-  margin-top: 10px;
-}
+/* .json-debug – pannello collapsible per dati raw */
+.json-debug { margin-top: 10px; }
 
 .json-debug summary {
   cursor: pointer;
@@ -1028,40 +869,24 @@ ul.autocomplete li .muted {
   font-size: 0.74rem;
 }
 
-/* RESPONSIVE --------------------------------------------------------- */
-
+/* RESPONSIVE ADJUSTMENTS -------------------------------------------- */
 @media (max-width: 640px) {
-  .app-shell {
-    padding: 8px;
-  }
+  .app-shell { padding: 8px; }
+  .app-inner { padding: 14px 12px; }
+  .app-header { flex-direction: column; align-items: flex-start; }
+  .train-header { flex-direction: column; align-items: stretch; }
+  .train-meta { align-items: flex-start; min-width: 0; }
 
-  .app-inner {
-    padding: 14px 12px;
-  }
-
-  .app-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .train-header {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .train-meta {
-    align-items: flex-start;
-    min-width: 0;
-  }
-  
   input[type='text'],
   input[type='search'],
-  input[type='number'] {
-    font-size: 16px;
-  }
-  
-  button {
-    padding: 10px 14px;
-    min-height: 44px;
-  }
+  input[type='number'] { font-size: 16px; }
+
+  button { padding: 10px 14px; min-height: 44px; }
+
+  .stops-table.desktop-view { display: none; }
+  .stops-table-cards { --card-gap: 12px; }
+  .stop-card { margin-bottom: 12px; }
+  .stop-card-content { padding: 12px 14px; }
+  .stop-card-time-label { font-size: 0.78rem; }
+  .stop-card-time-values { font-size: 0.88rem; gap: 8px; }
 }

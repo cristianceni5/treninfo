@@ -97,6 +97,29 @@ function humanizeDeltaMinutes(mins) {
   return sign > 0 ? `tra ${core}` : `${core} fa`;
 }
 
+function parseDelayMinutes(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim().replace(',', '.');
+    if (!trimmed) return null;
+    const direct = Number(trimmed);
+    if (!Number.isNaN(direct)) return direct;
+    const match = trimmed.match(/-?\d+/);
+    if (match) {
+      const num = Number(match[0]);
+      if (!Number.isNaN(num)) return num;
+    }
+  }
+  return null;
+}
+
+function resolveDelay(primary, fallback) {
+  const parsedPrimary = parseDelayMinutes(primary);
+  if (parsedPrimary != null) return parsedPrimary;
+  return parseDelayMinutes(fallback);
+}
+
 // AUTOCOMPLETE STAZIONI ----------------------------------------------
 
 async function fetchStations(query) {
@@ -351,6 +374,277 @@ function pickFirstValidTime(...values) {
   return null;
 }
 
+function extractTrackInfo(stop) {
+  if (!stop) {
+    return { label: '', isReal: false, planned: '', actual: '' };
+  }
+
+  const actual = stop.binarioEffettivoArrivoDescrizione ||
+    stop.binarioEffettivoPartenzaDescrizione ||
+    stop.binarioEffettivoArrivo ||
+    stop.binarioEffettivoPartenza ||
+    '';
+
+  const planned = stop.binarioProgrammatoArrivoDescrizione ||
+    stop.binarioProgrammatoPartenzaDescrizione ||
+    stop.binarioProgrammatoArrivo ||
+    stop.binarioProgrammatoPartenza ||
+    '';
+
+  const label = actual || planned || '';
+
+  return {
+    label,
+    isReal: Boolean(actual),
+    planned,
+    actual,
+  };
+}
+
+function normalizeStationName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function findStopIndexByName(fermate, name) {
+  const target = normalizeStationName(name);
+  if (!target) return -1;
+  for (let i = 0; i < fermate.length; i += 1) {
+    const current = normalizeStationName(fermate[i].stazione || fermate[i].stazioneNome);
+    if (current && current === target) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function normalizeInfoText(value) {
+  if (value == null) return '';
+  return String(value).trim();
+}
+
+function isGenericCancellationText(value) {
+  const txt = normalizeInfoText(value).toLowerCase();
+  if (!txt) return true;
+  const genericSet = new Set([
+    'treno cancellato',
+    'treno cancellato.',
+    'treno soppresso',
+    'treno soppresso.',
+    'corsa soppressa',
+    'corsa soppressa.',
+    'corsa cancellata',
+    'corsa cancellata.',
+  ]);
+  if (genericSet.has(txt)) return true;
+  return false;
+}
+
+function extractCancellationDetailsFromText(text) {
+  const normalized = normalizeInfoText(text);
+  if (!normalized) return null;
+
+  const details = {};
+
+  const segmentMatch = normalized.match(/treno\s+cancellato\s+da\s+(.+?)\s+a\s+(.+?)(?:\.|$)/i);
+  if (segmentMatch) {
+    details.cancelledFrom = segmentMatch[1].trim();
+    details.cancelledTo = segmentMatch[2].trim();
+  }
+
+  const arriveMatch = normalized.match(/arriva\s+a\s+([^\.]+?)(?:\.|$)/i);
+  if (arriveMatch) {
+    details.terminatedAt = arriveMatch[1].trim();
+  }
+
+  const limitedMatch = normalized.match(/corsa\s+limitata\s+(?:a|fino a)\s+([^\.]+?)(?:\.|$)/i);
+  if (limitedMatch && !details.terminatedAt) {
+    details.terminatedAt = limitedMatch[1].trim();
+  }
+
+  if (!details.cancelledFrom && details.terminatedAt) {
+    details.cancelledFrom = details.terminatedAt;
+  }
+
+  return Object.keys(details).length ? details : null;
+}
+
+function detectOperationalDisruption(d, fermate, lastRealIdx) {
+  const infoChunks = [];
+  const normalizedSubtitle = normalizeInfoText(d.subTitle);
+  if (normalizedSubtitle) infoChunks.push(normalizedSubtitle);
+
+  const normalizedVariation = normalizeInfoText(d.compVariazionePercorso);
+  if (normalizedVariation) infoChunks.push(normalizedVariation);
+
+  if (Array.isArray(d.compProvvedimenti)) {
+    d.compProvvedimenti.forEach((txt) => {
+      const clean = normalizeInfoText(txt);
+      if (clean) infoChunks.push(clean);
+    });
+  }
+
+  const lowerChunks = infoChunks.map((txt) => txt.toLowerCase());
+
+  const cancelledByFlag = d.trenoSoppresso === true;
+  const cancellationKeywords = ['cancell', 'soppress'];
+  const cancelledByText = lowerChunks.some((txt) =>
+    cancellationKeywords.some((kw) => txt.includes(kw))
+  );
+
+  const isCancelled = cancelledByFlag || cancelledByText;
+
+  const partialKeywords = [
+    'limitato',
+    'limitata',
+    'termina',
+    'terminato',
+    'fermo a',
+    'fermato a',
+    'ferma a',
+    'interrotto',
+    'interrotta',
+    'limitazione',
+  ];
+
+  let isPartial = false;
+  if (!isCancelled) {
+    const hasSuppressedStops = Array.isArray(d.fermateSoppresse) && d.fermateSoppresse.length > 0;
+    const subtitleLower = normalizedSubtitle.toLowerCase();
+    const variationLower = normalizedVariation.toLowerCase();
+
+    isPartial = hasSuppressedStops ||
+      partialKeywords.some((kw) => subtitleLower.includes(kw) || variationLower.includes(kw));
+
+    if (!isPartial) {
+      isPartial = lowerChunks.some((txt) => partialKeywords.some((kw) => txt.includes(kw)));
+    }
+  }
+
+  const firstStop = fermate[0] || null;
+  const lastStop = fermate[fermate.length - 1] || null;
+  const originName = firstStop?.stazione || d.origine || '';
+  const destinationName = lastStop?.stazione || d.destinazione || '';
+
+  const originRealDeparture = firstStop
+    ? parseToMillis(
+        firstStop.partenzaReale ??
+        firstStop.effettiva ??
+        firstStop.arrivoReale ??
+        null
+      )
+    : null;
+  const hasDeparted = (originRealDeparture != null) || lastRealIdx >= 0;
+
+  let partialStation = null;
+  let cancellationType = null; // 'FULL_SUPPRESSION' | 'SEGMENT'
+  let cancellationSegment = null;
+
+  const parsedDetails = infoChunks
+    .map(extractCancellationDetailsFromText)
+    .find(Boolean);
+
+  if ((isPartial || isCancelled) && fermate.length > 0) {
+    const idx = Math.max(0, lastRealIdx);
+    const terminationStop = fermate[idx];
+    const terminationName = terminationStop?.stazione || d.stazioneUltimoRilevamento || null;
+    partialStation = terminationName;
+
+    if (!originRealDeparture && lastRealIdx < 0) {
+      cancellationType = 'FULL_SUPPRESSION';
+      cancellationSegment = {
+        origin: originName,
+        destination: destinationName,
+      };
+    } else {
+      const nextPlannedStop = fermate[idx + 1] || null;
+      const shouldMarkSegment = Boolean(parsedDetails) || (idx < fermate.length - 1) || isPartial;
+      if (shouldMarkSegment) {
+        cancellationType = 'SEGMENT';
+        cancellationSegment = {
+          terminatedAt: parsedDetails?.terminatedAt || terminationName,
+          cancelledFrom: parsedDetails?.cancelledFrom || terminationName || originName,
+          cancelledTo: parsedDetails?.cancelledTo || destinationName || nextPlannedStop?.stazione || '',
+          destination: destinationName,
+          nextPlanned: nextPlannedStop?.stazione || null,
+        };
+      }
+    }
+  }
+
+  const reasonText = infoChunks[0] || '';
+
+  let finalType = cancellationType;
+  if (!finalType) {
+    if (!hasDeparted && (isCancelled || parsedDetails?.cancelledTo)) {
+      finalType = 'FULL_SUPPRESSION';
+    } else if (isPartial || isCancelled || parsedDetails) {
+      finalType = 'SEGMENT';
+    }
+  }
+
+  if (finalType === 'SEGMENT' && !cancellationSegment) {
+    cancellationSegment = {
+      terminatedAt: partialStation,
+      cancelledFrom: partialStation || originName,
+      cancelledTo: parsedDetails?.cancelledTo || destinationName,
+      destination: destinationName,
+      nextPlanned: null,
+    };
+  }
+
+  if (finalType === 'FULL_SUPPRESSION' && !cancellationSegment) {
+    cancellationSegment = {
+      origin: originName,
+      destination: destinationName,
+    };
+  }
+
+  const finalIsCancelled = finalType === 'FULL_SUPPRESSION';
+  const finalIsPartial = finalType === 'SEGMENT';
+
+  return {
+    isCancelled: finalIsCancelled,
+    isPartial: finalIsPartial,
+    partialStation,
+    reasonText,
+    cancellationType: finalType,
+    cancellationSegment,
+  };
+}
+
+function getLastOperationalStopIndex(journey, fermate, lastRealIdx, lastDepartedIdx) {
+  const fallback = Math.max(
+    typeof lastRealIdx === 'number' ? lastRealIdx : -1,
+    typeof lastDepartedIdx === 'number' ? lastDepartedIdx : -1
+  );
+
+  if (!journey || journey.state !== 'PARTIAL') {
+    return fallback;
+  }
+
+  const disruption = journey.disruption || {};
+  const candidateNames = [
+    { name: disruption.cancellationSegment?.terminatedAt, offset: 0 },
+    { name: disruption.partialStation, offset: 0 },
+    { name: disruption.cancellationSegment?.cancelledFrom, offset: -1 },
+  ];
+
+  for (const candidate of candidateNames) {
+    if (!candidate.name) continue;
+    const idx = findStopIndexByName(fermate, candidate.name);
+    if (idx >= 0) {
+      const adjusted = Math.max(-1, idx + (candidate.offset || 0));
+      return adjusted;
+    }
+  }
+
+  return fallback;
+}
+
 function computeTravelProgress(fermate, lastDepartedIdx, now = Date.now()) {
   const nextIdx = lastDepartedIdx + 1;
   if (lastDepartedIdx < 0 || nextIdx >= fermate.length) {
@@ -413,18 +707,35 @@ function getTimelineGapSize(idx, lastDepartedIdx, timelineProgress, gapRange) {
   return null;
 }
 
-function getTimelineClassNames(idx, totalStops, lastDepartedIdx) {
+function getTimelineClassNames(idx, totalStops, lastDepartedIdx, journeyState, alertBoundaryIdx) {
   const safeLastDeparted = typeof lastDepartedIdx === 'number' ? lastDepartedIdx : -1;
+  const safeAlertBoundary = typeof alertBoundaryIdx === 'number'
+    ? alertBoundaryIdx
+    : Math.max(safeLastDeparted, -1);
   const hasPrevious = idx > 0;
   const hasNext = idx < totalStops - 1;
+  const isCancelled = journeyState === 'CANCELLED';
+  const isPartial = journeyState === 'PARTIAL';
 
-  const topClass = hasPrevious
+  let topClass = hasPrevious
     ? (idx - 1 <= safeLastDeparted ? 'line-top-past' : 'line-top-future')
     : 'line-top-none';
 
-  const bottomClass = hasNext
+  let bottomClass = hasNext
     ? (idx <= safeLastDeparted ? 'line-bottom-past' : 'line-bottom-future')
     : 'line-bottom-none';
+
+  if (isCancelled) {
+    if (hasPrevious) topClass = 'line-top-alert';
+    if (hasNext) bottomClass = 'line-bottom-alert';
+  } else if (isPartial) {
+    if (hasPrevious && idx - 1 >= safeAlertBoundary) {
+      topClass = 'line-top-alert';
+    }
+    if (hasNext && idx >= safeAlertBoundary) {
+      bottomClass = 'line-bottom-alert';
+    }
+  }
 
   return `${topClass} ${bottomClass}`;
 }
@@ -434,7 +745,13 @@ function computeJourneyState(d) {
   const now = Date.now();
 
   if (fermate.length === 0) {
-    return { state: 'UNKNOWN', pastCount: 0, total: 0, minutesToDeparture: null };
+    return {
+      state: 'UNKNOWN',
+      pastCount: 0,
+      total: 0,
+      minutesToDeparture: null,
+      disruption: { reasonText: '', partialStation: null },
+    };
   }
 
   const total = fermate.length;
@@ -446,11 +763,16 @@ function computeJourneyState(d) {
 
   const lastRealIdx = getLastRealStopIndex(fermate);
   const pastCount = lastRealIdx >= 0 ? lastRealIdx + 1 : 0;
+  const disruption = detectOperationalDisruption(d, fermate, lastRealIdx);
 
   let state = 'UNKNOWN';
   let minutesToDeparture = null;
 
-  if (pastCount === 0) {
+  if (disruption.isCancelled) {
+    state = 'CANCELLED';
+  } else if (disruption.isPartial) {
+    state = 'PARTIAL';
+  } else if (pastCount === 0) {
     if (firstProg && firstProg > now) {
       state = 'PLANNED';
       minutesToDeparture = Math.round((firstProg - now) / 60000);
@@ -463,7 +785,7 @@ function computeJourneyState(d) {
     state = 'RUNNING';
   }
 
-  return { state, pastCount, total, minutesToDeparture };
+  return { state, pastCount, total, minutesToDeparture, disruption };
 }
 
 function findCurrentStopInfo(d) {
@@ -496,11 +818,15 @@ function findCurrentStopInfo(d) {
 }
 
 function getGlobalDelayMinutes(d) {
-  if (typeof d.ritardo === 'number') return d.ritardo;
+  const direct = parseDelayMinutes(d.ritardo);
+  if (direct != null) return direct;
   if (Array.isArray(d.compRitardo)) {
     const txt = d.compRitardo[0] || '';
-    const match = txt.match(/(\d+)\s*min/);
-    if (match) return Number(match[1]);
+    const match = txt.match(/(-?\d+)\s*min/);
+    if (match) {
+      const parsed = Number(match[1]);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
   }
   return null;
 }
@@ -524,11 +850,54 @@ function getCompletionChip(d, journey, globalDelay) {
   };
 }
 
+function buildPositionText(journey, currentInfo, fermate, lastOperationalIdx) {
+  const total = journey.total || (Array.isArray(fermate) ? fermate.length : 0);
+  const currentIndex = currentInfo.currentIndex >= 0 ? currentInfo.currentIndex : 0;
+  if (total <= 0) return '';
+
+  if (journey.state === 'PARTIAL') {
+    const disruptionInfo = journey.disruption || {};
+    const terminationName =
+      disruptionInfo.cancellationSegment?.terminatedAt ||
+      disruptionInfo.partialStation ||
+      (lastOperationalIdx >= 0
+        ? (fermate[lastOperationalIdx]?.stazione || fermate[lastOperationalIdx]?.stazioneNome || '')
+        : '');
+
+    const hasReachedTermination =
+      lastOperationalIdx >= 0 && currentIndex >= lastOperationalIdx;
+
+    const friendlyStop = terminationName || "l'ultima fermata utile";
+    const positionLabel = `fermata ${Math.min(currentIndex + 1, total)} di ${total}`;
+
+    if (!hasReachedTermination) {
+      return `Corsa limitata: termina a ${friendlyStop} (${positionLabel}).`;
+    }
+    return `Corsa interrotta a ${friendlyStop} (${positionLabel}).`;
+  } else if (journey.state === 'RUNNING' && total > 0) {
+    return `Fermata ${currentIndex + 1} di ${total}.`;
+  } else if (journey.state === 'PLANNED' && journey.minutesToDeparture != null) {
+    const human = humanizeDeltaMinutes(journey.minutesToDeparture);
+    return `Partenza prevista ${human}.`;
+  }
+
+  return '';
+}
+
 function buildPrimaryStatus(d, journey, currentInfo) {
   const origin = d.origine || '';
   const destination = d.destinazione || '';
   const kindInfo = getTrainKindInfo(d);
   const globalDelay = getGlobalDelayMinutes(d);
+  const disruption = journey.disruption || {};
+  const cancellationType = disruption.cancellationType || null;
+  const cancellationSegment = disruption.cancellationSegment || null;
+  const cancellationReasonText = normalizeInfoText(disruption.reasonText);
+  const enrichedCancellationReason =
+    cancellationReasonText && !isGenericCancellationText(cancellationReasonText)
+      ? cancellationReasonText
+      : '';
+  const enrichedCancellationIsOfficial = /cancell|soppress/i.test(enrichedCancellationReason);
 
   let title = '';
   if (kindInfo.label) title = `${kindInfo.label} ${d.numeroTreno || ''}`.trim();
@@ -538,6 +907,7 @@ function buildPrimaryStatus(d, journey, currentInfo) {
   if (origin || destination) subtitle = `${origin || '?'} → ${destination || '?'}`;
 
   let mainLine = '';
+  let infoLine = '';
   switch (journey.state) {
     case 'PLANNED': {
       if (journey.minutesToDeparture != null) {
@@ -573,13 +943,99 @@ function buildPrimaryStatus(d, journey, currentInfo) {
     case 'COMPLETED':
       mainLine = 'Il treno ha terminato la corsa.';
       break;
+    case 'CANCELLED':
+      if (cancellationType === 'FULL_SUPPRESSION') {
+        const originName = cancellationSegment?.origin || origin || 'la stazione di origine';
+        const destinationName = cancellationSegment?.destination || destination || '';
+        if (enrichedCancellationIsOfficial) {
+          mainLine = enrichedCancellationReason;
+          infoLine = destinationName
+            ? `Tratta prevista: ${originName} → ${destinationName}.`
+            : 'La corsa non è mai partita.';
+        } else {
+          mainLine = `Corsa soppressa: il treno non è mai partito da ${originName}.`;
+          infoLine = destinationName
+            ? `Tratta prevista: ${originName} → ${destinationName}.`
+            : 'La corsa non è mai partita.';
+        }
+      } else if (cancellationType === 'SEGMENT') {
+        const terminatedAt = cancellationSegment?.terminatedAt || disruption.partialStation;
+        const cancelledFrom = cancellationSegment?.cancelledFrom || terminatedAt || 'la tratta interessata';
+        const cancelledTo = cancellationSegment?.cancelledTo || cancellationSegment?.destination || destination || 'la destinazione prevista';
+        if (enrichedCancellationIsOfficial) {
+          mainLine = enrichedCancellationReason;
+          infoLine = terminatedAt
+            ? `Ultima fermata servita: ${terminatedAt}. La corsa non prosegue verso ${cancelledTo}.`
+            : `La corsa non prosegue verso ${cancelledTo}.`;
+        } else {
+          mainLine = `Treno cancellato da ${cancelledFrom} a ${cancelledTo}.`;
+          infoLine = terminatedAt
+            ? `Ultima fermata servita: ${terminatedAt}. La corsa non prosegue verso ${cancelledTo}.`
+            : `La corsa non prosegue verso ${cancelledTo}.`;
+        }
+      } else if (disruption.partialStation) {
+        if (enrichedCancellationIsOfficial) {
+          mainLine = enrichedCancellationReason;
+          infoLine = `Ultima fermata servita: ${disruption.partialStation}.`;
+        } else {
+          mainLine = `Treno cancellato e fermo a ${disruption.partialStation}.`;
+          infoLine = '';
+        }
+      } else if (currentInfo.currentStop && currentInfo.currentStop.stazione) {
+        if (enrichedCancellationIsOfficial) {
+          mainLine = enrichedCancellationReason;
+          infoLine = `Ultimo rilevamento: ${currentInfo.currentStop.stazione}.`;
+        } else {
+          mainLine = `Treno cancellato e fermo a ${currentInfo.currentStop.stazione}.`;
+          infoLine = '';
+        }
+      } else if (d.stazioneUltimoRilevamento) {
+        if (enrichedCancellationIsOfficial) {
+          mainLine = enrichedCancellationReason;
+          infoLine = `Ultimo rilevamento: ${d.stazioneUltimoRilevamento}.`;
+        } else {
+          mainLine = `Treno cancellato e fermo a ${d.stazioneUltimoRilevamento}.`;
+          infoLine = '';
+        }
+      } else {
+        mainLine = enrichedCancellationReason || 'Il treno è stato cancellato.';
+        infoLine = '';
+      }
+      break;
+    case 'PARTIAL': {
+      const station =
+        disruption.partialStation ||
+        (currentInfo.currentStop && currentInfo.currentStop.stazione);
+      if (cancellationType === 'SEGMENT') {
+        const cancelledTo = cancellationSegment?.cancelledTo || cancellationSegment?.destination || destination || 'la destinazione prevista';
+        const cancelledFrom = cancellationSegment?.cancelledFrom || station || 'la tratta interessata';
+        if (enrichedCancellationIsOfficial) {
+          mainLine = enrichedCancellationReason;
+          infoLine = station
+            ? `Ultima fermata servita: ${station}.`
+            : `La corsa non proseguirà verso ${cancelledTo}.`;
+        } else {
+          mainLine = `Treno cancellato da ${cancelledFrom} a ${cancelledTo}.`;
+          infoLine = station
+            ? `Ultima fermata servita: ${station}.`
+            : 'La corsa non proseguirà verso la destinazione prevista.';
+        }
+      } else {
+        mainLine = station
+          ? `Il treno ha terminato la corsa a ${station}.`
+          : 'Il treno ha terminato la corsa prima della destinazione prevista.';
+        infoLine = enrichedCancellationReason || 'La corsa non proseguirà verso la destinazione prevista.';
+      }
+      break;
+    }
     default:
       mainLine = 'Lo stato del treno non è chiaro.';
   }
 
   let delayLine = '';
+  const rfiReason = normalizeInfoText(disruption.reasonText);
   let delaySubLine = '';
-  if (globalDelay != null) {
+  if (globalDelay != null && journey.state !== 'CANCELLED') {
     const v = Number(globalDelay);
 
     let chipClass = 'delay-chip-on';
@@ -596,17 +1052,28 @@ function buildPrimaryStatus(d, journey, currentInfo) {
         label = `${Math.abs(v)} min. anticipo`;
       }
     }
+    delayLine = `<span class="delay-chip ${chipClass}">${label}</span>`;
+  }
+
+  const isCancellationState = journey.state === 'CANCELLED' || journey.state === 'PARTIAL';
+  if (isCancellationState && rfiReason) {
+    delaySubLine = rfiReason;
+  }
+
+  if (!delaySubLine) {
     const rawMotivo =
-      d.compVariazionePercorso ||   // se hai un campo così nel JSON
+      d.compVariazionePercorso ||
       d.compMotivoRitardo ||
       d.subTitle ||
       '';
-
-    if (rawMotivo && String(rawMotivo).trim() !== '') {
-      delaySubLine = String(rawMotivo).trim();
+    const normalizedMotivo = normalizeInfoText(rawMotivo);
+    if (normalizedMotivo && !isCancellationState) {
+      delaySubLine = normalizedMotivo;
     }
+  }
 
-    delayLine = `<span class="delay-chip ${chipClass}">${label}</span>`;
+  if (!delaySubLine && infoLine) {
+    delaySubLine = infoLine;
   }
   return {
     title,
@@ -635,8 +1102,13 @@ function renderTrainStatus(payload) {
 
   const journey = computeJourneyState(d);
   const currentInfo = findCurrentStopInfo(d);
-  const primary = buildPrimaryStatus(d, journey, currentInfo);
   const fermate = Array.isArray(d.fermate) ? d.fermate : [];
+  const lastRealIdx = fermate.length > 0 ? getLastRealStopIndex(fermate) : -1;
+  const lastDepartedIdx = fermate.length > 0 ? getLastDepartedStopIndex(fermate) : -1;
+  const lastOperationalIdx = fermate.length > 0
+    ? getLastOperationalStopIndex(journey, fermate, lastRealIdx, lastDepartedIdx)
+    : -1;
+  const primary = buildPrimaryStatus(d, journey, currentInfo);
   const globalDelay = getGlobalDelayMinutes(d);
 
   const last = fermate[fermate.length - 1];
@@ -649,11 +1121,18 @@ function renderTrainStatus(payload) {
     ? formatTimeFlexible(last.arrivo_teorico ?? last.arrivoTeorico ?? last.programmata)
     : '-';
 
-  const badgeStateClass =
-    journey.state === 'PLANNED' ? 'planned' :
-      journey.state === 'RUNNING' ? 'running' :
-        journey.state === 'COMPLETED' ? 'completed' :
-          'unknown';
+  const badgeLabelMap = {
+    PLANNED: 'Pianificato',
+    RUNNING: 'In viaggio',
+    COMPLETED: 'Concluso',
+    CANCELLED: 'Soppresso',
+    PARTIAL: 'Cancellato parz.',
+    UNKNOWN: 'Sconosciuto',
+  };
+
+  const stateKey = journey.state || 'UNKNOWN';
+  const badgeStateClass = `badge-status-${stateKey.toLowerCase()}`;
+  const badgeStateLabel = badgeLabelMap[stateKey] || badgeLabelMap.UNKNOWN;
 
   const completionChip = getCompletionChip(d, journey, globalDelay);
 
@@ -663,15 +1142,12 @@ function renderTrainStatus(payload) {
         <div class='train-title-row'>
           <img src='/img/trenitalia.png' alt='Logo Trenitalia' class='train-logo' />
           <h2 class='train-title ${primary.kindClass || ''}'>${primary.title || 'Dettagli treno'}</h2>
-          <span class='badge-status badge-status-${badgeStateClass}'>
-            ${journey.state === 'PLANNED' ? 'Pianificato' :
-      journey.state === 'RUNNING' ? 'In viaggio' :
-        journey.state === 'COMPLETED' ? 'Concluso' :
-          'Sconosciuto'}
+          <span class='badge-status ${badgeStateClass}'>
+            ${badgeStateLabel}
           </span>
         </div>
         <div class='train-route'>
-          <span class='route-main'>${primary.subtitle}</span>
+          <span class='route-main'>${primary.subtitle || ''}</span>
         </div>
         <div class='train-times'>
           <span>Partenza <strong>${plannedDeparture}</strong></span>
@@ -691,10 +1167,7 @@ function renderTrainStatus(payload) {
   `;
 
   const currentIndex = currentInfo.currentIndex >= 0 ? currentInfo.currentIndex : 0;
-  const positionText =
-    journey.total > 0
-      ? `Fermata ${currentIndex + 1} di ${journey.total}`
-      : '';
+  const positionText = buildPositionText(journey, currentInfo, fermate, lastOperationalIdx);
 
   const primaryHtml = `
     <div class='train-primary-stat'>
@@ -721,13 +1194,17 @@ function renderTrainStatus(payload) {
 
   let tableHtml = '';
   if (fermate.length > 0) {
-    const lastRealIdx = getLastRealStopIndex(fermate);
-    const lastDepartedIdx = getLastDepartedStopIndex(fermate);
     const timelineProgress = computeTravelProgress(fermate, lastDepartedIdx);
     const timelineGapRange = getTimelineGapRange();
 
     const rows = fermate.map((f, idx) => {
       const isCurrent = currentInfo.currentIndex === idx;
+      const isFirstStop = idx === 0;
+      const isLastStop = idx === fermate.length - 1;
+      const showArrival = !isFirstStop;
+      const showDeparture = !isLastStop;
+      const withinOperationalPlan =
+        journey.state !== 'PARTIAL' || lastOperationalIdx < 0 || idx <= lastOperationalIdx;
 
       const arrProgRaw = f.arrivo_teorico ?? f.arrivoTeorico ?? f.programmata;
       const depProgRaw = f.partenza_teorica ?? f.partenzaTeorica ?? f.programmata;
@@ -742,31 +1219,6 @@ function renderTrainStatus(payload) {
       let arrPredRaw = !hasRealArrival ? (f.arrivoPrevista ?? null) : null;
       let depPredRaw = !hasRealDeparture ? (f.partenzaPrevista ?? null) : null;
 
-      // se non ci sono previsti ma il treno è in viaggio e ha un ritardo globale,
-      // li calcoliamo come programmato + ritardo globale
-      if (
-        journey.state === 'RUNNING' &&
-        globalDelay != null &&
-        globalDelay !== 0 &&
-        !hasRealArrival &&
-        arrProgRaw &&
-        idx >= currentIndex
-      ) {
-        const baseMs = parseToMillis(arrProgRaw);
-        if (baseMs != null) arrPredRaw = baseMs + globalDelay * 60000;
-      }
-      if (
-        journey.state === 'RUNNING' &&
-        globalDelay != null &&
-        globalDelay !== 0 &&
-        !hasRealDeparture &&
-        depProgRaw &&
-        idx >= currentIndex
-      ) {
-        const baseMs2 = parseToMillis(depProgRaw);
-        if (baseMs2 != null) depPredRaw = baseMs2 + globalDelay * 60000;
-      }
-
       const arrProgMs = arrProgRaw ? parseToMillis(arrProgRaw) : null;
       const depProgMs = depProgRaw ? parseToMillis(depProgRaw) : null;
       const arrProg = arrProgRaw ? formatTimeFlexible(arrProgRaw) : '-';
@@ -777,39 +1229,37 @@ function renderTrainStatus(payload) {
       const arrRealHH = hhmmFromRaw(arrRealRaw);
       const depRealHH = hhmmFromRaw(depRealRaw);
 
-      const ritArr = typeof f.ritardoArrivo === 'number' ? f.ritardoArrivo : globalDelay;
-      const ritDep = typeof f.ritardoPartenza === 'number' ? f.ritardoPartenza : globalDelay;
+      const ritArr = resolveDelay(f.ritardoArrivo, globalDelay);
+      const ritDep = resolveDelay(f.ritardoPartenza, globalDelay);
 
       const shouldForecastArrival =
-        journey.state === 'RUNNING' &&
-        typeof globalDelay === 'number' &&
-        globalDelay > 0 &&
+        (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
         !hasRealArrival &&
         idx >= currentIndex &&
-        arrProgMs != null;
+        withinOperationalPlan &&
+        arrProgMs != null &&
+        Number.isFinite(ritArr) &&
+        ritArr !== 0;
 
       const shouldForecastDeparture =
-        journey.state === 'RUNNING' &&
-        typeof globalDelay === 'number' &&
-        globalDelay > 0 &&
+        (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
         !hasRealDeparture &&
         idx >= currentIndex &&
-        depProgMs != null;
+        withinOperationalPlan &&
+        depProgMs != null &&
+        Number.isFinite(ritDep) &&
+        ritDep !== 0;
 
       if (shouldForecastArrival) {
-        arrPredRaw = arrProgMs + globalDelay * 60000;
+        arrPredRaw = arrProgMs + ritArr * 60000;
       }
 
       if (shouldForecastDeparture) {
-        depPredRaw = depProgMs + globalDelay * 60000;
+        depPredRaw = depProgMs + ritDep * 60000;
       }
 
-      const bin =
-        f.binarioEffettivoArrivoDescrizione ||
-        f.binarioEffettivoPartenzaDescrizione ||
-        f.binarioProgrammatoArrivoDescrizione ||
-        f.binarioProgrammatoPartenzaDescrizione ||
-        '';
+      const trackInfo = extractTrackInfo(f);
+      const trackClass = trackInfo.isReal ? 'col-track-pill col-track-pill--real' : 'col-track-pill';
 
       // stato riga (passato / corrente / futuro)
       let rowClass = '';
@@ -822,7 +1272,21 @@ function renderTrainStatus(payload) {
         rowClass = 'stop-future';
       }
 
-      const timelineClasses = getTimelineClassNames(idx, fermate.length, lastDepartedIdx);
+      const isCancelledStop =
+        journey.state === 'CANCELLED' ||
+        (journey.state === 'PARTIAL' && lastOperationalIdx >= 0 && idx > lastOperationalIdx);
+
+      if (isCancelledStop) {
+        rowClass += ' stop-cancelled';
+      }
+
+      const timelineClasses = getTimelineClassNames(
+        idx,
+        fermate.length,
+        lastDepartedIdx,
+        journey.state,
+        lastOperationalIdx
+      );
       const gapSize = getTimelineGapSize(idx, lastDepartedIdx, timelineProgress, timelineGapRange);
       const timelineStyleAttr = gapSize != null ? ` style="--timeline-gap-size: ${gapSize}px"` : '';
 
@@ -832,7 +1296,7 @@ function renderTrainStatus(payload) {
       if (hasRealArrival && arrRealRaw) {
         if (arrProgHH && arrRealHH && arrProgHH === arrRealHH) {
           arrivalEffClass = 'delay-ok';
-        } else if (ritArr != null) {
+        } else if (Number.isFinite(ritArr)) {
           if (ritArr < 0) arrivalEffClass = 'delay-early';
           else arrivalEffClass = 'delay-mid';
         }
@@ -842,7 +1306,7 @@ function renderTrainStatus(payload) {
       if (hasRealDeparture && depRealRaw) {
         if (depProgHH && depRealHH && depProgHH === depRealHH) {
           departEffClass = 'delay-ok';
-        } else if (ritDep != null) {
+        } else if (Number.isFinite(ritDep)) {
           if (ritDep < 0) departEffClass = 'delay-early';
           else departEffClass = 'delay-mid';
         }
@@ -850,21 +1314,28 @@ function renderTrainStatus(payload) {
 
       // ARRIVO: riga effettivo / previsto
       let arrivalLine = '';
-      if (hasRealArrival && arrRealRaw) {
-        arrivalLine = `<span class="time-actual ${arrivalEffClass}">${formatTimeFlexible(arrRealRaw)}</span>`;
-      } else if (arrPredRaw != null && ritArr != null && ritArr !== 0 && idx >= currentIndex) {
-        const forecastClass = ritArr > 0 ? 'forecast-late' : 'forecast-early';
-        arrivalLine = `<span class="time-actual ${forecastClass}">${formatTimeFlexible(arrPredRaw)}</span>`;
+      if (showArrival) {
+        if (hasRealArrival && arrRealRaw) {
+          arrivalLine = `<span class="time-actual ${arrivalEffClass}">${formatTimeFlexible(arrRealRaw)}</span>`;
+        } else if (arrPredRaw != null && Number.isFinite(ritArr) && ritArr !== 0 && idx >= currentIndex) {
+          const forecastClass = ritArr > 0 ? 'forecast-late' : 'forecast-early';
+          arrivalLine = `<span class="time-actual ${forecastClass}">${formatTimeFlexible(arrPredRaw)}</span>`;
+        }
       }
 
       // PARTENZA: riga effettivo / previsto
       let departLine = '';
-      if (hasRealDeparture && depRealRaw) {
-        departLine = `<span class="time-actual ${departEffClass}">${formatTimeFlexible(depRealRaw)}</span>`;
-      } else if (depPredRaw != null && ritDep != null && ritDep !== 0 && idx >= currentIndex) {
-        const forecastClass = ritDep > 0 ? 'forecast-late' : 'forecast-early';
-        departLine = `<span class="time-actual ${forecastClass}">${formatTimeFlexible(depPredRaw)}</span>`;
+      if (showDeparture) {
+        if (hasRealDeparture && depRealRaw) {
+          departLine = `<span class="time-actual ${departEffClass}">${formatTimeFlexible(depRealRaw)}</span>`;
+        } else if (depPredRaw != null && Number.isFinite(ritDep) && ritDep !== 0 && idx >= currentIndex) {
+          const forecastClass = ritDep > 0 ? 'forecast-late' : 'forecast-early';
+          departLine = `<span class="time-actual ${forecastClass}">${formatTimeFlexible(depPredRaw)}</span>`;
+        }
       }
+
+      const arrivalScheduledDisplay = showArrival ? arrProg : '--';
+      const departureScheduledDisplay = showDeparture ? depProg : '--';
 
       return `
         <tr class="${rowClass}">
@@ -876,18 +1347,20 @@ function renderTrainStatus(payload) {
           </td>
           <td>
             <div class="time-block">
-              <span class="time-scheduled">${arrProg}</span>
+              <span class="time-scheduled">${arrivalScheduledDisplay}</span>
               ${arrivalLine}
             </div>
           </td>
           <td>
             <div class="time-block">
-              <span class="time-scheduled">${depProg}</span>
+              <span class="time-scheduled">${departureScheduledDisplay}</span>
               ${departLine}
             </div>
           </td>
           <td class="col-track">
-            ${bin ? `<span class="col-track-pill">${bin}</span>` : '<span class="soft"></span>'}
+            ${trackInfo.label
+              ? `<span class="${trackClass}" title="${trackInfo.isReal ? 'Binario effettivo' : 'Binario programmato'}">${trackInfo.label}</span>`
+              : '<span class="soft"></span>'}
           </td>
         </tr>
       `;
@@ -896,6 +1369,12 @@ function renderTrainStatus(payload) {
     // Generate mobile card HTML
     const cardRows = fermate.map((f, idx) => {
       const isCurrent = currentInfo.currentIndex === idx;
+      const isFirstStop = idx === 0;
+      const isLastStop = idx === fermate.length - 1;
+      const showArrival = !isFirstStop;
+      const showDeparture = !isLastStop;
+      const withinOperationalPlan =
+        journey.state !== 'PARTIAL' || lastOperationalIdx < 0 || idx <= lastOperationalIdx;
 
       const arrProgRaw = f.arrivo_teorico ?? f.arrivoTeorico ?? f.programmata;
       const depProgRaw = f.partenza_teorica ?? f.partenzaTeorica ?? f.programmata;
@@ -912,30 +1391,6 @@ function renderTrainStatus(payload) {
       let arrPredRaw = !hasRealArrival ? (f.arrivoPrevista ?? null) : null;
       let depPredRaw = !hasRealDeparture ? (f.partenzaPrevista ?? null) : null;
 
-      const shouldForecastArrival =
-        journey.state === 'RUNNING' &&
-        typeof globalDelay === 'number' &&
-        globalDelay > 0 &&
-        !hasRealArrival &&
-        idx >= currentIndex &&
-        arrProgMs != null;
-
-      const shouldForecastDeparture =
-        journey.state === 'RUNNING' &&
-        typeof globalDelay === 'number' &&
-        globalDelay > 0 &&
-        !hasRealDeparture &&
-        idx >= currentIndex &&
-        depProgMs != null;
-
-      if (shouldForecastArrival) {
-        arrPredRaw = arrProgMs + globalDelay * 60000;
-      }
-
-      if (shouldForecastDeparture) {
-        depPredRaw = depProgMs + globalDelay * 60000;
-      }
-
       const arrProg = arrProgRaw ? formatTimeFlexible(arrProgRaw) : '-';
       const depProg = depProgRaw ? formatTimeFlexible(depProgRaw) : '-';
 
@@ -944,15 +1399,37 @@ function renderTrainStatus(payload) {
       const arrRealHH = hhmmFromRaw(arrRealRaw);
       const depRealHH = hhmmFromRaw(depRealRaw);
 
-      const ritArr = typeof f.ritardoArrivo === 'number' ? f.ritardoArrivo : globalDelay;
-      const ritDep = typeof f.ritardoPartenza === 'number' ? f.ritardoPartenza : globalDelay;
+      const ritArr = resolveDelay(f.ritardoArrivo, globalDelay);
+      const ritDep = resolveDelay(f.ritardoPartenza, globalDelay);
 
-      const bin =
-        f.binarioEffettivoArrivoDescrizione ||
-        f.binarioEffettivoPartenzaDescrizione ||
-        f.binarioProgrammatoArrivoDescrizione ||
-        f.binarioProgrammatoPartenzaDescrizione ||
-        '';
+      const shouldForecastArrival =
+        (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
+        !hasRealArrival &&
+        idx >= currentIndex &&
+        withinOperationalPlan &&
+        arrProgMs != null &&
+        Number.isFinite(ritArr) &&
+        ritArr !== 0;
+
+      const shouldForecastDeparture =
+        (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
+        !hasRealDeparture &&
+        idx >= currentIndex &&
+        withinOperationalPlan &&
+        depProgMs != null &&
+        Number.isFinite(ritDep) &&
+        ritDep !== 0;
+
+      if (shouldForecastArrival) {
+        arrPredRaw = arrProgMs + ritArr * 60000;
+      }
+
+      if (shouldForecastDeparture) {
+        depPredRaw = depProgMs + ritDep * 60000;
+      }
+
+      const trackInfo = extractTrackInfo(f);
+      const cardTrackClass = trackInfo.isReal ? 'stop-card-track stop-card-track--real' : 'stop-card-track';
 
       let rowClass = '';
       if (isCurrent) {
@@ -963,7 +1440,20 @@ function renderTrainStatus(payload) {
         rowClass = 'stop-future';
       }
 
-      const timelineClasses = getTimelineClassNames(idx, fermate.length, lastDepartedIdx);
+      const isCancelledStop =
+        journey.state === 'CANCELLED' ||
+        (journey.state === 'PARTIAL' && lastOperationalIdx >= 0 && idx > lastOperationalIdx);
+      if (isCancelledStop) {
+        rowClass += ' stop-cancelled';
+      }
+
+      const timelineClasses = getTimelineClassNames(
+        idx,
+        fermate.length,
+        lastDepartedIdx,
+        journey.state,
+        lastOperationalIdx
+      );
       const gapSize = getTimelineGapSize(idx, lastDepartedIdx, timelineProgress, timelineGapRange);
       const timelineStyleAttr = gapSize != null ? ` style="--timeline-gap-size: ${gapSize}px"` : '';
 
@@ -971,7 +1461,7 @@ function renderTrainStatus(payload) {
       if (hasRealArrival && arrRealRaw) {
         if (arrProgHH && arrRealHH && arrProgHH === arrRealHH) {
           arrivalEffClass = 'delay-ok';
-        } else if (ritArr != null) {
+        } else if (Number.isFinite(ritArr)) {
           if (ritArr < 0) arrivalEffClass = 'delay-early';
           else arrivalEffClass = 'delay-mid';
         }
@@ -981,7 +1471,7 @@ function renderTrainStatus(payload) {
       if (hasRealDeparture && depRealRaw) {
         if (depProgHH && depRealHH && depProgHH === depRealHH) {
           departEffClass = 'delay-ok';
-        } else if (ritDep != null) {
+        } else if (Number.isFinite(ritDep)) {
           if (ritDep < 0) departEffClass = 'delay-early';
           else departEffClass = 'delay-mid';
         }
@@ -989,22 +1479,26 @@ function renderTrainStatus(payload) {
 
       let arrivalActual = '';
       let arrivalActualClass = '';
-      if (hasRealArrival && arrRealRaw) {
-        arrivalActual = formatTimeFlexible(arrRealRaw);
-        arrivalActualClass = arrivalEffClass || 'delay-ok';
-      } else if (arrPredRaw != null && ritArr != null && ritArr !== 0 && idx >= currentIndex) {
-        arrivalActual = formatTimeFlexible(arrPredRaw);
-        arrivalActualClass = ritArr > 0 ? 'forecast-late' : 'forecast-early';
+      if (showArrival) {
+        if (hasRealArrival && arrRealRaw) {
+          arrivalActual = formatTimeFlexible(arrRealRaw);
+          arrivalActualClass = arrivalEffClass || 'delay-ok';
+        } else if (arrPredRaw != null && Number.isFinite(ritArr) && ritArr !== 0 && idx >= currentIndex) {
+          arrivalActual = formatTimeFlexible(arrPredRaw);
+          arrivalActualClass = ritArr > 0 ? 'forecast-late' : 'forecast-early';
+        }
       }
 
       let departureActual = '';
       let departureActualClass = '';
-      if (hasRealDeparture && depRealRaw) {
-        departureActual = formatTimeFlexible(depRealRaw);
-        departureActualClass = departEffClass || 'delay-ok';
-      } else if (depPredRaw != null && ritDep != null && ritDep !== 0 && idx >= currentIndex) {
-        departureActual = formatTimeFlexible(depPredRaw);
-        departureActualClass = ritDep > 0 ? 'forecast-late' : 'forecast-early';
+      if (showDeparture) {
+        if (hasRealDeparture && depRealRaw) {
+          departureActual = formatTimeFlexible(depRealRaw);
+          departureActualClass = departEffClass || 'delay-ok';
+        } else if (depPredRaw != null && Number.isFinite(ritDep) && ritDep !== 0 && idx >= currentIndex) {
+          departureActual = formatTimeFlexible(depPredRaw);
+          departureActualClass = ritDep > 0 ? 'forecast-late' : 'forecast-early';
+        }
       }
 
       if (!arrivalActual) {
@@ -1014,8 +1508,11 @@ function renderTrainStatus(payload) {
         departureActualClass = 'soft';
       }
 
-      const arrivalActualDisplay = arrivalActual || '--:--';
-      const departureActualDisplay = departureActual || '--:--';
+      const arrivalActualDisplay = showArrival && arrivalActual ? arrivalActual : '--:--';
+      const departureActualDisplay = showDeparture && departureActual ? departureActual : '--:--';
+
+      const arrivalPlannedDisplay = showArrival ? arrProg : '--';
+      const departurePlannedDisplay = showDeparture ? depProg : '--';
 
       const stazioneName = f.stazione || f.stazioneNome || '-';
 
@@ -1028,23 +1525,25 @@ function renderTrainStatus(payload) {
           <div class="stop-card-content">
             <div class="stop-card-header">
               <div class="stop-card-name">${stazioneName}</div>
-              ${bin ? `<div class="stop-card-track">${bin}</div>` : ''}
+              ${trackInfo.label ? `<div class="${cardTrackClass}" title="${trackInfo.isReal ? 'Binario effettivo' : 'Binario programmato'}">${trackInfo.label}</div>` : ''}
             </div>
             <div class="stop-card-times">
+              ${showArrival ? `
               <div class="stop-card-time">
                 <div class="stop-card-time-label">Arrivo</div>
                 <div class="stop-card-time-values">
-                  <span class="stop-card-time-planned">${arrProg}</span>
+                  <span class="stop-card-time-planned">${arrivalPlannedDisplay}</span>
                   <span class="stop-card-time-actual ${arrivalActualClass}">${arrivalActualDisplay}</span>
                 </div>
-              </div>
+              </div>` : ''}
+              ${showDeparture ? `
               <div class="stop-card-time">
                 <div class="stop-card-time-label">Partenza</div>
                 <div class="stop-card-time-values">
-                  <span class="stop-card-time-planned">${depProg}</span>
+                  <span class="stop-card-time-planned">${departurePlannedDisplay}</span>
                   <span class="stop-card-time-actual ${departureActualClass}">${departureActualDisplay}</span>
                 </div>
-              </div>
+              </div>` : ''}
             </div>
           </div>
         </div>
