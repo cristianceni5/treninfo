@@ -12,11 +12,38 @@ const FAVORITES_KEY = 'monitor_treno_favorites';
 const MAX_RECENT = 5;
 const MAX_FAVORITES = 8;
 
+const REGION_LABELS = {
+  '1': 'Lombardia',
+  '2': 'Liguria',
+  '3': 'Piemonte',
+  '4': "Valle d'Aosta",
+  '5': 'Lazio',
+  '6': 'Umbria',
+  '7': 'Molise',
+  '8': 'Emilia-Romagna',
+  '10': 'Friuli Venezia Giulia',
+  '11': 'Marche',
+  '12': 'Veneto',
+  '13': 'Toscana',
+  '14': 'Sicilia',
+  '15': 'Basilicata',
+  '16': 'Puglia',
+  '17': 'Calabria',
+  '18': 'Campania',
+  '19': 'Abruzzo',
+  '20': 'Sardegna',
+  '21': 'Trentino-Alto Adige',
+  '22': 'Trentino-Alto Adige',
+};
+
 // DOM ----------------------------------------------------------------
 
 const stationQueryInput = document.getElementById('stationQuery');
 const stationList = document.getElementById('stationList');
-const stationSelected = document.getElementById('stationSelected');
+const stationInfoContainer = document.getElementById('stationInfo');
+const stationBoardContainer = document.getElementById('stationBoard');
+const stationBoardList = document.getElementById('stationBoardList');
+const stationBoardTabs = document.querySelectorAll('.station-board-tab');
 
 const trainNumberInput = document.getElementById('trainNumber');
 const trainSearchBtn = document.getElementById('trainSearchBtn');
@@ -26,6 +53,8 @@ const recentTrainsContainer = document.getElementById('recentTrains');
 const favoriteTrainsContainer = document.getElementById('favoriteTrains');
 
 let selectedStation = null;
+let stationBoardData = { departures: [], arrivals: [] };
+let stationBoardActiveTab = 'departures';
 
 // UTIL ---------------------------------------------------------------
 
@@ -168,6 +197,382 @@ function decodeDatasetValue(value) {
   }
 }
 
+function formatBoardClock(raw) {
+  if (raw == null) return '--:--';
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return '--:--';
+    if (/^\d{4}$/.test(trimmed)) {
+      return `${trimmed.slice(0, 2)}:${trimmed.slice(2, 4)}`;
+    }
+    if (trimmed.includes(':')) {
+      return trimmed.slice(0, 5);
+    }
+  }
+  if (typeof raw === 'number') {
+    return formatTimeFromMillis(raw);
+  }
+  return formatTimeFlexible(raw);
+}
+
+function normalizeStationCode(code) {
+  return String(code || '')
+    .trim()
+    .toUpperCase();
+}
+
+function buildCodeVariants(code) {
+  const normalized = normalizeStationCode(code);
+  if (!normalized) return [];
+  const variants = new Set([normalized]);
+  const noPrefix = normalized.replace(/^S/, '');
+  if (noPrefix) {
+    variants.add(noPrefix);
+    const noZeros = noPrefix.replace(/^0+/, '');
+    if (noZeros) variants.add(noZeros);
+  }
+  const digitsOnly = normalized.replace(/[^0-9]/g, '');
+  if (digitsOnly) variants.add(digitsOnly);
+  return Array.from(variants);
+}
+
+function getStationCodeCandidates(selection, stationDetails = {}, infoPayload = {}) {
+  const values = [
+    stationDetails.codiceStazione,
+    stationDetails.codStazione,
+    stationDetails.codice,
+    stationDetails.id,
+    stationDetails.stationCode,
+    infoPayload.stationCode,
+    selection?.code,
+  ];
+  const variants = values.flatMap(buildCodeVariants);
+  return Array.from(new Set(variants));
+}
+
+function matchWeatherEntryFromList(list, stationCodes) {
+  if (!Array.isArray(list) || !list.length) return null;
+  if (stationCodes.length) {
+    for (const entry of list) {
+      const entryCodes = buildCodeVariants(
+        entry?.codiceStazione ||
+        entry?.codStazione ||
+        entry?.codice ||
+        entry?.stationCode ||
+        entry?.id ||
+        entry?.stazione
+      );
+      if (!entryCodes.length) continue;
+      const matches = entryCodes.some((code) => stationCodes.includes(code));
+      if (matches) return entry;
+    }
+  }
+  return list[0];
+}
+
+function matchWeatherEntryFromObject(obj, stationCodes) {
+  if (!obj || typeof obj !== 'object') return null;
+  for (const code of stationCodes) {
+    if (Object.prototype.hasOwnProperty.call(obj, code) && obj[code]) {
+      return obj[code];
+    }
+    const lower = code.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(obj, lower) && obj[lower]) {
+      return obj[lower];
+    }
+  }
+
+  if (obj.stazioni) {
+    const nested = matchWeatherEntryFromObject(obj.stazioni, stationCodes);
+    if (nested) return nested;
+  }
+
+  const fallbackKey = Object.keys(obj).find((key) => obj[key] && typeof obj[key] === 'object');
+  return fallbackKey ? obj[fallbackKey] : null;
+}
+
+function resolveWeatherEntry(meteo, stationCodes = []) {
+  if (!meteo) return null;
+
+  const codes = Array.from(new Set(stationCodes));
+
+  if (Array.isArray(meteo?.datiMeteoList) && meteo.datiMeteoList.length) {
+    return matchWeatherEntryFromList(meteo.datiMeteoList, codes);
+  }
+
+  if (Array.isArray(meteo?.previsioni) && meteo.previsioni.length) {
+    return matchWeatherEntryFromList(meteo.previsioni, codes);
+  }
+
+  if (Array.isArray(meteo)) {
+    return matchWeatherEntryFromList(meteo, codes);
+  }
+
+  if (typeof meteo === 'object') {
+    const matched = matchWeatherEntryFromObject(meteo, codes);
+    if (matched) return matched;
+  }
+
+  return meteo;
+}
+
+function formatTemperatureValue(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return `${value}°C`;
+  const str = String(value).trim();
+  if (!str) return null;
+  if (str.endsWith('°C')) return str;
+  const normalized = Number(str.replace(',', '.'));
+  if (!Number.isNaN(normalized)) return `${normalized}°C`;
+  return str;
+}
+
+function pickTemperatureColor(tempValue) {
+  if (tempValue == null) return 'station-weather-temp--mild';
+  const numeric = Number(String(tempValue).replace('°C', '').replace(',', '.'));
+  if (Number.isNaN(numeric)) return 'station-weather-temp--mild';
+  if (numeric <= 0) return 'station-weather-temp--freezing';
+  if (numeric <= 10) return 'station-weather-temp--cold';
+  if (numeric <= 20) return 'station-weather-temp--mild';
+  if (numeric <= 28) return 'station-weather-temp--warm';
+  return 'station-weather-temp--hot';
+}
+
+function buildWeatherDetails(meteo, stationCodes = []) {
+  const entry = resolveWeatherEntry(meteo, stationCodes);
+  if (!entry) return null;
+
+  const temperatureSources = [
+    entry?.temperatura,
+    entry?.temp,
+    entry?.temperature,
+    entry?.gradi,
+    entry?.oggiTemperatura,
+    entry?.oggiTemperaturaMattino,
+    entry?.oggiTemperaturaPomeriggio,
+    entry?.oggiTemperaturaSera,
+    entry?.domaniTemperatura,
+  ];
+
+  let temperatureLabel = null;
+  for (const source of temperatureSources) {
+    const formatted = formatTemperatureValue(source);
+    if (formatted) {
+      temperatureLabel = formatted;
+      break;
+    }
+  }
+
+  if (!temperatureLabel) return null;
+
+  return {
+    temperature: temperatureLabel,
+    temperatureClass: pickTemperatureColor(temperatureLabel),
+  };
+}
+
+function resolveRegionLabel(stationDetails, infoPayload) {
+  const directLabel = stationDetails?.regione || stationDetails?.regionName;
+  if (directLabel) return directLabel;
+  const code = stationDetails?.codRegione ?? stationDetails?.codiceRegione ?? infoPayload?.regionId;
+  if (code == null) return null;
+  const normalized = String(code).trim();
+  if (!normalized) return null;
+  return REGION_LABELS[normalized] || normalized;
+}
+
+function resetStationDisplay(message = '') {
+  if (stationInfoContainer) {
+    if (message) {
+      stationInfoContainer.classList.remove('hidden');
+      stationInfoContainer.innerHTML = `<p class="small muted">${message}</p>`;
+    } else {
+      stationInfoContainer.classList.add('hidden');
+      stationInfoContainer.innerHTML = '';
+    }
+  }
+  if (stationBoardContainer && stationBoardList) {
+    stationBoardContainer.classList.add('hidden');
+    stationBoardList.innerHTML = '';
+  }
+  stationBoardData = { departures: [], arrivals: [] };
+  stationBoardActiveTab = 'departures';
+  stationBoardTabs.forEach((btn) => {
+    btn.classList.toggle('is-active', btn.dataset.board === 'departures');
+    btn.setAttribute('aria-selected', btn.dataset.board === 'departures' ? 'true' : 'false');
+  });
+}
+
+function setStationLoadingDisplay(name) {
+  if (!stationInfoContainer) return;
+  const safeName = escapeHtml(name || 'Stazione selezionata');
+  stationInfoContainer.innerHTML = `
+    <div class="station-info-header">
+      <div>
+        <p class="station-info-name">${safeName}</p>
+        <p class="station-info-region-text loading-indicator">
+          <span class="loading-indicator__spinner" aria-hidden="true"></span>
+          <span>Caricamento info stazione…</span>
+        </p>
+      </div>
+    </div>
+  `;
+  stationInfoContainer.classList.remove('hidden');
+  if (stationBoardContainer) {
+    stationBoardContainer.classList.remove('hidden');
+  }
+  if (stationBoardList) {
+    stationBoardList.innerHTML = `
+      <div class="station-board-loading loading-indicator loading-indicator--centered">
+        <span class="loading-indicator__spinner" aria-hidden="true"></span>
+        <span>Caricamento tabellone…</span>
+      </div>
+    `;
+  }
+}
+
+function renderStationInfoContent(selection, infoPayload) {
+  if (!stationInfoContainer) return;
+  const stationDetails = infoPayload?.station || {};
+  const displayName = stationDetails.nomeLungo || selection?.name || stationDetails.nomeBreve || 'Stazione';
+  const regionLabel = resolveRegionLabel(stationDetails, infoPayload);
+  const lat = stationDetails.latitudine ?? stationDetails.lat ?? stationDetails.latitude;
+  const lon = stationDetails.longitudine ?? stationDetails.lon ?? stationDetails.longitude;
+  const hasCoords = lat != null && lon != null && lat !== '' && lon !== '';
+  const mapsLink = hasCoords ? `https://www.google.com/maps?q=${lat},${lon}` : null;
+  const stationCodes = getStationCodeCandidates(selection, stationDetails, infoPayload);
+  const weatherDetails = buildWeatherDetails(infoPayload?.meteo, stationCodes);
+
+  const regionLabelText = typeof regionLabel === 'string' ? regionLabel.trim() : '';
+  const temperatureText = typeof weatherDetails?.temperature === 'string' ? weatherDetails.temperature : '';
+  const rawTempClass = temperatureText && typeof weatherDetails?.temperatureClass === 'string'
+    ? weatherDetails.temperatureClass
+    : '';
+  const safeTempClass = rawTempClass ? ` ${escapeHtml(rawTempClass)}` : '';
+  const regionSegments = [];
+  if (regionLabelText) {
+    regionSegments.push(`<span class="station-info-region-label">${escapeHtml(regionLabelText)}</span>`);
+  }
+  if (temperatureText) {
+    regionSegments.push(`<span class="station-info-temp${safeTempClass}">${escapeHtml(temperatureText)}</span>`);
+  }
+  const regionLine = regionSegments.length
+    ? `<p class="station-info-region-text">${regionSegments.join(' · ')}</p>`
+    : '';
+
+  stationInfoContainer.classList.remove('hidden');
+  stationInfoContainer.innerHTML = `
+    <div class="station-info-header">
+      <div>
+        <p class="station-info-name">${escapeHtml(displayName)}</p>
+        ${regionLine}
+      </div>
+      ${mapsLink
+        ? `<a href="${mapsLink}" target="_blank" rel="noopener noreferrer" class="station-maps-btn">Maps</a>`
+        : ''}
+    </div>
+  `;
+}
+
+function buildBoardDelayBadge(delay, isCancelled) {
+  if (isCancelled) {
+    return '<span class="board-delay board-delay--cancelled">Cancellato</span>';
+  }
+  if (delay == null) {
+    return '<span class="board-delay board-delay--ontime">In orario</span>';
+  }
+  if (delay > 0) {
+    return `<span class="board-delay board-delay--late">+${delay} min</span>`;
+  }
+  if (delay < 0) {
+    return `<span class="board-delay board-delay--early">${delay} min</span>`;
+  }
+  return '<span class="board-delay board-delay--ontime">In orario</span>';
+}
+
+function getBoardTrack(entry, type) {
+  const result = { label: '', isReal: false };
+
+  const effective = type === 'departures'
+    ? entry.binarioEffettivoPartenzaDescrizione || entry.binarioEffettivoPartenza || entry.binarioEffettivo
+    : entry.binarioEffettivoArrivoDescrizione || entry.binarioEffettivoArrivo || entry.binarioEffettivo;
+
+  if (effective) {
+    result.label = effective;
+    result.isReal = true;
+    return result;
+  }
+
+  const planned = type === 'departures'
+    ? entry.binarioProgrammatoPartenzaDescrizione || entry.binarioProgrammatoPartenza
+    : entry.binarioProgrammatoArrivoDescrizione || entry.binarioProgrammatoArrivo;
+
+  if (planned) {
+    result.label = planned;
+  }
+
+  return result;
+}
+
+function buildStationBoardRow(entry, type) {
+  const isDeparture = type === 'departures';
+  const rawTime = isDeparture
+    ? entry.compOrarioPartenzaZero || entry.orarioPartenza || entry.origineZero
+    : entry.compOrarioArrivoZero || entry.orarioArrivo || entry.destinazioneZero;
+  const timeLabel = formatBoardClock(rawTime);
+  const routeLabel = isDeparture
+    ? (entry.destinazione || entry.destinazioneBreve || entry.compDestinazione || '-')
+    : (entry.provenienza || entry.origine || entry.compOrigine || '-');
+  const category = entry.categoria || entry.compTipologiaTreno || entry.tipoTreno || 'Treno';
+  const trainNumber = entry.numeroTreno || entry.compNumeroTreno || '';
+  const trainLabel = `${category} ${trainNumber}`.trim();
+  const delay = resolveDelay(entry.ritardo, entry.compRitardo);
+  const isCancelled = entry.cancellato === true || entry.cancellata === true || entry.soppresso === true;
+  const trackInfo = getBoardTrack(entry, type);
+  const delayBadge = buildBoardDelayBadge(delay, isCancelled);
+  const destPrefix = isDeparture ? 'per ' : 'da ';
+  const ariaLabel = `${trainLabel} ${destPrefix}${routeLabel}`.trim();
+  const datasetNumber = escapeHtml(trainNumber || '');
+  const trackClass = trackInfo.isReal ? 'col-track-pill col-track-pill--real' : 'col-track-pill';
+
+  return `
+    <div class="station-board-row" role="button" tabindex="0" data-train-number="${datasetNumber}" aria-label="${escapeHtml(ariaLabel)}">
+      <div class="board-time">${escapeHtml(timeLabel)}</div>
+      <div class="board-main">
+        <div class="board-train">${escapeHtml(trainLabel || `Treno ${trainNumber || ''}`.trim())}</div>
+        <div class="board-destination">${destPrefix}${escapeHtml(routeLabel)}</div>
+      </div>
+      <div class="board-meta">
+        ${delayBadge}
+        ${trackInfo.label ? `<span class="${trackClass}">${escapeHtml(trackInfo.label)}</span>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderStationBoard(view = 'departures') {
+  if (!stationBoardContainer || !stationBoardList) return;
+  stationBoardActiveTab = view;
+  stationBoardContainer.classList.remove('hidden');
+  stationBoardTabs.forEach((btn) => {
+    const isActive = btn.dataset.board === view;
+    btn.classList.toggle('is-active', isActive);
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+
+  const dataList = view === 'arrivals'
+    ? (stationBoardData.arrivals || [])
+    : (stationBoardData.departures || []);
+
+  if (!Array.isArray(dataList) || dataList.length === 0) {
+    stationBoardList.innerHTML = '<p class="station-board-empty">Nessuna corsa disponibile.</p>';
+    return;
+  }
+
+  const rows = dataList.slice(0, 12).map((entry) => buildStationBoardRow(entry, view)).join('');
+  stationBoardList.innerHTML = rows;
+}
+
 // AUTOCOMPLETE STAZIONI ----------------------------------------------
 
 async function fetchStations(query) {
@@ -212,11 +617,11 @@ function renderStationList(items) {
 
 stationQueryInput.addEventListener('input', (e) => {
   selectedStation = null;
-  stationSelected.innerHTML = '';
+  resetStationDisplay();
   debouncedFetchStations(e.target.value || '');
 });
 
-stationList.addEventListener('click', (e) => {
+stationList.addEventListener('click', async (e) => {
   const li = e.target.closest('li');
   if (!li) return;
 
@@ -224,19 +629,87 @@ stationList.addEventListener('click', (e) => {
   const code = li.getAttribute('data-code') || '';
 
   selectedStation = { name, code };
+  stationBoardActiveTab = 'departures';
 
   stationQueryInput.value = name;
   stationList.innerHTML = '';
   stationList.hidden = true;
 
-  stationSelected.innerHTML = `
-    <span class='pill'>
-      <span class='pill-label'>Stazione</span>
-      <span class='pill-value'>${name}</span>
-      <span class='soft'>(${code})</span>
-    </span>
-  `;
+  setStationLoadingDisplay(name);
+
+  try {
+    const [infoRes, depRes, arrRes] = await Promise.all([
+      fetch(`${API_BASE}/api/stations/info?stationCode=${encodeURIComponent(code)}`),
+      fetch(`${API_BASE}/api/stations/departures?stationCode=${encodeURIComponent(code)}&when=now`),
+      fetch(`${API_BASE}/api/stations/arrivals?stationCode=${encodeURIComponent(code)}&when=now`),
+    ]);
+
+    const info = infoRes.ok ? await infoRes.json() : null;
+    const dep = depRes.ok ? await depRes.json() : null;
+    const arr = arrRes.ok ? await arrRes.json() : null;
+
+    const infoPayload = info?.ok ? info : null;
+    stationBoardData = {
+      departures: dep?.ok ? dep.data || [] : [],
+      arrivals: arr?.ok ? arr.data || [] : [],
+    };
+
+    if (infoPayload) {
+      renderStationInfoContent(selectedStation, infoPayload);
+    } else {
+      stationInfoContainer.classList.remove('hidden');
+      stationInfoContainer.innerHTML = `<p class="small muted">Informazioni non disponibili per ${escapeHtml(name)}.</p>`;
+    }
+
+    renderStationBoard('departures');
+  } catch (err) {
+    console.error('Errore caricamento dati stazione:', err);
+    if (stationInfoContainer) {
+      stationInfoContainer.classList.remove('hidden');
+      stationInfoContainer.innerHTML = '<p class="error">Errore nel recupero delle informazioni della stazione.</p>';
+    }
+    if (stationBoardContainer) {
+      stationBoardContainer.classList.add('hidden');
+    }
+  }
 });
+
+if (stationBoardContainer) {
+  stationBoardContainer.addEventListener('click', (e) => {
+    const tab = e.target.closest('.station-board-tab');
+    if (!tab) return;
+    const view = tab.dataset.board === 'arrivals' ? 'arrivals' : 'departures';
+    if (view === stationBoardActiveTab) return;
+    renderStationBoard(view);
+  });
+}
+
+if (stationBoardList) {
+  const activateStationBoardRow = (row) => {
+    if (!row) return;
+    const trainNum = row.getAttribute('data-train-number') || '';
+    if (!trainNum) return;
+    if (trainNumberInput) {
+      trainNumberInput.value = trainNum;
+    }
+    cercaStatoTreno(trainNum);
+  };
+
+  stationBoardList.addEventListener('click', (e) => {
+    const row = e.target.closest('.station-board-row');
+    if (!row) return;
+    activateStationBoardRow(row);
+  });
+
+  stationBoardList.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('.station-board-row');
+    if (!row) return;
+    e.preventDefault();
+    activateStationBoardRow(row);
+  });
+}
+
 
 document.addEventListener('click', (e) => {
   if (e.target === stationQueryInput || stationList.contains(e.target)) return;
@@ -1808,20 +2281,30 @@ function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // HANDLER RICERCA -----------------------------------------------------
 
-async function cercaStatoTreno() {
+async function cercaStatoTreno(trainNumberOverride = '') {
   trainError.textContent = '';
   trainResult.innerHTML = '';
 
-  const num = (trainNumberInput.value || '').trim();
+  const overrideValue = typeof trainNumberOverride === 'string' ? trainNumberOverride : '';
+  const num = (overrideValue || trainNumberInput.value || '').trim();
   if (!num) {
     trainError.textContent = 'Inserisci un numero di treno.';
     return;
   }
+
+  trainResult.innerHTML = `
+    <div class="loading-indicator loading-indicator--centered train-loading-indicator">
+      <span class="loading-indicator__spinner" aria-hidden="true"></span>
+      <span>Caricamento stato treno…</span>
+    </div>
+  `;
 
   try {
     const res = await fetch(
@@ -1830,6 +2313,7 @@ async function cercaStatoTreno() {
 
     if (!res.ok) {
       trainError.textContent = `Errore HTTP dal backend: ${res.status}`;
+      trainResult.innerHTML = '';
       return;
     }
 
@@ -1837,6 +2321,7 @@ async function cercaStatoTreno() {
 
     if (!data.ok) {
       trainError.textContent = data.error || 'Errore logico dal backend.';
+      trainResult.innerHTML = '';
       return;
     }
 
@@ -1859,10 +2344,11 @@ async function cercaStatoTreno() {
   } catch (err) {
     console.error('Errore fetch train status:', err);
     trainError.textContent = 'Errore di comunicazione con il backend locale.';
+    trainResult.innerHTML = '';
   }
 }
 
-trainSearchBtn.addEventListener('click', cercaStatoTreno);
+trainSearchBtn.addEventListener('click', () => cercaStatoTreno());
 
 trainNumberInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {

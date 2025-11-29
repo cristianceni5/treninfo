@@ -26,13 +26,13 @@
       </header>
 
       <main class="stack">
-        <!-- AUTOCOMPLETE STAZIONI (per future estensioni) - anche se la vedo dura dhn -->
+        <!-- INFO STAZIONI non so come ma ho trovato l'API giista-->
         <section class="card card-station-search">
           <h2 class="card-title">
             <img src="/img/orarionero.png" alt="Seleziona stazione" class="icon-img" />
-            <span>Stazione di riferimento</span>
+            <span>Cerca stazione</span>
           </h2>
-
+          
           <div class="form-row">
             <div class="input-root autocomplete-wrapper">
               <input
@@ -45,19 +45,26 @@
             </div>
           </div>
 
-          <div id="stationSelected"></div>
+          <div id="stationInfo" class="station-info-card hidden"></div>
 
-          <p class="small muted">
-            La stazione selezionata non è ancora usata dalle chiamate attive, ma è già pronta
-            per integrazioni future (tabellone, soluzioni di viaggio, ecc.).
-          </p>
+          <div id="stationBoard" class="station-board hidden">
+            <div class="station-board-tabs" role="tablist">
+              <button type="button" class="station-board-tab is-active" data-board="departures" role="tab" aria-selected="true">
+                Partenze
+              </button>
+              <button type="button" class="station-board-tab" data-board="arrivals" role="tab" aria-selected="false">
+                Arrivi
+              </button>
+            </div>
+            <div id="stationBoardList" class="station-board-list"></div>
+          </div>
         </section>
 
         <!-- RICERCA TRENO -->
         <section class="card card-train-search">
           <h2 class="card-title">
             <img src="/img/alert.png" alt="" class="icon-img" />
-            <span>Stato treno</span>
+            <span>Ricerca treno</span>
           </h2>
 
           <div class="form-row">

@@ -35,6 +35,13 @@
   --control-height: 46px;
 }
 
+@media (max-width: 600px) {
+  :root {
+    --control-height: 42px;
+    --gap: 12px;
+  }
+}
+
 /* TIMELINE PRIMITIVES ----------------------------------------------- */
 /* .timeline-line – linea verticale condivisa tra tabella e card */
 .timeline-line {
@@ -104,6 +111,10 @@ body {
   color: var(--text-main);
 }
 
+.hidden {
+  display: none !important;
+}
+
 /* Forza lo stile dei controlli e ignora appearance native/WebKit */
 button,
 input,
@@ -119,7 +130,6 @@ select {
   border-radius: 0;
   margin: 0;
 }
-
 input[type='number'] {
   appearance: textfield;
   -moz-appearance: textfield;
@@ -168,6 +178,14 @@ select:focus-visible {
   padding: 16px 14px;
 }
 
+@media (max-width: 600px) {
+  .app-shell { padding: 8px 6px; }
+  .app-inner {
+    padding: 12px;
+    border-radius: 16px;
+  }
+}
+
 @media (min-width: 768px) {
   .app-shell { padding: 20px 16px; }
   .app-inner { padding: 18px 18px 16px; }
@@ -212,6 +230,37 @@ select:focus-visible {
 
 /* UTILITY TEXT ------------------------------------------------------ */
 .stack { display: flex; flex-direction: column; gap: 14px; }
+
+@media (max-width: 600px) {
+  .stack { gap: 10px; }
+}
+
+.loading-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+.loading-indicator--centered {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+}
+
+.loading-indicator__spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--text-main);
+  border-radius: 50%;
+  animation: loading-spin 0.8s linear infinite;
+}
+
+@keyframes loading-spin {
+  to { transform: rotate(360deg); }
+}
 .small { font-size: 0.8rem; }
 .muted { color: var(--text-muted); }
 .soft { color: var(--text-soft); }
@@ -226,6 +275,13 @@ select:focus-visible {
   padding: 14px 14px 12px;
 }
 
+@media (max-width: 600px) {
+  .card {
+    padding: 12px;
+    border-radius: 16px;
+  }
+}
+
 /* .card-title – titolo con icona */
 .card-title {
   display: flex;
@@ -234,6 +290,12 @@ select:focus-visible {
   margin: 0 0 10px;
   font-size: 0.9rem;
   color: var(--text-main);
+}
+
+@media (max-width: 600px) {
+  .card-title {
+    margin-bottom: 8px;
+  }
 }
 
 .card-title .icon-img {
@@ -248,6 +310,13 @@ select:focus-visible {
   align-items: center;
   gap: 10px;
   margin-bottom: 8px;
+}
+
+@media (max-width: 600px) {
+  .form-row {
+    gap: 8px;
+    margin-bottom: 6px;
+  }
 }
 
 /* Label del form */
@@ -377,7 +446,276 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 
 .pill-value { font-weight: 500; }
 
+/* STATION INFO & BOARD --------------------------------------------- */
+.station-info-card {
+  margin-top: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 24px;
+  padding: 16px 18px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-soft);
+}
+
+.station-info-card.loading { opacity: 0.75; }
+
+.station-info-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.station-info-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+
+.station-info-region-text {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.station-info-region-label {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.station-info-temp {
+  font-weight: 600;
+}
+
+.station-maps-btn {
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  background: transparent;
+  color: var(--text-soft);
+  text-decoration: none;
+}
+
+.station-maps-btn:focus-visible {
+  outline: 2px solid var(--text-main);
+  outline-offset: 2px;
+}
+
+.station-weather-temp--cold { color: #0369a1; }
+.station-weather-temp--mild { color: #0d9488; }
+.station-weather-temp--warm { color: #ea580c; }
+.station-weather-temp--hot { color: #dc2626; }
+.station-weather-temp--freezing { color: #2563eb; }
+
+.station-info-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.station-info-field {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border-subtle);
+  background: #f9fafb;
+}
+
+.station-info-field-label {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-soft);
+}
+
+.station-info-field-value {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.station-board {
+  margin-top: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 24px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-soft);
+}
+
+.station-board.hidden { display: none; }
+
+.station-board-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+
+.station-board-tab {
+  flex: 1;
+  border: 1px solid var(--border-subtle);
+  background: #f9fafb;
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 0.86rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.station-board-tab.is-active {
+  background: #111827;
+  color: #ffffff;
+  border-color: #111827;
+  font-weight: 600;
+}
+
+.station-board-list {
+  padding: 12px 16px 18px;
+}
+
+.station-board-loading {
+  padding: 18px 0;
+}
+
+.station-board-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border-subtle);
+  background: #f8fafc;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+
+.station-board-row + .station-board-row { margin-top: 8px; }
+
+.station-board-row:focus-visible {
+  border-color: var(--text-main);
+}
+
+.board-time {
+  font-size: 1rem;
+  font-weight: 600;
+  flex: 0 0 auto;
+  min-width: 56px;
+}
+
+.board-main {
+  min-width: 0;
+  flex: 1 1 160px;
+}
+
+.board-train {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.board-destination {
+  font-size: 0.8rem;
+  color: var(--text-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.board-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.board-meta .board-delay { order: 1; }
+.board-meta .col-track-pill { order: 2; }
+
+@media (max-width: 520px) {
+  .station-board-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 11px;
+  }
+
+  .board-main {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+
+  .board-meta {
+    width: 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+    gap: 6px;
+  }
+
+  .board-meta .col-track-pill {
+    margin-left: auto;
+  }
+
+  .board-time { font-size: 0.95rem; }
+  .board-train { font-size: 0.88rem; }
+  .board-destination { font-size: 0.78rem; }
+}
+
+.board-delay {
+  font-size: 0.76rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.board-delay--late {
+  color: var(--state-late);
+  border-color: rgba(234, 88, 12, 0.4);
+  background: rgba(234, 88, 12, 0.1);
+}
+
+.board-delay--early {
+  color: var(--state-early);
+  border-color: rgba(14, 165, 233, 0.4);
+  background: rgba(14, 165, 233, 0.1);
+}
+
+.board-delay--ontime {
+  color: var(--state-ontime);
+  border-color: rgba(22, 163, 74, 0.3);
+  background: rgba(22, 163, 74, 0.12);
+}
+
+.board-delay--cancelled {
+  color: var(--state-very-late);
+  border-color: rgba(185, 28, 28, 0.4);
+  background: rgba(185, 28, 28, 0.1);
+}
+
+
+.station-board-empty {
+  margin: 0;
+  padding: 20px 0;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-soft);
+}
+
 /* TRAIN HEADER ------------------------------------------------------ */
+.train-loading-indicator {
+  padding: 16px 0;
+}
+
 /* .train-logo – icona aziendale della corsa */
 .train-logo {
   width: 30px;
@@ -1118,6 +1456,28 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
     font-size: 0.88rem;
     min-height: 46px;
   }
+
+  .station-info-card { padding: 12px; }
+  .station-board-tab { border-radius: 16px; }
+  .station-board-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 11px;
+  }
+
+  .board-main {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+  .board-meta {
+    width: 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+    gap: 6px;
+  }
+
+  .board-meta .col-track-pill { margin-left: auto; }
 
   .stops-table.desktop-view { display: none; }
   .stops-table-cards { --card-gap: 12px; }
