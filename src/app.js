@@ -186,6 +186,11 @@ app.get('/api/stations/autocomplete', async (req, res) => {
   }
 });
 
+const STATION_REGION_OVERRIDES = {
+  S06957: 'TOSCANA', // Firenze Le Cure (linea Faentina)
+  S06950: 'TOSCANA', // Firenze San Marco Vecchio
+};
+
 //TEST
 // Info stazione (dettagli + meteo regione)
 // GET /api/stations/info?stationCode=S06904
@@ -199,22 +204,29 @@ app.get('/api/stations/info', async (req, res) => {
   }
 
   try {
-    // 1) Regione della stazione
+    // 1) Regione della stazione (con fallback manuale per stazioni "difficili")
     const urlRegion = `${BASE_URL}/regione/${encodeURIComponent(stationCode)}`;
-    const regionResp = await fetch(urlRegion);
-    if (!regionResp.ok) {
-      return res.status(regionResp.status).json({
-        ok: false,
-        error: `Errore ViaggiaTreno regione (${regionResp.status})`,
-      });
+    let regionId = '';
+    try {
+      const regionResp = await fetch(urlRegion);
+      if (regionResp.ok) {
+        regionId = (await regionResp.text()).trim();
+      } else {
+        console.warn('Errore regione ViaggiaTreno:', regionResp.status, stationCode);
+      }
+    } catch (regionErr) {
+      console.warn('Eccezione fetch regione:', stationCode, regionErr);
     }
-    const regionText = (await regionResp.text()).trim();
-    const regionId = regionText;
+
+    if (!regionId && STATION_REGION_OVERRIDES[stationCode]) {
+      regionId = STATION_REGION_OVERRIDES[stationCode];
+    }
+
     if (!regionId) {
       return res.json({
         ok: false,
         error: 'Impossibile ricavare idRegione per la stazione',
-        raw: regionText,
+        raw: null,
       });
     }
 

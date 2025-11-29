@@ -36,6 +36,213 @@ const REGION_LABELS = {
   '22': 'Trentino-Alto Adige',
 };
 
+const TRAIN_KIND_RULES = [
+  // Alta velocità e servizi internazionali (fonte: classificazioni Trenitalia/Wikipedia)
+  {
+    matches: ['FRECCIAROSSA', 'FRECCIAROSSA AV', 'FRECCIAROSSAAV', 'FR', 'FR AV', 'FRAV', 'FR EC', 'FRECCIAROSSA EC'],
+    boardLabel: 'Frecciarossa',
+    detailLabel: 'Frecciarossa AV',
+    className: 'train-title--fr',
+  },
+  {
+    matches: ['FRECCIARGENTO', 'FRECCIARGENTO AV', 'FRECCIARGENTOAV', 'FA', 'FA AV'],
+    boardLabel: 'Frecciargento',
+    detailLabel: 'Frecciargento AV',
+    className: 'train-title--fr',
+  },
+  {
+    matches: ['FRECCIABIANCA', 'FB'],
+    boardLabel: 'Frecciabianca',
+    detailLabel: 'Frecciabianca',
+    className: 'train-title--ic',
+  },
+  {
+    matches: ['ITALO', 'ITALO AV', 'ITALOAV', 'NTV', 'ITA'],
+    boardLabel: 'Italo',
+    detailLabel: 'Italo AV',
+    className: 'train-title--fr',
+  },
+  {
+    matches: ['EUROCITY', 'EC'],
+    boardLabel: 'EuroCity',
+    detailLabel: 'EuroCity',
+    className: 'train-title--ic',
+  },
+  {
+    matches: ['EURONIGHT', 'EN'],
+    boardLabel: 'EuroNight',
+    detailLabel: 'EuroNight',
+    className: 'train-title--ic',
+  },
+  {
+    matches: ['TGV'],
+    boardLabel: 'TGV',
+    detailLabel: 'TGV',
+    className: 'train-title--fr',
+  },
+  {
+    matches: ['RAILJET', 'RJ'],
+    boardLabel: 'Railjet',
+    detailLabel: 'Railjet',
+    className: 'train-title--ic',
+  },
+  // Lunga percorrenza tradizionale
+  {
+    matches: ['INTERCITY NOTTE', 'INTERCITYNOTTE', 'ICN'],
+    boardLabel: 'Intercity Notte',
+    detailLabel: 'Intercity Notte',
+    className: 'train-title--ic',
+  },
+  {
+    matches: ['INTERCITY', 'IC'],
+    boardLabel: 'Intercity',
+    detailLabel: 'Intercity',
+    className: 'train-title--ic',
+  },
+  {
+    matches: ['ESPRESSO', 'EXP', 'E'],
+    boardLabel: 'Espresso',
+    detailLabel: 'Espresso',
+    className: 'train-title--ic',
+  },
+  {
+    matches: ['EUROSTAR', 'EUROSTAR CITY', 'EUROSTARCITY', 'ES', 'ESC', 'ES CITY', 'ES AV', 'ESAV', 'ES FAST'],
+    boardLabel: 'Eurostar',
+    detailLabel: 'Eurostar',
+    className: 'train-title--fr',
+  },
+  // Regionali e suburbani
+  {
+    matches: ['REGIONALE VELOCE', 'REGIONALEVELOCE', 'RV', 'RGV'],
+    boardLabel: 'Regionale Veloce',
+    detailLabel: 'Regionale Veloce',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['REGIOEXPRESS', 'REGIO EXPRESS', 'RE'],
+    boardLabel: 'RegioExpress',
+    detailLabel: 'RegioExpress',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['SUBURBANO', 'SERVIZIO SUBURBANO', 'SUB', 'S'],
+    boardLabel: 'Suburbano',
+    detailLabel: 'Suburbano',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['METROPOLITANO', 'MET', 'METROPOLITANA', 'M', 'SFM'],
+    boardLabel: 'Metropolitano',
+    detailLabel: 'Metropolitano',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['MALPENSA EXPRESS', 'MALPENSAEXPRESS', 'MXP'],
+    boardLabel: 'Malpensa Express',
+    detailLabel: 'Malpensa Express',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['LEONARDO EXPRESS', 'LEONARDOEXPRESS', 'LEONARDO'],
+    boardLabel: 'Leonardo Express',
+    detailLabel: 'Leonardo Express',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['FERROVIE LAZIALI', 'FL'],
+    boardLabel: 'Ferrovie Laziali',
+    detailLabel: 'Ferrovie Laziali',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['AIRLINK'],
+    boardLabel: 'Airlink',
+    detailLabel: 'Airlink',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['TROPEA EXPRESS', 'TROPEAEXPRESS', 'TROPEA'],
+    boardLabel: 'Tropea Express',
+    detailLabel: 'Tropea Express',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['CIVITAVECCHIA EXPRESS', 'CIVITAVECCHIAEXPRESS', 'CIVITAVECCHIA'],
+    boardLabel: 'Civitavecchia Express',
+    detailLabel: 'Civitavecchia Express',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['PANORAMA EXPRESS', 'PANORAMAEXPRESS', 'PE'],
+    boardLabel: 'Panorama Express',
+    detailLabel: 'Panorama Express',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['REGIONALE', 'REG', 'R'],
+    boardLabel: 'Regionale',
+    detailLabel: 'Regionale',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['INTERREGIONALE', 'IR'],
+    boardLabel: 'Interregionale',
+    detailLabel: 'Interregionale',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['DIRETTISSIMO', 'DD'],
+    boardLabel: 'Direttissimo',
+    detailLabel: 'Direttissimo',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['DIRETTO', 'DIR', 'D'],
+    boardLabel: 'Diretto',
+    detailLabel: 'Diretto',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['ACCELERATO', 'ACC', 'A'],
+    boardLabel: 'Accelerato',
+    detailLabel: 'Accelerato',
+    className: 'train-title--reg',
+  },
+];
+
+function resolveTrainKindFromCode(...rawValues) {
+  for (const raw of rawValues) {
+    if (raw == null) continue;
+    const normalized = String(raw)
+      .toUpperCase()
+      .replace(/[-_/]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!normalized) continue;
+    const alphaOnly = normalized.replace(/[^A-Z]/g, '');
+    const alphaPrefixMatch = normalized.match(/^[A-Z]+/);
+    const alphaPrefix = alphaPrefixMatch ? alphaPrefixMatch[0] : '';
+    const firstToken = normalized.split(' ')[0] || '';
+    const candidates = new Set([normalized]);
+    if (alphaOnly) candidates.add(alphaOnly);
+    if (alphaPrefix) candidates.add(alphaPrefix);
+    if (firstToken) candidates.add(firstToken);
+    for (const rule of TRAIN_KIND_RULES) {
+      const matched = rule.matches.some((token) => candidates.has(token));
+      if (matched) {
+        const numberMatch = normalized.match(/(\d{2,5})/);
+        return {
+          boardLabel: rule.boardLabel,
+          detailLabel: rule.detailLabel,
+          className: rule.className,
+          number: numberMatch ? numberMatch[1] : '',
+        };
+      }
+    }
+  }
+  return null;
+}
+
 // DOM ----------------------------------------------------------------
 
 const stationQueryInput = document.getElementById('stationQuery');
@@ -44,9 +251,13 @@ const stationInfoContainer = document.getElementById('stationInfo');
 const stationBoardContainer = document.getElementById('stationBoard');
 const stationBoardList = document.getElementById('stationBoardList');
 const stationBoardTabs = document.querySelectorAll('.station-board-tab');
+const stationClearBtn = document.getElementById('stationClearBtn');
+const stationSearchSection = document.getElementById('stationSearch');
+const trainSearchSection = document.getElementById('trainSearch');
 
 const trainNumberInput = document.getElementById('trainNumber');
 const trainSearchBtn = document.getElementById('trainSearchBtn');
+const trainClearBtn = document.getElementById('trainClearBtn');
 const trainError = document.getElementById('trainError');
 const trainResult = document.getElementById('trainResult');
 const recentTrainsContainer = document.getElementById('recentTrains');
@@ -55,6 +266,12 @@ const favoriteTrainsContainer = document.getElementById('favoriteTrains');
 let selectedStation = null;
 let stationBoardData = { departures: [], arrivals: [] };
 let stationBoardActiveTab = 'departures';
+function scrollToSection(element) {
+  if (!element || typeof element.scrollIntoView !== 'function') return;
+  requestAnimationFrame(() => {
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
 
 // UTIL ---------------------------------------------------------------
 
@@ -236,6 +453,23 @@ function buildCodeVariants(code) {
   return Array.from(variants);
 }
 
+function getStopStationCode(stop) {
+  if (!stop || typeof stop !== 'object') return '';
+  const candidates = [
+    stop.codiceStazione,
+    stop.codStazione,
+    stop.idStazione,
+    stop.id,
+    stop.stationCode,
+    stop.codice,
+  ];
+  for (const cand of candidates) {
+    const normalized = normalizeStationCode(cand);
+    if (normalized) return normalized;
+  }
+  return '';
+}
+
 function getStationCodeCandidates(selection, stationDetails = {}, infoPayload = {}) {
   const values = [
     stationDetails.codiceStazione,
@@ -403,13 +637,35 @@ function resetStationDisplay(message = '') {
   });
 }
 
-function setStationLoadingDisplay(name) {
+function clearStationSearch() {
+  selectedStation = null;
+  if (stationQueryInput) {
+    stationQueryInput.value = '';
+  }
+  if (stationList) {
+    stationList.innerHTML = '';
+    stationList.hidden = true;
+  }
+  resetStationDisplay();
+}
+
+function clearTrainSearch() {
+  if (trainNumberInput) {
+    trainNumberInput.value = '';
+  }
+  if (trainError) {
+    trainError.textContent = '';
+  }
+  if (trainResult) {
+    trainResult.innerHTML = '';
+  }
+}
+
+function setStationLoadingDisplay() {
   if (!stationInfoContainer) return;
-  const safeName = escapeHtml(name || 'Stazione selezionata');
   stationInfoContainer.innerHTML = `
     <div class="station-info-header">
       <div>
-        <p class="station-info-name">${safeName}</p>
         <p class="station-info-region-text loading-indicator">
           <span class="loading-indicator__spinner" aria-hidden="true"></span>
           <span>Caricamento info stazione…</span>
@@ -431,10 +687,68 @@ function setStationLoadingDisplay(name) {
   }
 }
 
+async function loadStationByCode(name, code) {
+  const normalizedCode = normalizeStationCode(code);
+  if (!normalizedCode) {
+    console.warn('Codice stazione non valido per la selezione rapida:', code);
+    return;
+  }
+
+  const displayName = name || normalizedCode;
+  selectedStation = { name: displayName, code: normalizedCode };
+  stationBoardActiveTab = 'departures';
+
+  if (stationQueryInput) {
+    stationQueryInput.value = displayName;
+  }
+  if (stationList) {
+    stationList.innerHTML = '';
+    stationList.hidden = true;
+  }
+
+  setStationLoadingDisplay();
+  scrollToSection(stationSearchSection);
+
+  try {
+    const [infoRes, depRes, arrRes] = await Promise.all([
+      fetch(`${API_BASE}/api/stations/info?stationCode=${encodeURIComponent(normalizedCode)}`),
+      fetch(`${API_BASE}/api/stations/departures?stationCode=${encodeURIComponent(normalizedCode)}&when=now`),
+      fetch(`${API_BASE}/api/stations/arrivals?stationCode=${encodeURIComponent(normalizedCode)}&when=now`),
+    ]);
+
+    const info = infoRes.ok ? await infoRes.json() : null;
+    const dep = depRes.ok ? await depRes.json() : null;
+    const arr = arrRes.ok ? await arrRes.json() : null;
+
+    const infoPayload = info?.ok ? info : null;
+    stationBoardData = {
+      departures: dep?.ok ? dep.data || [] : [],
+      arrivals: arr?.ok ? arr.data || [] : [],
+    };
+
+    if (infoPayload) {
+      renderStationInfoContent(selectedStation, infoPayload);
+    } else if (stationInfoContainer) {
+      stationInfoContainer.classList.remove('hidden');
+      stationInfoContainer.innerHTML = `<p class="small muted">Informazioni non disponibili per ${escapeHtml(displayName)}.</p>`;
+    }
+
+    renderStationBoard('departures');
+  } catch (err) {
+    console.error('Errore caricamento dati stazione:', err);
+    if (stationInfoContainer) {
+      stationInfoContainer.classList.remove('hidden');
+      stationInfoContainer.innerHTML = '<p class="error">Errore nel recupero delle informazioni della stazione.</p>';
+    }
+    if (stationBoardContainer) {
+      stationBoardContainer.classList.add('hidden');
+    }
+  }
+}
+
 function renderStationInfoContent(selection, infoPayload) {
   if (!stationInfoContainer) return;
   const stationDetails = infoPayload?.station || {};
-  const displayName = stationDetails.nomeLungo || selection?.name || stationDetails.nomeBreve || 'Stazione';
   const regionLabel = resolveRegionLabel(stationDetails, infoPayload);
   const lat = stationDetails.latitudine ?? stationDetails.lat ?? stationDetails.latitude;
   const lon = stationDetails.longitudine ?? stationDetails.lon ?? stationDetails.longitude;
@@ -464,11 +778,13 @@ function renderStationInfoContent(selection, infoPayload) {
   stationInfoContainer.innerHTML = `
     <div class="station-info-header">
       <div>
-        <p class="station-info-name">${escapeHtml(displayName)}</p>
         ${regionLine}
       </div>
       ${mapsLink
-        ? `<a href="${mapsLink}" target="_blank" rel="noopener noreferrer" class="station-maps-btn">Maps</a>`
+        ? `<a href="${mapsLink}" target="_blank" rel="noopener noreferrer" class="station-maps-btn">
+            <img src="/img/maps.png" alt="" class="station-maps-icon" aria-hidden="true" />
+            Maps
+          </a>`
         : ''}
     </div>
   `;
@@ -524,22 +840,33 @@ function buildStationBoardRow(entry, type) {
     ? (entry.destinazione || entry.destinazioneBreve || entry.compDestinazione || '-')
     : (entry.provenienza || entry.origine || entry.compOrigine || '-');
   const category = entry.categoria || entry.compTipologiaTreno || entry.tipoTreno || 'Treno';
-  const trainNumber = entry.numeroTreno || entry.compNumeroTreno || '';
-  const trainLabel = `${category} ${trainNumber}`.trim();
+  const compTrainCode = entry.compNumeroTreno || entry.siglaTreno || '';
+  const numericTrainCode = entry.numeroTreno || (compTrainCode.match(/\d+/)?.[0] ?? '');
+  const trainKindMeta = resolveTrainKindFromCode(
+    compTrainCode,
+    entry.compTipologiaTreno,
+    entry.categoriaDescrizione,
+    category
+  );
+  const displayTrainName = trainKindMeta?.boardLabel || category || 'Treno';
+  const displayTrainNumber = trainKindMeta?.number || numericTrainCode || compTrainCode || '';
+  const trainLabel = `${displayTrainName} ${displayTrainNumber}`.trim();
   const delay = resolveDelay(entry.ritardo, entry.compRitardo);
   const isCancelled = entry.cancellato === true || entry.cancellata === true || entry.soppresso === true;
   const trackInfo = getBoardTrack(entry, type);
   const delayBadge = buildBoardDelayBadge(delay, isCancelled);
   const destPrefix = isDeparture ? 'per ' : 'da ';
   const ariaLabel = `${trainLabel} ${destPrefix}${routeLabel}`.trim();
-  const datasetNumber = escapeHtml(trainNumber || '');
+  const searchTrainNumber = trainKindMeta?.number || numericTrainCode || compTrainCode || '';
+  const datasetNumber = escapeHtml(searchTrainNumber);
   const trackClass = trackInfo.isReal ? 'col-track-pill col-track-pill--real' : 'col-track-pill';
+  const boardTrainClass = trainKindMeta?.className || '';
 
   return `
     <div class="station-board-row" role="button" tabindex="0" data-train-number="${datasetNumber}" aria-label="${escapeHtml(ariaLabel)}">
       <div class="board-time">${escapeHtml(timeLabel)}</div>
       <div class="board-main">
-        <div class="board-train">${escapeHtml(trainLabel || `Treno ${trainNumber || ''}`.trim())}</div>
+        <div class="board-train ${boardTrainClass}">${escapeHtml(trainLabel || `Treno ${searchTrainNumber || ''}`.trim())}</div>
         <div class="board-destination">${destPrefix}${escapeHtml(routeLabel)}</div>
       </div>
       <div class="board-meta">
@@ -621,57 +948,20 @@ stationQueryInput.addEventListener('input', (e) => {
   debouncedFetchStations(e.target.value || '');
 });
 
+if (stationClearBtn) {
+  stationClearBtn.addEventListener('click', () => {
+    clearStationSearch();
+    stationQueryInput?.focus();
+  });
+}
+
 stationList.addEventListener('click', async (e) => {
   const li = e.target.closest('li');
   if (!li) return;
 
   const name = li.getAttribute('data-name') || '';
   const code = li.getAttribute('data-code') || '';
-
-  selectedStation = { name, code };
-  stationBoardActiveTab = 'departures';
-
-  stationQueryInput.value = name;
-  stationList.innerHTML = '';
-  stationList.hidden = true;
-
-  setStationLoadingDisplay(name);
-
-  try {
-    const [infoRes, depRes, arrRes] = await Promise.all([
-      fetch(`${API_BASE}/api/stations/info?stationCode=${encodeURIComponent(code)}`),
-      fetch(`${API_BASE}/api/stations/departures?stationCode=${encodeURIComponent(code)}&when=now`),
-      fetch(`${API_BASE}/api/stations/arrivals?stationCode=${encodeURIComponent(code)}&when=now`),
-    ]);
-
-    const info = infoRes.ok ? await infoRes.json() : null;
-    const dep = depRes.ok ? await depRes.json() : null;
-    const arr = arrRes.ok ? await arrRes.json() : null;
-
-    const infoPayload = info?.ok ? info : null;
-    stationBoardData = {
-      departures: dep?.ok ? dep.data || [] : [],
-      arrivals: arr?.ok ? arr.data || [] : [],
-    };
-
-    if (infoPayload) {
-      renderStationInfoContent(selectedStation, infoPayload);
-    } else {
-      stationInfoContainer.classList.remove('hidden');
-      stationInfoContainer.innerHTML = `<p class="small muted">Informazioni non disponibili per ${escapeHtml(name)}.</p>`;
-    }
-
-    renderStationBoard('departures');
-  } catch (err) {
-    console.error('Errore caricamento dati stazione:', err);
-    if (stationInfoContainer) {
-      stationInfoContainer.classList.remove('hidden');
-      stationInfoContainer.innerHTML = '<p class="error">Errore nel recupero delle informazioni della stazione.</p>';
-    }
-    if (stationBoardContainer) {
-      stationBoardContainer.classList.add('hidden');
-    }
-  }
+  await loadStationByCode(name, code);
 });
 
 if (stationBoardContainer) {
@@ -693,6 +983,7 @@ if (stationBoardList) {
       trainNumberInput.value = trainNum;
     }
     cercaStatoTreno(trainNum);
+    scrollToSection(trainSearchSection);
   };
 
   stationBoardList.addEventListener('click', (e) => {
@@ -707,6 +998,33 @@ if (stationBoardList) {
     if (!row) return;
     e.preventDefault();
     activateStationBoardRow(row);
+  });
+}
+
+if (trainResult) {
+  const activateStationShortcut = (node) => {
+    if (!node) return;
+    const encodedName = node.getAttribute('data-station-name') || '';
+    const encodedCode = node.getAttribute('data-station-code') || '';
+    const name = decodeDatasetValue(encodedName) || node.textContent?.trim() || '';
+    const code = decodeDatasetValue(encodedCode);
+    if (!code) return;
+    loadStationByCode(name, code);
+  };
+
+  trainResult.addEventListener('click', (e) => {
+    const target = e.target.closest('.station-stop-trigger');
+    if (!target) return;
+    e.preventDefault();
+    activateStationShortcut(target);
+  });
+
+  trainResult.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const target = e.target.closest('.station-stop-trigger');
+    if (!target) return;
+    e.preventDefault();
+    activateStationShortcut(target);
   });
 }
 
@@ -948,7 +1266,8 @@ if (recentTrainsContainer) {
     const n = pill.getAttribute('data-num');
     if (n) {
       trainNumberInput.value = n;
-      cercaStatoTreno();
+      cercaStatoTreno(n);
+      scrollToSection(trainSearchSection);
     }
   }
   });
@@ -979,7 +1298,8 @@ if (favoriteTrainsContainer) {
     const n = pill.getAttribute('data-num');
     if (n) {
       trainNumberInput.value = n;
-      cercaStatoTreno();
+      cercaStatoTreno(n);
+      scrollToSection(trainSearchSection);
     }
   }
   });
@@ -1008,30 +1328,20 @@ if (trainResult) {
 // LOGICA STATO TRENO --------------------------------------------------
 
 function getTrainKindInfo(d) {
-  const rawType =
-    (d.compNumeroTreno || '').toString().toUpperCase();
+  const metadata = resolveTrainKindFromCode(
+    d.compNumeroTreno,
+    d.siglaTreno,
+    d.compTipologiaTreno,
+    d.categoriaDescrizione,
+    d.tipoTreno
+  );
 
+  if (metadata) {
+    return { label: metadata.detailLabel, kindClass: metadata.className };
+  }
+
+  const rawType = (d.compNumeroTreno || '').toString().toUpperCase();
   if (!rawType) return { label: '', kindClass: '' };
-
-  if (rawType.includes('FR')) {
-    return { label: 'Frecciarossa AV', kindClass: 'train-title--fr' };
-  }
-  if (rawType.includes('FA')) {
-    return { label: 'Frecciargento AV', kindClass: 'train-title--fr' };
-  }
-  if (rawType.includes('FB')) {
-    return { label: 'Frecciabianca', kindClass: 'train-title--ic' };
-  }
-  if (rawType.includes('ICN')) {
-    return { label: 'Intercity Notte', kindClass: 'train-title--ic' };
-  }
-  if (rawType.includes('IC')) {
-    return { label: 'Intercity', kindClass: 'train-title--ic' };
-  }
-  if (rawType.includes('REG') || rawType.includes('R ')) {
-    return { label: 'Regionale', kindClass: 'train-title--reg' };
-  }
-
   return { label: rawType, kindClass: '' };
 }
 
@@ -1824,6 +2134,15 @@ function renderTrainStatus(payload) {
   };
   const trainIsFavorite = trainMeta.numero ? isFavoriteTrain(trainMeta.numero) : false;
 
+  const lastDetectionMillis = parseToMillis(d.oraUltimoRilevamento);
+  const lastDetectionAgeMinutes = lastDetectionMillis != null
+    ? (Date.now() - lastDetectionMillis) / 60000
+    : null;
+  const lastDetectionIsStale = lastDetectionAgeMinutes != null && lastDetectionAgeMinutes > 15;
+  const lastDetectionTitle = lastDetectionIsStale
+    ? 'Ultimo rilevamento più vecchio di 15 minuti'
+    : '';
+
   const badgeLabelMap = {
     PLANNED: 'Pianificato',
     RUNNING: 'In viaggio',
@@ -1863,7 +2182,7 @@ function renderTrainStatus(payload) {
       </div>
       <div class='train-meta'>
         ${d.oraUltimoRilevamento
-      ? `<div class='train-last'>
+      ? `<div class='train-last${lastDetectionIsStale ? ' train-last--stale' : ''}'${lastDetectionTitle ? ` title='${lastDetectionTitle}'` : ''}>
                 Ultimo rilevamento ${formatTimeFlexible(d.oraUltimoRilevamento)}
                 ${d.stazioneUltimoRilevamento ? ` – ${d.stazioneUltimoRilevamento}` : ''}
               </div>`
@@ -2044,6 +2363,13 @@ function renderTrainStatus(payload) {
 
       const arrivalScheduledDisplay = showArrival ? arrProg : '--';
       const departureScheduledDisplay = showDeparture ? depProg : '--';
+      const stationNameRaw = f.stazione || f.stazioneNome || '-';
+      const safeStationName = escapeHtml(stationNameRaw || '-');
+      const stationCode = getStopStationCode(f);
+      const encodedStationName = encodeDatasetValue(stationNameRaw || '');
+      const encodedStationCode = stationCode ? encodeDatasetValue(stationCode) : '';
+      const stationAriaLabel = escapeHtml(`Apri dettagli stazione ${stationNameRaw || ''}`.trim());
+      const stationDataAttrs = `data-station-name="${encodedStationName}"${encodedStationCode ? ` data-station-code="${encodedStationCode}"` : ''} aria-label="${stationAriaLabel || 'Apri stazione'}"`;
 
       return `
         <tr class="${rowClass}">
@@ -2051,7 +2377,9 @@ function renderTrainStatus(payload) {
             <span class="timeline-line ${timelineClasses}"${timelineStyleAttr}></span>
           </td>
           <td>
-            <div class="st-name">${f.stazione || '-'}</div>
+            <div class="st-name station-stop-trigger station-stop-trigger--text" role="button" tabindex="0" ${stationDataAttrs}>
+              ${safeStationName}
+            </div>
           </td>
           <td>
             <div class="time-block">
@@ -2223,16 +2551,24 @@ function renderTrainStatus(payload) {
       const departurePlannedDisplay = showDeparture ? depProg : '--';
 
       const stazioneName = f.stazione || f.stazioneNome || '-';
+      const safeStationName = escapeHtml(stazioneName || '-');
+      const stationCode = getStopStationCode(f);
+      const encodedStationName = encodeDatasetValue(stazioneName || '');
+      const encodedStationCode = stationCode ? encodeDatasetValue(stationCode) : '';
+      const stationAriaLabel = escapeHtml(`Apri dettagli stazione ${stazioneName || ''}`.trim());
+      const stationDataAttrs = `data-station-name="${encodedStationName}"${encodedStationCode ? ` data-station-code="${encodedStationCode}"` : ''} aria-label="${stationAriaLabel || 'Apri stazione'}"`;
 
       return `
-        <div class="stop-card ${rowClass}">
+        <div class="stop-card ${rowClass} station-stop-trigger station-stop-trigger--card" role="button" tabindex="0" ${stationDataAttrs}>
           <div class="stop-card-timeline">
             <div class="timeline-line stop-card-line ${timelineClasses}"${timelineStyleAttr}></div>
             <div class="stop-card-dot"></div>
           </div>
           <div class="stop-card-content">
             <div class="stop-card-header">
-              <div class="stop-card-name">${stazioneName}</div>
+              <div class="stop-card-name">
+                ${safeStationName}
+              </div>
               ${trackInfo.label ? `<div class="${cardTrackClass}" title="${trackInfo.isReal ? 'Binario effettivo' : 'Binario programmato'}">${trackInfo.label}</div>` : ''}
             </div>
             <div class="stop-card-times">
@@ -2258,12 +2594,26 @@ function renderTrainStatus(payload) {
       `;
     }).join('');
 
-    tableHtml = `
+    const stopsBodyHtml = `
       <div class="stops-table-wrapper">
         <div class="stops-table-cards stops-table-cards--full">
           ${cardRows}
         </div>
       </div>
+    `;
+
+    tableHtml = `
+      <details class="train-stops-collapse" aria-label="Elenco fermate" data-stop-count="${fermate.length}">
+        <summary class="train-stops-summary">
+          <span class="train-stops-summary-inner">
+            <span class="train-stops-summary-title">Fermate</span>
+            <span class="train-stops-summary-count">${fermate.length}</span>
+          </span>
+        </summary>
+        <div class="train-stops-collapse-body">
+          ${stopsBodyHtml}
+        </div>
+      </details>
     `;
   }
 
@@ -2356,3 +2706,10 @@ trainNumberInput.addEventListener('keydown', (e) => {
     cercaStatoTreno();
   }
 });
+
+if (trainClearBtn) {
+  trainClearBtn.addEventListener('click', () => {
+    clearTrainSearch();
+    trainNumberInput?.focus();
+  });
+}

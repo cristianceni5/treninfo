@@ -27,7 +27,7 @@
 
       <main class="stack">
         <!-- INFO STAZIONI non so come ma ho trovato l'API giista-->
-        <section class="card card-station-search">
+        <section class="card card-station-search" id="stationSearch">
           <h2 class="card-title">
             <img src="/img/orarionero.png" alt="Seleziona stazione" class="icon-img" />
             <span>Cerca stazione</span>
@@ -43,6 +43,7 @@
               />
               <ul id="stationList" class="autocomplete"></ul>
             </div>
+            <button type="button" id="stationClearBtn">Cancella</button>
           </div>
 
           <div id="stationInfo" class="station-info-card hidden"></div>
@@ -58,10 +59,10 @@
             </div>
             <div id="stationBoardList" class="station-board-list"></div>
           </div>
-        </section>
+          </section>
 
         <!-- RICERCA TRENO -->
-        <section class="card card-train-search">
+        <section class="card card-train-search" id="trainSearch">
           <h2 class="card-title">
             <img src="/img/alert.png" alt="" class="icon-img" />
             <span>Ricerca treno</span>
@@ -80,6 +81,7 @@
             <button type="button" id="trainSearchBtn">
               Cerca
             </button>
+            <button type="button" id="trainClearBtn">Cancella</button>
           </div>
 
           <div id="trainError" class="error"></div>
