@@ -74,3 +74,4 @@ Browser / Client (web o app)  --->  Treninfo API (Netlify / Express)  --->  Viag
                                    normalizzazione,
                                   gestione errori, CORS
 ```
+## Questo file è stato generato da chatPGT, **non avevo tempo pardon**
