@@ -1366,9 +1366,7 @@ function updateStationStorage() {
       if (input) {
         input.value = item.name;
         // Trigger search
-        if (typeof cercaStazione === 'function') {
-            cercaStazione();
-        }
+        loadStationByCode(item.name, item.id);
       }
     },
     (item) => {

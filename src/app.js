@@ -323,6 +323,7 @@ async function resolveLocationIdByName(stationName) {
     method: 'GET',
     headers: {
       'Accept': 'application/json, text/plain, */*',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
     },
   });
 
@@ -397,6 +398,7 @@ async function resolveLocationIdByName(stationName) {
 //   bestFare      → opzionale, default false
 //   bikeFilter    → opzionale, default false
 app.get('/api/solutions', async (req, res) => {
+  console.log('GET /api/solutions called with query:', req.query);
   try {
     let {
       fromId,
@@ -499,6 +501,7 @@ app.get('/api/solutions', async (req, res) => {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
       },
       body: JSON.stringify(body),
     });
@@ -864,157 +867,9 @@ app.get('/api/news', async (_req, res) => {
   }
 });
 
-// --------- /api/solutions: ricerca soluzioni di viaggio Trenitalia ---------
-
-// Handler condiviso per GET e POST /api/solutions
-// Handler condiviso per GET e POST /api/solutions
-// --------- /api/solutions: ricerca soluzioni di viaggio Trenitalia ---------
-
-async function handleSolutions(req, res) {
-  try {
-    const source = req.method === 'GET' ? req.query : (req.body || {});
-    console.log('handleSolutions source:', source);
-
-    let {
-      fromId,
-      toId,
-      fromName,
-      toName,
-      date,       // "YYYY-MM-DD"
-      time,       // "HH:mm"
-      departureTime,
-      adults,
-      children,
-      frecceOnly,
-      regionalOnly,
-      intercityOnly,
-      tourismOnly,
-      noChanges,
-      order,
-      offset,
-      limit,
-      bestFare,
-      bikeFilter,
-    } = source;
-
-    // Se non c'è departureTime, ci aspettiamo date (+ eventualmente time)
-    if (!departureTime && !date) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Serve almeno "date" (YYYY-MM-DD) oppure "departureTime" ISO.',
-      });
-    }
-
-    // Risoluzione ID stazioni
-    let depId = fromId ? Number(fromId) : null;
-    let arrId = toId ? Number(toId) : null;
-
-    if (!depId && fromName) {
-      depId = await resolveLocationIdByName(fromName);
-    }
-    if (!arrId && toName) {
-      arrId = await resolveLocationIdByName(toName);
-    }
-
-    console.log('handleSolutions resolved IDs:', {
-      fromName,
-      toName,
-      depId,
-      arrId,
-    });
-
-    if (!depId || !arrId) {
-      return res.status(400).json({
-        ok: false,
-        error:
-          'Impossibile determinare gli ID delle stazioni: specifica fromId/toId oppure fromName/toName risolvibili.',
-        debug: { fromId, toId, fromName, toName },
-      });
-    }
-
-    // Costruzione departureTime per LeFrecce
-    let depTimeStr = departureTime;
-    if (!depTimeStr && date) {
-      const [hh = '00', mm = '00'] = (time || '00:00').split(':');
-      depTimeStr = `${date}T${String(hh).padStart(2, '0')}:${String(
-        mm
-      ).padStart(2, '0')}:00.000`;
-    }
-
-    const body = {
-      cartId: null,
-      departureLocationId: depId,
-      arrivalLocationId: arrId,
-      departureTime: depTimeStr,
-      adults: Number(adults || 1),
-      children: Number(children || 0),
-      criteria: {
-        frecceOnly: parseBool(frecceOnly, false),
-        regionalOnly: parseBool(regionalOnly, false),
-        intercityOnly: parseBool(intercityOnly, false),
-        tourismOnly: parseBool(tourismOnly, false),
-        noChanges: parseBool(noChanges, false),
-        order: order || 'DEPARTURE_DATE',
-        offset: Number.isFinite(Number(offset)) ? Number(offset) : 0,
-        limit: Number.isFinite(Number(limit)) ? Number(limit) : 10,
-      },
-      advancedSearchRequest: {
-        bestFare: parseBool(bestFare, false),
-        bikeFilter: parseBool(bikeFilter, false),
-        forwardDiscountCodes: [],
-      },
-    };
-
-    console.log('LeFrecce /solutions body:', body);
-
-    const vtResp = await fetch(
-      `${LEFRECCE_BASE}/website/ticket/solutions`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json, text/plain, */*',
-        },
-        body: JSON.stringify(body),
-      }
-    );
-
-    const text = await vtResp.text();
-    console.log('LeFrecce /solutions status:', vtResp.status);
-
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      console.error('Risposta non JSON da LeFrecce:', text.slice(0, 500));
-      return res.status(vtResp.status).send(text);
-    }
-
-    return res.status(vtResp.status).json({
-      ok: vtResp.ok,
-      searchId: data.searchId,
-      cartId: data.cartId,
-      solutions: data.solutions || [],
-      minimumPrices: data.minimumPrices || null,
-      raw: data, // utile per debug, poi se vuoi lo togli
-    });
-  } catch (err) {
-    console.error('Errore /api/solutions:', err);
-    return res.status(500).json({
-      ok: false,
-      error: 'Errore interno /api/solutions',
-      details: err.message,
-    });
-  }
-}
-
-app.get('/api/solutions', handleSolutions);
-app.post('/api/solutions', handleSolutions);
 
 
-// Espongo sia GET che POST sulla stessa route
-app.get('/api/solutions', handleSolutions);
-app.post('/api/solutions', handleSolutions);
+
 
 
 // Fallback 404, così se sbagli path lo vedi nel log
