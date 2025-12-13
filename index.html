@@ -1,4 +1,4 @@
-<!--Developer by Cristian Ceni 2025 dhn-->
+<!--Developed by Cristian Ceni 2025 dhn-->
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -26,24 +26,81 @@
       </header>
 
       <main class="stack">
-        <!-- INFO STAZIONI non so come ma ho trovato l'API giista-->
+        <!-- CERCA VIAGGIO -->
+        <section class="card card-trip-search" id="tripSearch">
+          <h2 class="card-title">
+            <img src="/img/bigliettonero.png" alt="Cerca viaggio" class="icon-img" />
+            <span>Cerca viaggio</span>
+          </h2>
+
+          <div class="trip-search-form">
+            <div class="form-row">
+              <div class="input-root autocomplete-wrapper">
+                <input
+                  id="tripFrom"
+                  type="search"
+                  placeholder="Partenza (es. Milano Centrale)"
+                  autocomplete="off"
+                />
+                <ul id="tripFromList" class="autocomplete"></ul>
+              </div>
+            </div>
+            
+            <div class="form-row">
+              <div class="input-root autocomplete-wrapper">
+                <input
+                  id="tripTo"
+                  type="search"
+                  placeholder="Arrivo (es. Roma Termini)"
+                  autocomplete="off"
+                />
+                <ul id="tripToList" class="autocomplete"></ul>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="input-root">
+                <input id="tripDate" type="date" />
+              </div>
+              <div class="input-root">
+                <input id="tripTime" type="time" />
+              </div>
+            </div>
+
+            <div class="form-row buttons-row">
+               <button type="button" id="tripSearchBtn">Cerca Soluzioni</button>
+               <button type="button" id="tripClearBtn">Cancella</button>
+            </div>
+            
+            <!-- Recent/Favorite Trips -->
+            <div id="tripStorage" class="storage-area hidden"></div>
+          </div>
+
+          <div id="tripResults" class="trip-results"></div>
+        </section>
+        <!-- INFO STAZIONI non so come ma ho trovato l'API giusta-->
         <section class="card card-station-search" id="stationSearch">
           <h2 class="card-title">
             <img src="/img/orarionero.png" alt="Seleziona stazione" class="icon-img" />
             <span>Cerca stazione</span>
           </h2>
           
-          <div class="form-row">
-            <div class="input-root autocomplete-wrapper">
-              <input
-                id="stationQuery"
-                type="search"
-                placeholder="Firenze Santa Maria Novella, Roma Termini…"
-                autocomplete="off"
-              />
-              <ul id="stationList" class="autocomplete"></ul>
+          <div class="station-search-form">
+            <div class="form-row">
+              <div class="input-root autocomplete-wrapper">
+                <input
+                  id="stationQuery"
+                  type="search"
+                  placeholder="Firenze Santa Maria Novella, Roma Termini…"
+                  autocomplete="off"
+                />
+                <ul id="stationList" class="autocomplete"></ul>
+              </div>
+              <button type="button" id="stationClearBtn">Cancella</button>
             </div>
-            <button type="button" id="stationClearBtn">Cancella</button>
+
+            <!-- Recent/Favorite Stations -->
+            <div id="stationStorage" class="storage-area hidden"></div>
           </div>
 
           <div id="stationInfo" class="station-info-card hidden"></div>
@@ -68,20 +125,25 @@
             <span>Ricerca treno</span>
           </h2>
 
-          <div class="form-row">
-            <div class="input-root">
-              <input
-                id="trainNumber"
-                type="text"
-                inputmode="numeric"
-                placeholder="Numero treno"
-                autocomplete="off"
-              />
+          <div class="train-search-form">
+            <div class="form-row">
+              <div class="input-root">
+                <input
+                  id="trainNumber"
+                  type="text"
+                  inputmode="numeric"
+                  placeholder="Numero treno"
+                  autocomplete="off"
+                />
+              </div>
+              <button type="button" id="trainSearchBtn">
+                Cerca
+              </button>
+              <button type="button" id="trainClearBtn">Cancella</button>
             </div>
-            <button type="button" id="trainSearchBtn">
-              Cerca
-            </button>
-            <button type="button" id="trainClearBtn">Cancella</button>
+
+            <!-- Recent/Favorite Trains -->
+            <div id="trainStorage" class="storage-area hidden"></div>
           </div>
 
           <div id="trainError" class="error"></div>
@@ -89,20 +151,11 @@
 
         </section>
 
-        <!-- FAVORITI & RECENTI -->
-        <section class="card card-train-storage">
-          <h2 class="card-title">
-            <img src="/img/stella.png" alt="Treni salvati" class="icon-img" />
-            <span>Preferiti & recenti</span>
-          </h2>
-          <p class="small muted">
-            Salva i treni che consulti più spesso e riprendi rapidamente le ultime ricerche.
-          </p>
-          <div class="train-board-grid">
-            <div id="favoriteTrains" class="storage-panel" aria-live="polite"></div>
-            <div id="recentTrains" class="storage-panel" aria-live="polite"></div>
-          </div>
-        </section>
+        <!-- FAVORITI & RECENTI (Removed as moved to individual cards) -->
+        <!-- <section class="card card-train-storage"> ... </section> -->
+
+
+
       </main>
       <footer class="footer">
         <div class="footer-content">

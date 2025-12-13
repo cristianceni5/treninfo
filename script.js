@@ -251,6 +251,7 @@ const stationInfoContainer = document.getElementById('stationInfo');
 const stationBoardContainer = document.getElementById('stationBoard');
 const stationBoardList = document.getElementById('stationBoardList');
 const stationBoardTabs = document.querySelectorAll('.station-board-tab');
+const stationSearchBtn = document.getElementById('stationSearchBtn');
 const stationClearBtn = document.getElementById('stationClearBtn');
 const stationSearchSection = document.getElementById('stationSearch');
 const trainSearchSection = document.getElementById('trainSearch');
@@ -262,6 +263,21 @@ const trainError = document.getElementById('trainError');
 const trainResult = document.getElementById('trainResult');
 const recentTrainsContainer = document.getElementById('recentTrains');
 const favoriteTrainsContainer = document.getElementById('favoriteTrains');
+
+// --- DOM: SOLUZIONI DI VIAGGIO ------------------------------------------
+
+const tripFromInput = document.getElementById('tripFrom');
+const tripFromList = document.getElementById('tripFromList');
+const tripToInput = document.getElementById('tripTo');
+const tripToList = document.getElementById('tripToList');
+const tripDateInput = document.getElementById('tripDate');
+const tripTimeInput = document.getElementById('tripTime');
+const tripSearchBtn = document.getElementById('tripSearchBtn');
+const tripClearBtn = document.getElementById('tripClearBtn');
+const tripResults = document.getElementById('tripResults');
+
+let tripFromId = null;
+let tripToId = null;
 
 let selectedStation = null;
 let stationBoardData = { departures: [], arrivals: [] };
@@ -695,6 +711,11 @@ async function loadStationByCode(name, code) {
   }
 
   const displayName = name || normalizedCode;
+  
+  if (typeof addRecentStation === 'function') {
+    addRecentStation({ id: normalizedCode, name: displayName });
+  }
+
   selectedStation = { name: displayName, code: normalizedCode };
   stationBoardActiveTab = 'departures';
 
@@ -859,19 +880,26 @@ function buildStationBoardRow(entry, type) {
   const ariaLabel = `${trainLabel} ${destPrefix}${routeLabel}`.trim();
   const searchTrainNumber = trainKindMeta?.number || numericTrainCode || compTrainCode || '';
   const datasetNumber = escapeHtml(searchTrainNumber);
-  const trackClass = trackInfo.isReal ? 'col-track-pill col-track-pill--real' : 'col-track-pill';
+  const trackClass = trackInfo.isReal ? 'sb-track-pill sb-track-pill--real' : 'sb-track-pill';
   const boardTrainClass = trainKindMeta?.className || '';
 
+  // New Layout mimicking solution-card
   return `
-    <div class="station-board-row" role="button" tabindex="0" data-train-number="${datasetNumber}" aria-label="${escapeHtml(ariaLabel)}">
-      <div class="board-time">${escapeHtml(timeLabel)}</div>
-      <div class="board-main">
-        <div class="board-train ${boardTrainClass}">${escapeHtml(trainLabel || `Treno ${searchTrainNumber || ''}`.trim())}</div>
-        <div class="board-destination">${destPrefix}${escapeHtml(routeLabel)}</div>
+    <div class="station-board-card" role="button" tabindex="0" data-train-number="${datasetNumber}" aria-label="${escapeHtml(ariaLabel)}">
+      <div class="sb-row-main">
+        <div class="sb-time-col">
+            <div class="sb-time">${escapeHtml(timeLabel)}</div>
+            ${delayBadge}
+        </div>
+        <div class="sb-info-col">
+            <div class="sb-destination">${destPrefix}${escapeHtml(routeLabel)}</div>
+            <div class="sb-train-info">
+                <span class="sb-train-name ${boardTrainClass}">${escapeHtml(trainLabel)}</span>
+            </div>
+        </div>
       </div>
-      <div class="board-meta">
-        ${delayBadge}
-        ${trackInfo.label ? `<span class="${trackClass}">${escapeHtml(trackInfo.label)}</span>` : ''}
+      <div class="sb-row-meta">
+         ${trackInfo.label ? `<span class="${trackClass}">${escapeHtml(trackInfo.label)}</span>` : ''}
       </div>
     </div>
   `;
@@ -900,7 +928,7 @@ function renderStationBoard(view = 'departures') {
   stationBoardList.innerHTML = rows;
 }
 
-// AUTOCOMPLETE STAZIONI ----------------------------------------------
+// AUTOCOMPLETE STAZIONI (ViaggiaTreno - Cerca Stazione) ----------------
 
 async function fetchStations(query) {
   const q = query.trim();
@@ -911,7 +939,8 @@ async function fetchStations(query) {
   }
 
   try {
-    const res = await fetch(`${API_BASE}/api/stations/autocomplete?query=${encodeURIComponent(q)}`);
+    // Usa endpoint specifico ViaggiaTreno
+    const res = await fetch(`${API_BASE}/api/viaggiatreno/autocomplete?query=${encodeURIComponent(q)}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const items = (data && data.data) || [];
@@ -955,6 +984,30 @@ if (stationClearBtn) {
   });
 }
 
+if (stationSearchBtn) {
+  stationSearchBtn.addEventListener('click', async () => {
+    const q = stationQueryInput.value.trim();
+    if (!q) return;
+    
+    try {
+      const res = await fetch(`${API_BASE}/api/viaggiatreno/autocomplete?query=${encodeURIComponent(q)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const items = (data && data.data) || [];
+      if (items.length > 0) {
+        const first = items[0];
+        const name = first.name || first.nome || '';
+        const code = first.code || first.id || '';
+        if (name && code) {
+            await loadStationByCode(name, code);
+        }
+      }
+    } catch (err) {
+      console.error('Errore ricerca stazione manuale:', err);
+    }
+  });
+}
+
 stationList.addEventListener('click', async (e) => {
   const li = e.target.closest('li');
   if (!li) return;
@@ -987,14 +1040,14 @@ if (stationBoardList) {
   };
 
   stationBoardList.addEventListener('click', (e) => {
-    const row = e.target.closest('.station-board-row');
+    const row = e.target.closest('.station-board-card');
     if (!row) return;
     activateStationBoardRow(row);
   });
 
   stationBoardList.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
-    const row = e.target.closest('.station-board-row');
+    const row = e.target.closest('.station-board-card');
     if (!row) return;
     e.preventDefault();
     activateStationBoardRow(row);
@@ -1035,278 +1088,312 @@ document.addEventListener('click', (e) => {
   stationList.hidden = true;
 });
 
+// --- AUTOCOMPLETE SOLUZIONI (FROM / TO) ---------------------------------
+// (Logica rimossa in favore di setupTripAutocomplete)
+
+
+function buildIsoDateTime(dateStr, timeStr) {
+  if (!dateStr) return null; // meglio bloccare prima
+
+  const [year, month, day] = dateStr.split('-').map((x) => Number(x));
+  if (!year || !month || !day) return null;
+
+  let hours = 0;
+  let minutes = 0;
+
+  if (timeStr) {
+    const parts = timeStr.split(':').map((x) => Number(x));
+    if (parts.length >= 2) {
+      hours = parts[0];
+      minutes = parts[1];
+    }
+  }
+
+  const d = new Date(year, month - 1, day, hours, minutes, 0);
+  // Lefrecce usava stringhe tipo "2025-12-04T18:00:00.000"
+  const iso = d.toISOString(); // "2025-12-04T17:00:00.000Z"
+  // Per stare larghi, la lasciamo così lato backend e la aggiustiamo lì se serve
+  return iso;
+}
+
+
 // RECENTI & PREFERITI ------------------------------------------------
 
-function loadRecentTrains() {
+const TRIP_RECENT_KEY = 'treninfo_recent_trips';
+const STATION_RECENT_KEY = 'treninfo_recent_stations';
+
+const trainStorageContainer = document.getElementById('trainStorage');
+const tripStorageContainer = document.getElementById('tripStorage');
+const stationStorageContainer = document.getElementById('stationStorage');
+
+// --- GENERIC STORAGE HELPERS ---
+
+function loadStorage(key) {
   try {
-    const raw = localStorage.getItem(RECENT_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-function saveRecentTrains(list) {
+function saveStorage(key, list) {
   try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
-  } catch (err) {
-    console.warn('Impossibile salvare i treni recenti:', err);
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch (e) {
+    console.warn('Storage save failed', e);
   }
 }
 
-function loadFavoriteTrains() {
-  try {
-    const raw = localStorage.getItem(FAVORITES_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+function addToStorage(key, item, uniqueKey = 'id') {
+  const list = loadStorage(key);
+  const filtered = list.filter(i => String(i[uniqueKey]) !== String(item[uniqueKey]));
+  filtered.unshift(item);
+  const trimmed = filtered.slice(0, MAX_RECENT);
+  saveStorage(key, trimmed);
+  return trimmed;
 }
 
-function saveFavoriteTrains(list) {
-  try {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(list));
-  } catch (err) {
-    console.warn('Impossibile salvare i treni preferiti:', err);
-  }
+function removeFromStorage(key, uniqueVal, uniqueKey = 'id') {
+  const list = loadStorage(key);
+  const filtered = list.filter(i => String(i[uniqueKey]) !== String(uniqueVal));
+  saveStorage(key, filtered);
+  return filtered;
 }
 
-function isFavoriteTrain(numero) {
-  const favorites = loadFavoriteTrains();
-  return favorites.some((t) => String(t.numero) === String(numero));
+// --- RENDER CHIPS ---
+
+function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isFavCallback) {
+  if (!container) return;
+  
+  if (!list || list.length === 0) {
+    container.innerHTML = '';
+    container.classList.add('hidden');
+    return;
+  }
+  
+  container.classList.remove('hidden');
+  container.innerHTML = list.map((item, idx) => {
+    let contentHtml = '';
+    let icon = '';
+    let id = '';
+    let extraClass = '';
+    
+    if (type === 'train') {
+      id = item.numero;
+      // No icon for trains as requested
+      const route = (item.origine && item.destinazione) 
+        ? `${item.origine} → ${item.destinazione}` 
+        : `Treno ${item.numero}`;
+      
+      const timeInfo = item.partenza ? `<span class="chip-time">${item.partenza}</span>` : '';
+      
+      contentHtml = `
+        <div class="chip-train-info">
+            <div class="chip-route">${escapeHtml(route)}</div>
+            <div class="chip-meta">
+                <span class="chip-number">Treno ${item.numero}</span>
+                ${timeInfo}
+            </div>
+        </div>
+      `;
+      extraClass = 'chip-type-train';
+
+    } else if (type === 'trip') {
+      id = `${item.from}|${item.to}`;
+      contentHtml = `<span class="storage-chip-label">${escapeHtml(item.from)} → ${escapeHtml(item.to)}</span>`;
+    } else if (type === 'station') {
+      id = item.id;
+      contentHtml = `<span class="storage-chip-label">${escapeHtml(item.name)}</span>`;
+    }
+
+    const isFav = isFavCallback ? isFavCallback(item) : false;
+    
+    return `
+      <div class="storage-chip ${isFav ? 'favorite' : ''} ${extraClass}" role="button" tabindex="0" data-id="${escapeHtml(id)}">
+        <span class="storage-chip-content">
+            ${contentHtml}
+        </span>
+        <div class="storage-chip-actions">
+            <button type="button" class="storage-chip-btn storage-chip-fav ${isFav ? 'is-active' : ''}" title="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}">
+                ${isFav ? '★' : '☆'}
+            </button>
+            <button type="button" class="storage-chip-btn storage-chip-remove" title="Rimuovi">×</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  // Add event listeners
+  container.querySelectorAll('.storage-chip').forEach((chip, idx) => {
+    chip.addEventListener('click', (e) => {
+      const removeBtn = e.target.closest('.storage-chip-remove');
+      const favBtn = e.target.closest('.storage-chip-fav');
+      
+      if (removeBtn) {
+        e.stopPropagation();
+        onRemove(list[idx]);
+      } else if (favBtn) {
+        e.stopPropagation();
+        if (onToggleFav) onToggleFav(list[idx]);
+      } else {
+        onSelect(list[idx]);
+      }
+    });
+  });
+}
+
+// --- TRAIN STORAGE ---
+
+function updateTrainStorage() {
+  const recents = loadStorage(RECENT_KEY);
+  const favorites = loadStorage(FAVORITES_KEY);
+  
+  // Merge lists: Recents first, then Favorites (so favorites are at the bottom/end)
+  const favIds = new Set(favorites.map(i => String(i.numero)));
+  const uniqueRecents = recents.filter(i => !favIds.has(String(i.numero)));
+  const displayList = [...uniqueRecents, ...favorites];
+
+  renderChips(trainStorageContainer, displayList, 'train', 
+    (item) => {
+      trainNumberInput.value = item.numero;
+      cercaStatoTreno();
+    }, 
+    (item) => {
+      // Remove
+      if (favIds.has(String(item.numero))) {
+         const newFavs = removeFromStorage(FAVORITES_KEY, item.numero, 'numero');
+      } else {
+         const newRecents = removeFromStorage(RECENT_KEY, item.numero, 'numero');
+      }
+      updateTrainStorage();
+    },
+    (item) => {
+      // Toggle Fav
+      const isFav = favIds.has(String(item.numero));
+      if (isFav) {
+        removeFromStorage(FAVORITES_KEY, item.numero, 'numero');
+        // Add back to recents if not there? It's probably there or we should add it
+        addToStorage(RECENT_KEY, item, 'numero'); 
+      } else {
+        addToStorage(FAVORITES_KEY, item, 'numero');
+      }
+      updateTrainStorage();
+    },
+    (item) => favIds.has(String(item.numero))
+  );
 }
 
 function addRecentTrain(details) {
   if (!details || !details.numero) return;
-  const list = loadRecentTrains();
-  const numStr = String(details.numero);
-
-  const filtered = list.filter(t => String(t.numero) !== numStr);
-
-  filtered.unshift({
-    numero: numStr,
-    origine: details.origine || '',
-    destinazione: details.destinazione || '',
-    partenza: details.partenza || '',
-    arrivo: details.arrivo || '',
-  });
-
-  const trimmed = filtered.slice(0, MAX_RECENT);
-  saveRecentTrains(trimmed);
-  renderRecentTrains(trimmed);
+  addToStorage(RECENT_KEY, {
+    numero: details.numero,
+    origine: details.origine,
+    destinazione: details.destinazione,
+    partenza: details.partenza,
+    arrivo: details.arrivo
+  }, 'numero');
+  updateTrainStorage();
 }
 
-function getTrainDataFromPill(el) {
-  if (!el) {
-    return { numero: '', origine: '', destinazione: '', partenza: '', arrivo: '' };
-  }
-  return {
-    numero: el.getAttribute('data-num') || '',
-    origine: decodeDatasetValue(el.getAttribute('data-orig') || ''),
-    destinazione: decodeDatasetValue(el.getAttribute('data-dest') || ''),
-    partenza: decodeDatasetValue(el.getAttribute('data-dep') || ''),
-    arrivo: decodeDatasetValue(el.getAttribute('data-arr') || ''),
-  };
+function isFavoriteTrain(numero) {
+  const list = loadStorage(FAVORITES_KEY);
+  return list.some(t => String(t.numero) === String(numero));
 }
 
-function toggleFavoriteTrain(trainData) {
-  if (!trainData || !trainData.numero) return;
-  const list = loadFavoriteTrains();
-  const numStr = String(trainData.numero);
-  const idx = list.findIndex((t) => String(t.numero) === numStr);
-  let updated;
-
-  if (idx >= 0) {
-    updated = [...list.slice(0, idx), ...list.slice(idx + 1)];
+function toggleFavoriteTrain(data) {
+  if (!data || !data.numero) return;
+  const isFav = isFavoriteTrain(data.numero);
+  if (isFav) {
+    removeFromStorage(FAVORITES_KEY, data.numero, 'numero');
+    // Ensure it's in recents so it doesn't disappear completely if it was just viewed
+    addToStorage(RECENT_KEY, data, 'numero');
   } else {
-    updated = [{
-      numero: numStr,
-      origine: trainData.origine || '',
-      destinazione: trainData.destinazione || '',
-      partenza: trainData.partenza || '',
-      arrivo: trainData.arrivo || '',
-    }, ...list];
+    addToStorage(FAVORITES_KEY, data, 'numero');
   }
-
-  updated = updated.slice(0, MAX_FAVORITES);
-  saveFavoriteTrains(updated);
-  renderFavoriteTrains(updated);
-  renderRecentTrains();
+  updateTrainStorage();
 }
 
-function updateFavoriteActionButton(buttonEl) {
-  if (!buttonEl) return;
-  const num = buttonEl.getAttribute('data-num');
-  if (!num) return;
+function updateFavoriteActionButton(btn) {
+  if (!btn) return;
+  const num = btn.getAttribute('data-num');
   const isFav = isFavoriteTrain(num);
-  buttonEl.classList.toggle('is-active', isFav);
-  buttonEl.textContent = isFav ? 'Rimuovi dai preferiti' : 'Salva nei preferiti';
+  btn.classList.toggle('is-active', isFav);
+  btn.textContent = isFav ? 'Rimuovi dai preferiti' : 'Salva nei preferiti';
 }
 
-function renderRecentTrains(list) {
-  if (!recentTrainsContainer) return;
-  const safeList = Array.isArray(list) ? list : loadRecentTrains();
-  const favoritesSet = new Set(loadFavoriteTrains().map((t) => String(t.numero)));
-  const hasItems = safeList.length > 0;
-  const htmlParts = [];
+// --- TRIP STORAGE ---
 
-  htmlParts.push('<div class="storage-header-row">');
-  htmlParts.push('<span class="storage-header-title">Visti di recente</span>');
-  htmlParts.push(`<button type="button" class="storage-clear storage-clear--recent"${hasItems ? '' : ' disabled'}>Svuota</button>`);
-  htmlParts.push('</div>');
-
-  if (!hasItems) {
-    htmlParts.push('<p class="storage-empty">Cerca un treno per popolare la cronologia.</p>');
-    recentTrainsContainer.innerHTML = htmlParts.join('');
-    return;
-  }
-
-  htmlParts.push('<div class="storage-pills">');
-
-  safeList.forEach((tr) => {
-    const route = [tr.origine, tr.destinazione].filter(Boolean).join(' → ');
-    const safeRoute = route ? escapeHtml(route) : '';
-    const isFavorite = favoritesSet.has(String(tr.numero));
-    const dep = escapeHtml(tr.partenza || '-');
-    const arr = escapeHtml(tr.arrivo || '-');
-    htmlParts.push(
-      `<div class="train-pill" data-num="${tr.numero}" data-orig="${encodeDatasetValue(tr.origine || '')}" data-dest="${encodeDatasetValue(tr.destinazione || '')}" data-dep="${encodeDatasetValue(tr.partenza || '')}" data-arr="${encodeDatasetValue(tr.arrivo || '')}">` +
-      '<button type="button" class="train-pill-main">' +
-      `<span class="train-pill-num">${escapeHtml(tr.numero)}</span>` +
-      (safeRoute ? `<span class="train-pill-route">${safeRoute}</span>` : '') +
-      `<span class="train-pill-times"><span class="train-pill-time">${dep}</span><span class="train-pill-time-sep">→</span><span class="train-pill-time">${arr}</span></span>` +
-      '</button>' +
-      '<div class="train-pill-actions">' +
-      `<button type="button" class="train-pill-star${isFavorite ? ' is-active' : ''}" aria-pressed="${isFavorite}" title="${isFavorite ? 'Rimuovi dai preferiti' : 'Salva tra i preferiti'}">${isFavorite ? '★' : '☆'}</button>` +
-      '<button type="button" class="train-pill-remove" title="Rimuovi treno">&times;</button>' +
-      '</div>' +
-      '</div>'
-    );
-  });
-
-  htmlParts.push('</div>');
-  recentTrainsContainer.innerHTML = htmlParts.join('');
-}
-
-function renderFavoriteTrains(list) {
-  if (!favoriteTrainsContainer) return;
-  const safeList = Array.isArray(list) ? list : loadFavoriteTrains();
-  const hasItems = safeList.length > 0;
-  const htmlParts = [];
-
-  htmlParts.push('<div class="storage-header-row">');
-  htmlParts.push('<span class="storage-header-title">Preferiti</span>');
-  htmlParts.push(`<button type="button" class="storage-clear storage-clear--favorites"${hasItems ? '' : ' disabled'}>Svuota</button>`);
-  htmlParts.push('</div>');
-
-  if (!hasItems) {
-    htmlParts.push('<p class="storage-empty">Nessun treno salvato. Usa la stellina per aggiungerne uno.</p>');
-    favoriteTrainsContainer.innerHTML = htmlParts.join('');
-    return;
-  }
-
-  htmlParts.push('<div class="storage-pills">');
-  safeList.forEach((tr) => {
-    const route = [tr.origine, tr.destinazione].filter(Boolean).join(' → ');
-    const safeRoute = route ? escapeHtml(route) : '';
-    const dep = escapeHtml(tr.partenza || '-');
-    const arr = escapeHtml(tr.arrivo || '-');
-    htmlParts.push(
-      `<div class="train-pill" data-num="${tr.numero}" data-orig="${encodeDatasetValue(tr.origine || '')}" data-dest="${encodeDatasetValue(tr.destinazione || '')}" data-dep="${encodeDatasetValue(tr.partenza || '')}" data-arr="${encodeDatasetValue(tr.arrivo || '')}">` +
-      '<button type="button" class="train-pill-main">' +
-      `<span class="train-pill-num">${escapeHtml(tr.numero)}</span>` +
-      (safeRoute ? `<span class="train-pill-route">${safeRoute}</span>` : '') +
-      `<span class="train-pill-times"><span class="train-pill-time">${dep}</span><span class="train-pill-time-sep">→</span><span class="train-pill-time">${arr}</span></span>` +
-      '</button>' +
-      '<div class="train-pill-actions">' +
-      '<button type="button" class="train-pill-remove favorite-pill-remove" title="Rimuovi dai preferiti">&times;</button>' +
-      '</div>' +
-      '</div>'
-    );
-  });
-  htmlParts.push('</div>');
-  favoriteTrainsContainer.innerHTML = htmlParts.join('');
-}
-
-if (recentTrainsContainer) {
-  recentTrainsContainer.addEventListener('click', (e) => {
-  const clearBtn = e.target.closest('.storage-clear--recent');
-  if (clearBtn) {
-    saveRecentTrains([]);
-    renderRecentTrains([]);
-    return;
-  }
-
-  const starBtn = e.target.closest('.train-pill-star');
-  if (starBtn) {
-    const pill = starBtn.closest('.train-pill');
-    toggleFavoriteTrain(getTrainDataFromPill(pill));
-    return;
-  }
-
-  const removeBtn = e.target.closest('.train-pill-remove');
-  if (removeBtn && !removeBtn.classList.contains('favorite-pill-remove')) {
-    const pill = removeBtn.closest('.train-pill');
-    if (!pill) return;
-    const num = pill.getAttribute('data-num');
-    const list = loadRecentTrains().filter(t => String(t.numero) !== String(num));
-    saveRecentTrains(list);
-    renderRecentTrains(list);
-    return;
-  }
-
-  const mainBtn = e.target.closest('.train-pill-main');
-  if (mainBtn) {
-    const pill = mainBtn.closest('.train-pill');
-    if (!pill) return;
-    const n = pill.getAttribute('data-num');
-    if (n) {
-      trainNumberInput.value = n;
-      cercaStatoTreno(n);
-      scrollToSection(trainSearchSection);
+function updateTripStorage() {
+  const recents = loadStorage(TRIP_RECENT_KEY);
+  renderChips(tripStorageContainer, recents, 'trip',
+    (item) => {
+      tripFromInput.value = item.from;
+      tripToInput.value = item.to;
+      // Optional: trigger search automatically?
+      // tripSearchBtn.click();
+    },
+    (item) => {
+      const id = `${item.from}|${item.to}`;
+      const list = loadStorage(TRIP_RECENT_KEY);
+      const filtered = list.filter(i => `${i.from}|${i.to}` !== id);
+      saveStorage(TRIP_RECENT_KEY, filtered);
+      updateTripStorage();
     }
-  }
-  });
+  );
 }
 
-if (favoriteTrainsContainer) {
-  favoriteTrainsContainer.addEventListener('click', (e) => {
-  const clearBtn = e.target.closest('.storage-clear--favorites');
-  if (clearBtn) {
-    saveFavoriteTrains([]);
-    renderFavoriteTrains([]);
-    renderRecentTrains();
-    return;
-  }
+function addRecentTrip(from, to) {
+  if (!from || !to) return;
+  const list = loadStorage(TRIP_RECENT_KEY);
+  const newItem = { from, to };
+  const id = `${from}|${to}`;
+  
+  const filtered = list.filter(i => `${i.from}|${i.to}` !== id);
+  filtered.unshift(newItem);
+  const trimmed = filtered.slice(0, MAX_RECENT);
+  saveStorage(TRIP_RECENT_KEY, trimmed);
+  updateTripStorage();
+}
 
-  const removeBtn = e.target.closest('.favorite-pill-remove');
-  if (removeBtn) {
-    const pill = removeBtn.closest('.train-pill');
-    const data = getTrainDataFromPill(pill);
-    toggleFavoriteTrain(data);
-    return;
-  }
+// --- STATION STORAGE ---
 
-  const mainBtn = e.target.closest('.train-pill-main');
-  if (mainBtn) {
-    const pill = mainBtn.closest('.train-pill');
-    if (!pill) return;
-    const n = pill.getAttribute('data-num');
-    if (n) {
-      trainNumberInput.value = n;
-      cercaStatoTreno(n);
-      scrollToSection(trainSearchSection);
+function updateStationStorage() {
+  const recents = loadStorage(STATION_RECENT_KEY);
+  renderChips(stationStorageContainer, recents, 'station',
+    (item) => {
+      const input = document.getElementById('stationQuery');
+      if (input) {
+        input.value = item.name;
+        // Trigger search
+        if (typeof cercaStazione === 'function') {
+            cercaStazione();
+        }
+      }
+    },
+    (item) => {
+      const newList = removeFromStorage(STATION_RECENT_KEY, item.id, 'id');
+      updateStationStorage();
     }
-  }
-  });
+  );
 }
 
-renderFavoriteTrains();
-renderRecentTrains();
+function addRecentStation(station) {
+  if (!station || !station.name) return;
+  addToStorage(STATION_RECENT_KEY, { id: station.id, name: station.name }, 'id');
+  updateStationStorage();
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+  updateTrainStorage();
+  updateTripStorage();
+  updateStationStorage();
+});
+
+// Old init calls removed
+// renderFavoriteTrains();
+// renderRecentTrains();
 
 if (trainResult) {
   trainResult.addEventListener('click', (e) => {
@@ -2603,7 +2690,7 @@ function renderTrainStatus(payload) {
     `;
 
     tableHtml = `
-      <details class="train-stops-collapse" aria-label="Elenco fermate" data-stop-count="${fermate.length}">
+      <details class="train-stops-collapse" aria-label="Elenco fermate" data-stop-count="${fermate.length}" open>
         <summary class="train-stops-summary">
           <span class="train-stops-summary-inner">
             <span class="train-stops-summary-title">Fermate</span>
@@ -2650,9 +2737,9 @@ async function cercaStatoTreno(trainNumberOverride = '') {
   }
 
   trainResult.innerHTML = `
-    <div class="loading-indicator loading-indicator--centered train-loading-indicator">
-      <span class="loading-indicator__spinner" aria-hidden="true"></span>
-      <span>Caricamento stato treno…</span>
+    <div class="loading-container">
+      <div class="loading-bar"></div>
+      <div class="loading-text">Caricamento stato treno...</div>
     </div>
   `;
 
@@ -2711,5 +2798,325 @@ if (trainClearBtn) {
   trainClearBtn.addEventListener('click', () => {
     clearTrainSearch();
     trainNumberInput?.focus();
+  });
+}
+
+// --- RICERCA SOLUZIONI (LeFrecce) ----------------------------------------
+
+// Set default date/time
+if (tripDateInput) {
+  tripDateInput.valueAsDate = new Date();
+}
+if (tripTimeInput) {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  tripTimeInput.value = `${hh}:${mm}`;
+}
+
+function setupTripAutocomplete(input, list, onSelect) {
+  if (!input || !list) return;
+
+  input.addEventListener('input', debounce(async (e) => {
+    const query = e.target.value.trim();
+    if (query.length < 2) {
+      list.innerHTML = '';
+      return;
+    }
+
+    try {
+      // Usa endpoint specifico LeFrecce
+      const res = await fetch(`${API_BASE}/api/lefrecce/autocomplete?query=${encodeURIComponent(query)}`);
+      const json = await res.json();
+      
+      list.innerHTML = '';
+      if (json.ok && json.data && json.data.length > 0) {
+        json.data.forEach(station => {
+          const li = document.createElement('li');
+          li.textContent = station.name;
+          li.addEventListener('click', () => {
+            input.value = station.name;
+            list.innerHTML = '';
+            onSelect(station);
+          });
+          list.appendChild(li);
+        });
+      }
+    } catch (err) {
+      console.error('Autocomplete error', err);
+    }
+  }, 300));
+
+  // Hide list on blur (delayed)
+  input.addEventListener('blur', () => {
+    setTimeout(() => {
+      list.innerHTML = '';
+    }, 200);
+  });
+}
+
+setupTripAutocomplete(tripFromInput, tripFromList, (station) => {
+  tripFromId = station.id;
+});
+
+setupTripAutocomplete(tripToInput, tripToList, (station) => {
+  tripToId = station.id;
+});
+
+if (tripSearchBtn) {
+  tripSearchBtn.addEventListener('click', async () => {
+    const fromName = tripFromInput.value.trim();
+    const toName = tripToInput.value.trim();
+
+    if (!fromName || !toName) {
+      alert('Inserisci stazione di partenza e arrivo.');
+      return;
+    }
+
+    if (typeof addRecentTrip === 'function') {
+      addRecentTrip(fromName, toName);
+    }
+    
+    const date = tripDateInput.value;
+    const time = tripTimeInput.value;
+    
+    if (!date) {
+      alert('Seleziona una data.');
+      return;
+    }
+
+    tripResults.innerHTML = `
+      <div class="loading-container">
+        <div class="loading-bar"></div>
+        <div class="loading-text">Caricamento soluzioni...</div>
+      </div>
+    `;
+
+    try {
+      const params = new URLSearchParams({
+        date: date,
+        time: time || '00:00'
+      });
+
+      // Se abbiamo gli ID, usiamoli. Altrimenti usiamo i nomi.
+      if (tripFromId) params.append('fromId', tripFromId);
+      else params.append('fromName', fromName);
+
+      if (tripToId) params.append('toId', tripToId);
+      else params.append('toName', toName);
+
+      const res = await fetch(`${API_BASE}/api/solutions?${params.toString()}`);
+      const json = await res.json();
+
+      if (!json.ok) {
+        tripResults.innerHTML = `<div class="error">Errore: ${json.error || 'Sconosciuto'}</div>`;
+        return;
+      }
+
+      renderTripResults(json.solutions);
+
+    } catch (err) {
+      console.error(err);
+      tripResults.innerHTML = `<div class="error">Errore di rete.</div>`;
+    }
+  });
+}
+
+function renderTripResults(solutions) {
+  if (!solutions || solutions.length === 0) {
+    tripResults.innerHTML = '<div class="info">Nessuna soluzione trovata.</div>';
+    return;
+  }
+
+  let html = '<div class="solutions-list">';
+  
+  solutions.forEach(item => {
+    // A volte l'oggetto è { solution: {...}, ... } altre volte è direttamente la soluzione
+    const sol = item.solution || item;
+
+    const depTime = new Date(sol.departureTime).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const arrTime = new Date(sol.arrivalTime).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const duration = sol.duration || '-'; 
+    
+    // Treni: cerchiamo in diverse proprietà possibili.
+    // Priorità a 'nodes' o 'solutionSegments' che contengono orari e stazioni per ogni tratta.
+    const vehicleList = sol.nodes || sol.solutionSegments || sol.segments || sol.trains || sol.vehicles || [];
+    
+    // Helper per determinare la classe CSS in base al tipo di treno
+    const getTrainTypeClass = (ident) => {
+        const s = ident.toUpperCase();
+        if (s.includes('FRECCIAROSSA') || s.includes('FR ') || s.includes('FRECCIARGENTO') || s.includes('FA ') || s.includes('FRECCIABIANCA') || s.includes('FB ')) return 'train-type-fr';
+        if (s.includes('INTERCITY') || s.includes('IC ') || s.includes('ICN ')) return 'train-type-ic';
+        if (s.includes('REGIONALE') || s.includes('REG ') || s.includes('RV ')) return 'train-type-reg';
+        if (s.includes('EUROCITY') || s.includes('EC ') || s.includes('EURONIGHT') || s.includes('EN ')) return 'train-type-ec';
+        return 'train-type-other';
+    };
+
+    // Helper per generare il badge del treno
+    const getTrainBadge = (n) => {
+        let ident = '';
+        let num = '';
+        const t = n.train || n;
+
+        if (t.name && /^\d+$/.test(t.name)) {
+            num = t.name;
+            const cat = t.acronym || t.denomination || t.trainCategory || 'Treno';
+            ident = `${cat} ${num}`;
+        } else if (t.number) {
+            num = t.number;
+            const cat = t.acronym || t.trainCategory || 'Treno';
+            ident = `${cat} ${num}`;
+        } else if (typeof t.trainIdentifier === 'string') {
+            ident = t.trainIdentifier;
+        } else if (t.transportMeanIdentifier) {
+            ident = t.transportMeanIdentifier;
+        } else if (t.transportMeanAcronym && t.transportMeanName) {
+             ident = `${t.transportMeanAcronym} ${t.transportMeanName}`;
+        } else {
+             ident = t.trainName || t.acronym || t.transportMeanName || 'Treno';
+        }
+        
+        ident = ident.trim();
+        if (!num) {
+            const match = ident.match(/(\d+)/);
+            if (match) num = match[0];
+        }
+        if (!ident || ident === num) ident = 'Treno ' + (num || '');
+
+        const typeClass = getTrainTypeClass(ident);
+        const logoHtml = `<img src="/img/trenitalia.png" alt="Trenitalia" />`;
+
+        if (num) {
+             return `<button type="button" class="train-badge train-link ${typeClass}" data-num="${num}" title="Vedi stato treno ${num}">${logoHtml} ${ident}</button>`;
+        }
+        return `<span class="train-badge ${typeClass}">${logoHtml} ${ident}</span>`;
+    };
+
+    let trainsHtml = '';
+    let segmentsHtml = '';
+
+    if (vehicleList.length > 1) {
+        // Vista dettagliata per cambi
+        trainsHtml = `<span class="train-badge badge-summary">${vehicleList.length - 1} cambi</span>`;
+        
+        let innerSegments = '<div class="sol-segments">';
+        vehicleList.forEach((node, idx) => {
+            const badge = getTrainBadge(node);
+            
+            // Parsing sicuro delle date
+            const formatTime = (d) => {
+                if (!d) return '--:--';
+                const date = new Date(d);
+                return isNaN(date.getTime()) ? '--:--' : date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+            };
+
+            const dep = formatTime(node.departureTime);
+            const arr = formatTime(node.arrivalTime);
+            const origin = node.origin || node.startLocation || '';
+            const dest = node.destination || node.endLocation || '';
+            
+            innerSegments += `
+                <div class="sol-segment">
+                    <div class="sol-segment-train">${badge}</div>
+                    <div class="sol-segment-itinerary">
+                        <div class="sol-itinerary-point">
+                            <span class="sol-itinerary-time">${dep}</span>
+                            <span class="sol-itinerary-station">${origin}</span>
+                        </div>
+                        <div class="sol-itinerary-connector"></div>
+                        <div class="sol-itinerary-point">
+                            <span class="sol-itinerary-time">${arr}</span>
+                            <span class="sol-itinerary-station">${dest}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            if (idx < vehicleList.length - 1) {
+                 const nextNode = vehicleList[idx+1];
+                 const arrDate = new Date(node.arrivalTime);
+                 const nextDepDate = new Date(nextNode.departureTime);
+                 
+                 if (!isNaN(arrDate.getTime()) && !isNaN(nextDepDate.getTime())) {
+                     const diffMs = nextDepDate - arrDate;
+                     const diffMins = Math.floor(diffMs / 60000);
+                     innerSegments += `<div class="sol-transfer"><span class="transfer-icon">⇄</span> Cambio a ${dest} <span class="transfer-time">(${diffMins} min)</span></div>`;
+                 } else {
+                     innerSegments += `<div class="sol-transfer"><span class="transfer-icon">⇄</span> Cambio a ${dest}</div>`;
+                 }
+            }
+        });
+        innerSegments += '</div>';
+
+        segmentsHtml = `
+            <details class="sol-details">
+                <summary class="sol-summary">
+                    <span class="sol-summary-text">Dettagli viaggio</span>
+                    <span class="sol-summary-icon">▼</span>
+                </summary>
+                ${innerSegments}
+            </details>
+        `;
+    } else {
+        // Vista semplice (diretto)
+        trainsHtml = vehicleList.map(getTrainBadge).join(' ');
+    }
+
+    // Prezzo
+    let price = 'N/A';
+    if (sol.price && sol.price.amount) price = sol.price.amount + '€';
+    else if (item.price && item.price.amount) price = item.price.amount + '€';
+    else if (sol.minPrice && sol.minPrice.amount) price = sol.minPrice.amount + '€';
+
+    html += `
+      <div class="solution-card">
+        <div class="sol-header">
+            <div class="sol-info">
+                <div class="sol-times">
+                  <div class="sol-time">${depTime}</div>
+                  <div class="sol-arrow">→</div>
+                  <div class="sol-time">${arrTime}</div>
+                </div>
+                <div class="sol-meta">
+                    <div class="sol-duration">${duration}</div>
+                    <div class="sol-trains">${trainsHtml}</div>
+                </div>
+            </div>
+            <div class="sol-price-box">
+                <div class="sol-price">${price}</div>
+            </div>
+        </div>
+        ${segmentsHtml}
+      </div>
+    `;
+  });
+  
+  html += '</div>';
+  tripResults.innerHTML = html;
+}
+
+if (tripResults) {
+  tripResults.addEventListener('click', (e) => {
+    const btn = e.target.closest('.train-link');
+    if (btn) {
+      const num = btn.getAttribute('data-num');
+      if (num) {
+        if (trainNumberInput) trainNumberInput.value = num;
+        cercaStatoTreno(num);
+        scrollToSection(trainSearchSection);
+      }
+    }
+  });
+}
+
+if (tripClearBtn) {
+  tripClearBtn.addEventListener('click', () => {
+    if (tripFromInput) tripFromInput.value = '';
+    if (tripToInput) tripToInput.value = '';
+    if (tripDateInput) tripDateInput.value = '';
+    if (tripTimeInput) tripTimeInput.value = '';
+    if (tripResults) tripResults.innerHTML = '';
+    tripFromId = null;
+    tripToId = null;
   });
 }

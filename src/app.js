@@ -10,12 +10,17 @@ const app = express();
 // CORS
 app.use(cors());
 
+// Per leggere JSON nel body delle POST (es. /api/solutions in POST)
+app.use(express.json());
+
 // Base per le API ViaggiaTreno "classiche"
 const BASE_URL =
   'http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno';
 // Base "new" per tabellone HTML
 const BASE_URL_BOARD =
   'http://www.viaggiatreno.it/viaggiatrenonew/resteasy/viaggiatreno';
+
+const LEFRECCE_BASE = 'https://www.lefrecce.it/Channels.Website.BFF.WEB';
 
 // Helper per fetch testo
 async function fetchText(url) {
@@ -43,6 +48,72 @@ async function fetchJson(url) {
   }
   return resp.json();
 }
+
+// --------- Helper LeFrecce: risolvi locationId da nome stazione ---------
+
+// Prende un nome tipo "Pontassieve" o "Firenze S. M. Novella"
+// e chiama LeFrecce per ottenere l'ID numerico interno (locationId)
+async function resolveLocationIdByName(stationName) {
+  const name = (stationName || '').trim();
+  if (!name) return null;
+
+  const params = new URLSearchParams({
+    name,
+    limit: '10',
+  });
+
+  const url = `${LEFRECCE_BASE}/website/locations/search?${params.toString()}`;
+
+  let list;
+  try {
+    list = await fetchJson(url);
+  } catch (err) {
+    console.error('Errore locations/search LeFrecce:', err);
+    return null;
+  }
+
+  if (!Array.isArray(list) || list.length === 0) {
+    console.warn('Nessuna location trovata per', name);
+    return null;
+  }
+
+  const lower = name.toLowerCase();
+
+  // Prova a trovare match "quasi esatto" su name/displayName
+  const exact =
+    list.find(
+      (s) =>
+        (s.name && s.name.toLowerCase() === lower) ||
+        (s.displayName && s.displayName.toLowerCase() === lower)
+    ) || null;
+
+  const chosen = exact || list[0];
+  console.log(
+    'resolveLocationIdByName:',
+    name,
+    '→ scelgo',
+    chosen.name || chosen.displayName,
+    '(id:',
+    chosen.id,
+    ')'
+  );
+
+  const id = chosen.id;
+  if (typeof id === 'number') return id;
+  const parsed = Number(id);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+// Parser boolean da query/body
+function parseBool(val, defaultVal = false) {
+  if (val === undefined || val === null) return defaultVal;
+  if (typeof val === 'boolean') return val;
+  const s = String(val).toLowerCase().trim();
+  if (['true', '1', 'yes', 'y', 'on'].includes(s)) return true;
+  if (['false', '0', 'no', 'n', 'off'].includes(s)) return false;
+  return defaultVal;
+}
+
 
 // Utility comuni per gestire i timestamp ViaggiaTreno ----------------
 
@@ -149,18 +220,16 @@ async function fetchTrainStatusSnapshot(originCode, trainNumber, epochMs) {
 
 // ----------------- ROUTE API -----------------
 
-// Autocomplete stazioni
-// GET /api/stations/autocomplete?query=FIREN
-app.get('/api/stations/autocomplete', async (req, res) => {
+// Autocomplete stazioni (ViaggiaTreno) - Per "Cerca Stazione"
+// GET /api/viaggiatreno/autocomplete?query=FIREN
+app.get('/api/viaggiatreno/autocomplete', async (req, res) => {
   const query = (req.query.query || '').trim();
   if (query.length < 2) {
     return res.json({ ok: true, data: [] });
   }
 
   try {
-    const url = `${BASE_URL}/autocompletaStazione/${encodeURIComponent(
-      query
-    )}`;
+    const url = `${BASE_URL}/autocompletaStazione/${encodeURIComponent(query)}`;
     const text = await fetchText(url);
 
     const lines = text
@@ -175,15 +244,59 @@ app.get('/api/stations/autocomplete', async (req, res) => {
 
     res.json({ ok: true, data });
   } catch (err) {
-    console.error('Errore autocomplete stazioni:', err);
-    res
-      .status(err.status || 500)
-      .json({
-        ok: false,
-        error: 'Errore nel recupero autocomplete stazioni',
-        details: err.message,
-      });
+    console.error('Errore autocomplete ViaggiaTreno:', err);
+    res.status(500).json({
+      ok: false,
+      error: 'Errore nel recupero autocomplete ViaggiaTreno',
+      details: err.message,
+    });
   }
+});
+
+// Autocomplete stazioni (LeFrecce) - Per "Cerca Viaggio"
+// GET /api/lefrecce/autocomplete?query=FIREN
+app.get('/api/lefrecce/autocomplete', async (req, res) => {
+  const query = (req.query.query || '').trim();
+  if (query.length < 2) {
+    return res.json({ ok: true, data: [] });
+  }
+
+  try {
+    const params = new URLSearchParams({
+      name: query,
+      limit: '10',
+    });
+    const url = `${LEFRECCE_BASE}/website/locations/search?${params.toString()}`;
+
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new Error(`LeFrecce error ${resp.status}`);
+    }
+    const list = await resp.json();
+
+    // Mappiamo i risultati per il frontend
+    // Restituiamo { name: "Nome Stazione", id: 12345 }
+    const data = list.map((s) => ({
+      name: s.displayName || s.name,
+      id: s.id,
+    }));
+
+    res.json({ ok: true, data });
+  } catch (err) {
+    console.error('Errore autocomplete LeFrecce:', err);
+    res.status(500).json({
+      ok: false,
+      error: 'Errore nel recupero autocomplete LeFrecce',
+      details: err.message,
+    });
+  }
+});
+
+// Manteniamo la vecchia route per compatibilità (o la redirezioniamo)
+// In questo caso la facciamo puntare a ViaggiaTreno per default, o la rimuoviamo se aggiorniamo il frontend
+app.get('/api/stations/autocomplete', async (req, res) => {
+   // Fallback a ViaggiaTreno per default se non specificato
+   res.redirect(307, `/api/viaggiatreno/autocomplete?query=${encodeURIComponent(req.query.query || '')}`);
 });
 
 const STATION_REGION_OVERRIDES = {
@@ -191,7 +304,235 @@ const STATION_REGION_OVERRIDES = {
   S06950: 'TOSCANA', // Firenze San Marco Vecchio
 };
 
-//TEST
+// Risolve il locationId di LeFrecce partendo da un nome stazione (es. "Pontassieve")
+// usando l'endpoint ufficiale di ricerca stazioni:
+// GET https://www.lefrecce.it/Channels.Website.BFF.WEB/website/locations/search?name=[NAME]&limit=[LIMIT]
+// Ritorna un intero (id) oppure null se non trova niente.
+async function resolveLocationIdByName(stationName) {
+  const name = (stationName || '').trim();
+  if (!name) return null;
+
+  const params = new URLSearchParams({
+    name,
+    limit: '10',
+  });
+
+  const url = `${LEFRECCE_BASE}/website/locations/search?${params.toString()}`;
+
+  const resp = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json, text/plain, */*',
+    },
+  });
+
+  if (!resp.ok) {
+    console.error(
+      'Errore LeFrecce locations/search:',
+      resp.status,
+      await resp.text().catch(() => '')
+    );
+    return null;
+  }
+
+  const list = await resp.json();
+
+  if (!Array.isArray(list) || list.length === 0) {
+    console.warn('Nessuna stazione trovata per', name);
+    return null;
+  }
+
+  const lower = name.toLowerCase();
+
+  // prova match "quasi esatto" su name/displayName
+  const exact =
+    list.find(
+      (s) =>
+        (s.name && s.name.toLowerCase() === lower) ||
+        (s.displayName && s.displayName.toLowerCase() === lower)
+    ) || null;
+
+  const chosen = exact || list[0];
+  console.log(
+    'resolveLocationIdByName:',
+    name,
+    '→ scelgo',
+    chosen.name,
+    '(id:',
+    chosen.id,
+    ')'
+  );
+
+  return typeof chosen.id === 'number' ? chosen.id : Number(chosen.id);
+}
+
+
+// Ricerca soluzioni di viaggio Trenitalia (LeFrecce)
+//
+// Puoi chiamarla in due modi:
+//
+// 1) Con ID LeFrecce già noti:
+//    GET /api/solutions?fromId=830006905&toId=830006900&date=2025-12-04&time=18:00&adults=1&children=0
+//
+// 2) Con solo i nomi stazione (esattamente come li mostri in UI, presi da ViaggiaTreno):
+//    GET /api/solutions?fromName=Pontassieve&toName=Firenze%20S.%20M.%20Novella&date=2025-12-04&time=18:00
+//
+// Parametri supportati (query string):
+//   fromId        → locationId LeFrecce origine (intero)    [opzionale se passi fromName]
+//   toId          → locationId LeFrecce destinazione        [opzionale se passi toName]
+//   fromName      → nome stazione origine (usato se manca fromId)
+//   toName        → nome stazione arrivo  (usato se manca toId)
+//   date          → obbligatorio, "YYYY-MM-DD"
+//   time          → opzionale, "HH:mm" (default "00:00")
+//   adults        → opzionale, default 1
+//   children      → opzionale, default 0
+//   frecceOnly    → opzionale, "true"/"false" (default false)
+//   regionalOnly  → idem
+//   intercityOnly → idem
+//   tourismOnly   → idem
+//   noChanges     → idem
+//   order         → opzionale, default "DEPARTURE_DATE"
+//   offset        → opzionale, default 0
+//   limit         → opzionale, default 10
+//   bestFare      → opzionale, default false
+//   bikeFilter    → opzionale, default false
+app.get('/api/solutions', async (req, res) => {
+  try {
+    let {
+      fromId,
+      toId,
+      fromName,
+      toName,
+      date,       // "YYYY-MM-DD"
+      time,       // "HH:mm" (opzionale)
+      adults,
+      children,
+      frecceOnly,
+      regionalOnly,
+      intercityOnly,
+      tourismOnly,
+      noChanges,
+      order,
+      offset,
+      limit,
+      bestFare,
+      bikeFilter,
+    } = req.query;
+
+    // Validazione base sulla data
+    if (!date) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Parametro obbligatorio: date (YYYY-MM-DD)',
+      });
+    }
+
+    // Se mancano gli ID LeFrecce, proviamo a ricavarli dai nomi
+    // (che tu avrai ottenuto da ViaggiaTreno lato frontend)
+    let depId = fromId ? Number(fromId) : null;
+    let arrId = toId ? Number(toId) : null;
+
+    if (!depId && fromName) {
+      depId = await resolveLocationIdByName(fromName);
+    }
+    if (!arrId && toName) {
+      arrId = await resolveLocationIdByName(toName);
+    }
+
+    // Se ancora non ho gli ID, non posso chiamare LeFrecce
+    if (!depId || !arrId) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          'Serve almeno fromId/toId oppure fromName/toName risolvibili in locationId',
+        debug: {
+          fromId,
+          toId,
+          fromName,
+          toName,
+        },
+      });
+    }
+
+    // Costruzione departureTime "YYYY-MM-DDTHH:mm:00.000"
+    const [hh = '00', mm = '00'] = (time || '00:00').split(':');
+    const departureTime = `${date}T${hh.padStart(2, '0')}:${mm.padStart(
+      2,
+      '0'
+    )}:00.000`;
+
+    const parseBool = (val, defaultVal = false) => {
+      if (val === undefined) return defaultVal;
+      if (typeof val === 'boolean') return val;
+      const s = String(val).toLowerCase().trim();
+      if (s === 'true' || s === '1' || s === 'yes') return true;
+      if (s === 'false' || s === '0' || s === 'no') return false;
+      return defaultVal;
+    };
+
+    const body = {
+      cartId: null,
+      departureLocationId: depId,
+      arrivalLocationId: arrId,
+      departureTime,
+      adults: Number(adults || 1),
+      children: Number(children || 0),
+      criteria: {
+        frecceOnly: parseBool(frecceOnly, false),
+        regionalOnly: parseBool(regionalOnly, false),
+        intercityOnly: parseBool(intercityOnly, false),
+        tourismOnly: parseBool(tourismOnly, false),
+        noChanges: parseBool(noChanges, false),
+        order: order || 'DEPARTURE_DATE',
+        offset: Number.isFinite(Number(offset)) ? Number(offset) : 0,
+        limit: Number.isFinite(Number(limit)) ? Number(limit) : 10,
+      },
+      advancedSearchRequest: {
+        bestFare: parseBool(bestFare, false),
+        bikeFilter: parseBool(bikeFilter, false),
+        forwardDiscountCodes: [],
+      },
+    };
+
+    const vtResp = await fetch(`${LEFRECCE_BASE}/website/ticket/solutions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/plain, */*',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const text = await vtResp.text();
+    console.log('LeFrecce /solutions status:', vtResp.status);
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      // Non è JSON → giro il testo grezzo
+      return res.status(vtResp.status).send(text);
+    }
+
+    return res.status(vtResp.status).json({
+      ok: vtResp.ok,
+      searchId: data.searchId,
+      cartId: data.cartId,
+      solutions: data.solutions || [],
+      minimumPrices: data.minimumPrices || null,
+      // raw: data, // se vuoi fare debug, puoi scommentare
+    });
+  } catch (err) {
+    console.error('Errore /api/solutions:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Errore interno /api/solutions',
+      details: err.message,
+    });
+  }
+});
+
+
 // Info stazione (dettagli + meteo regione)
 // GET /api/stations/info?stationCode=S06904
 app.get('/api/stations/info', async (req, res) => {
@@ -522,6 +863,159 @@ app.get('/api/news', async (_req, res) => {
       });
   }
 });
+
+// --------- /api/solutions: ricerca soluzioni di viaggio Trenitalia ---------
+
+// Handler condiviso per GET e POST /api/solutions
+// Handler condiviso per GET e POST /api/solutions
+// --------- /api/solutions: ricerca soluzioni di viaggio Trenitalia ---------
+
+async function handleSolutions(req, res) {
+  try {
+    const source = req.method === 'GET' ? req.query : (req.body || {});
+    console.log('handleSolutions source:', source);
+
+    let {
+      fromId,
+      toId,
+      fromName,
+      toName,
+      date,       // "YYYY-MM-DD"
+      time,       // "HH:mm"
+      departureTime,
+      adults,
+      children,
+      frecceOnly,
+      regionalOnly,
+      intercityOnly,
+      tourismOnly,
+      noChanges,
+      order,
+      offset,
+      limit,
+      bestFare,
+      bikeFilter,
+    } = source;
+
+    // Se non c'è departureTime, ci aspettiamo date (+ eventualmente time)
+    if (!departureTime && !date) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Serve almeno "date" (YYYY-MM-DD) oppure "departureTime" ISO.',
+      });
+    }
+
+    // Risoluzione ID stazioni
+    let depId = fromId ? Number(fromId) : null;
+    let arrId = toId ? Number(toId) : null;
+
+    if (!depId && fromName) {
+      depId = await resolveLocationIdByName(fromName);
+    }
+    if (!arrId && toName) {
+      arrId = await resolveLocationIdByName(toName);
+    }
+
+    console.log('handleSolutions resolved IDs:', {
+      fromName,
+      toName,
+      depId,
+      arrId,
+    });
+
+    if (!depId || !arrId) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          'Impossibile determinare gli ID delle stazioni: specifica fromId/toId oppure fromName/toName risolvibili.',
+        debug: { fromId, toId, fromName, toName },
+      });
+    }
+
+    // Costruzione departureTime per LeFrecce
+    let depTimeStr = departureTime;
+    if (!depTimeStr && date) {
+      const [hh = '00', mm = '00'] = (time || '00:00').split(':');
+      depTimeStr = `${date}T${String(hh).padStart(2, '0')}:${String(
+        mm
+      ).padStart(2, '0')}:00.000`;
+    }
+
+    const body = {
+      cartId: null,
+      departureLocationId: depId,
+      arrivalLocationId: arrId,
+      departureTime: depTimeStr,
+      adults: Number(adults || 1),
+      children: Number(children || 0),
+      criteria: {
+        frecceOnly: parseBool(frecceOnly, false),
+        regionalOnly: parseBool(regionalOnly, false),
+        intercityOnly: parseBool(intercityOnly, false),
+        tourismOnly: parseBool(tourismOnly, false),
+        noChanges: parseBool(noChanges, false),
+        order: order || 'DEPARTURE_DATE',
+        offset: Number.isFinite(Number(offset)) ? Number(offset) : 0,
+        limit: Number.isFinite(Number(limit)) ? Number(limit) : 10,
+      },
+      advancedSearchRequest: {
+        bestFare: parseBool(bestFare, false),
+        bikeFilter: parseBool(bikeFilter, false),
+        forwardDiscountCodes: [],
+      },
+    };
+
+    console.log('LeFrecce /solutions body:', body);
+
+    const vtResp = await fetch(
+      `${LEFRECCE_BASE}/website/ticket/solutions`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/plain, */*',
+        },
+        body: JSON.stringify(body),
+      }
+    );
+
+    const text = await vtResp.text();
+    console.log('LeFrecce /solutions status:', vtResp.status);
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      console.error('Risposta non JSON da LeFrecce:', text.slice(0, 500));
+      return res.status(vtResp.status).send(text);
+    }
+
+    return res.status(vtResp.status).json({
+      ok: vtResp.ok,
+      searchId: data.searchId,
+      cartId: data.cartId,
+      solutions: data.solutions || [],
+      minimumPrices: data.minimumPrices || null,
+      raw: data, // utile per debug, poi se vuoi lo togli
+    });
+  } catch (err) {
+    console.error('Errore /api/solutions:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Errore interno /api/solutions',
+      details: err.message,
+    });
+  }
+}
+
+app.get('/api/solutions', handleSolutions);
+app.post('/api/solutions', handleSolutions);
+
+
+// Espongo sia GET che POST sulla stessa route
+app.get('/api/solutions', handleSolutions);
+app.post('/api/solutions', handleSolutions);
+
 
 // Fallback 404, così se sbagli path lo vedi nel log
 app.use((req, res) => {
