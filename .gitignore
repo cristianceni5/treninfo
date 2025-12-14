@@ -1,0 +1,23 @@
+# Node / npm
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Netlify (local dev state)
+.netlify/
+
+# Env files
+.env
+.env.*
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+
+# Build artifacts (if added later)
+dist/
+build/

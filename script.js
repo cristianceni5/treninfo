@@ -1,10 +1,8 @@
 //Developed by Cristian Ceni 2025 dhn
 
-const LOCAL_DEV_HOSTS = ['localhost', '127.0.0.1'];
-const API_BASE =
-  LOCAL_DEV_HOSTS.includes(window.location.hostname)
-    ? 'http://localhost:3000' // sviluppo locale: backend separato
-    : '';                      // produzione: stessa origin (Netlify)
+// In locale usiamo Netlify Dev (functions + redirects) sulla stessa origin.
+// Quindi l'API base resta relativa sia in dev che in produzione.
+const API_BASE = '';
 
 
 const RECENT_KEY = 'monitor_treno_recent';

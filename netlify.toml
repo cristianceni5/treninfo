@@ -3,6 +3,10 @@
   publish = "."
   functions = "netlify/functions"
 
+[dev]
+  publish = "."
+  functions = "netlify/functions"
+
 # /api/* → /.netlify/functions/api/api/* (nota il doppio /api)
 [[redirects]]
   from = "/api/*"
