@@ -5,6 +5,7 @@
 const express = require('express');
 const cors = require('cors');
 const Trenitalia = require('api-trenitalia');
+const trenitalia = new Trenitalia();
 
 const app = express();
 
@@ -535,7 +536,7 @@ app.get('/api/lefrecce/autocomplete', async (req, res) => {
   if (query.length < 2) return res.json({ ok: true, data: [] });
 
   try {
-    const stations = await Trenitalia.autocomplete(query);
+    const stations = await trenitalia.autocomplete(query);
     res.json({ ok: true, data: stations });
   } catch (err) {
     console.error('Errore autocomplete LeFrecce:', err);
@@ -552,12 +553,28 @@ app.get('/api/solutions', async (req, res) => {
         return res.status(400).json({ ok: false, error: 'Stazioni di partenza e arrivo obbligatorie' });
     }
 
-    let searchDate = new Date();
-    if (date && time) {
-        searchDate = new Date(`${date}T${time}:00`);
+    // Formattazione data per api-trenitalia (presumibilmente DD/MM/YYYY e HH)
+    let searchDate = '12/12/2025'; // fallback
+    let searchTime = '12';
+
+    if (date) {
+        // date è YYYY-MM-DD
+        const [y, m, d] = date.split('-');
+        searchDate = `${d}/${m}/${y}`;
+    } else {
+        const now = new Date();
+        searchDate = now.toLocaleDateString('it-IT');
     }
 
-    const solutions = await Trenitalia.trainSolutions(fromId, toId, searchDate);
+    if (time) {
+        // time è HH:MM
+        searchTime = time.split(':')[0];
+    } else {
+        const now = new Date();
+        searchTime = String(now.getHours());
+    }
+
+    const solutions = await trenitalia.getOneWaySolutions(fromId, toId, searchDate, searchTime);
     res.json({ ok: true, solutions });
   } catch (err) {
     console.error('Errore ricerca soluzioni:', err);
