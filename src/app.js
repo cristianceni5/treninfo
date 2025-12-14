@@ -149,9 +149,9 @@ async function fetchTrainStatusSnapshot(originCode, trainNumber, epochMs) {
 
 // ----------------- ROUTE API -----------------
 
-// Autocomplete stazioni
-// GET /api/stations/autocomplete?query=FIREN
-app.get('/api/stations/autocomplete', async (req, res) => {
+// Autocomplete stazioni (ViaggiaTreno)
+// GET /api/viaggiatreno/autocomplete?query=FIREN
+app.get('/api/viaggiatreno/autocomplete', async (req, res) => {
   const query = (req.query.query || '').trim();
   if (query.length < 2) {
     return res.json({ ok: true, data: [] });
@@ -184,6 +184,11 @@ app.get('/api/stations/autocomplete', async (req, res) => {
         details: err.message,
       });
   }
+});
+
+// Alias per compatibilità (se servisse)
+app.get('/api/stations/autocomplete', (req, res) => {
+  res.redirect(307, `/api/viaggiatreno/autocomplete?query=${req.query.query || ''}`);
 });
 
 const STATION_REGION_OVERRIDES = {
@@ -521,6 +526,15 @@ app.get('/api/news', async (_req, res) => {
         details: err.message,
       });
   }
+});
+
+// Placeholder per LeFrecce (per evitare 404 sul frontend)
+app.get('/api/lefrecce/autocomplete', (req, res) => {
+  res.json({ ok: true, data: [] });
+});
+
+app.get('/api/solutions', (req, res) => {
+  res.json({ ok: true, solutions: [] });
 });
 
 // Fallback 404, così se sbagli path lo vedi nel log
