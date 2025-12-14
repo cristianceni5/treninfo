@@ -4,6 +4,7 @@
 
 const express = require('express');
 const cors = require('cors');
+const Trenitalia = require('api-trenitalia');
 
 const app = express();
 
@@ -528,13 +529,40 @@ app.get('/api/news', async (_req, res) => {
   }
 });
 
-// Placeholder per LeFrecce (per evitare 404 sul frontend)
-app.get('/api/lefrecce/autocomplete', (req, res) => {
-  res.json({ ok: true, data: [] });
+// LeFrecce Autocomplete
+app.get('/api/lefrecce/autocomplete', async (req, res) => {
+  const query = (req.query.query || '').trim();
+  if (query.length < 2) return res.json({ ok: true, data: [] });
+
+  try {
+    const stations = await Trenitalia.autocomplete(query);
+    res.json({ ok: true, data: stations });
+  } catch (err) {
+    console.error('Errore autocomplete LeFrecce:', err);
+    res.status(500).json({ ok: false, error: 'Errore autocomplete LeFrecce' });
+  }
 });
 
-app.get('/api/solutions', (req, res) => {
-  res.json({ ok: true, solutions: [] });
+// LeFrecce Solutions
+app.get('/api/solutions', async (req, res) => {
+  try {
+    const { fromId, toId, date, time } = req.query;
+    
+    if (!fromId || !toId) {
+        return res.status(400).json({ ok: false, error: 'Stazioni di partenza e arrivo obbligatorie' });
+    }
+
+    let searchDate = new Date();
+    if (date && time) {
+        searchDate = new Date(`${date}T${time}:00`);
+    }
+
+    const solutions = await Trenitalia.trainSolutions(fromId, toId, searchDate);
+    res.json({ ok: true, solutions });
+  } catch (err) {
+    console.error('Errore ricerca soluzioni:', err);
+    res.status(500).json({ ok: false, error: 'Errore ricerca soluzioni', details: err.message });
+  }
 });
 
 // Fallback 404, così se sbagli path lo vedi nel log
