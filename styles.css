@@ -23,6 +23,12 @@
   --state-very-late: #b91c1c;
   --state-badge-bg: var(--bg-subtle);
 
+  /* Accent usato in alcune UI (es. soluzioni viaggio) */
+  --primary: var(--state-early);
+
+  /* Pannelli/box secondari (match del precedente #f8fafc) */
+  --bg-panel: #f8fafc;
+
   --color-favorite: #eab308;
 
   --kind-fr: #b91c1c;
@@ -71,7 +77,7 @@
 /* TIMELINE PRIMITIVES ----------------------------------------------- */
 /* .timeline-line – linea verticale condivisa tra tabella e card */
 .timeline-line {
-  --timeline-gap-size: clamp(6px, var(--timeline-gap), 22px);
+  --timeline-gap-size: clamp(6px, var(--timeline-gap, 10px), 22px);
   --timeline-color-top: var(--border-subtle);
   --timeline-color-bottom: var(--border-subtle);
   --timeline-top-visible: 1;
@@ -311,14 +317,31 @@ select:focus-visible {
   box-shadow: var(--shadow-soft);
 }
 
-.card,
+/* Sub-section dentro una .card: evita “card nella card” (meno bordi/box) */
+.card .station-info-card,
+.card .station-board,
+.card .train-stops-collapse,
+.card .trip-results {
+  margin-top: var(--timeline-gap);
+  padding-top: var(--timeline-gap);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Se vuoto, niente separatore/spazio */
+.card .trip-results:empty {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* Rimuove il look da card sui contenitori interni */
 .station-info-card,
 .station-board,
 .train-stops-collapse {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .card-train-search #trainResult {
@@ -418,8 +441,8 @@ select:focus-visible {
 
 /* Trip Results Container */
 .trip-results {
-  margin-top: 0; /* Removed extra margin, handled by card padding/gap */
-  padding-top: 16px; /* Add internal spacing if needed, or rely on parent gap */
+  margin-top: 0;
+  padding-top: 0;
 }
 
 .solutions-list {
@@ -454,6 +477,39 @@ input:focus {
   gap: var(--gap-xs);
   min-height: var(--control-height);
   transition: background var(--anim-normal), color var(--anim-normal), box-shadow var(--anim-normal), transform var(--anim-fast);
+}
+
+/* MOBILE: layout form più comodo (evita righe strette con 2-3 controlli) */
+@media (max-width: 600px) {
+  .station-search-form .form-row {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+
+  .station-search-form .form-row .input-root {
+    flex: 1 1 100%;
+  }
+
+  .station-search-form .form-row > button {
+    flex: 1 1 100%;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .train-search-form .form-row {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+
+  .train-search-form .form-row .input-root {
+    flex: 1 1 100%;
+  }
+
+  .train-search-form .form-row > button {
+    flex: 1 1 calc(50% - 6px);
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 .form-row button:active {
@@ -539,8 +595,8 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 
 /* STATION INFO & BOARD --------------------------------------------- */
 .station-info-card {
-  margin-top: var(--timeline-gap);
-  padding: var(--card-padding) var(--card-padding-wide);
+  margin-top: 0;
+  padding: 0;
 }
 
 .station-info-card.loading { opacity: 0.75; }
@@ -646,8 +702,8 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 }
 
 .station-board {
-  margin-top: var(--timeline-gap);
-  padding-top: var(--card-padding-compact);
+  margin-top: 0;
+  padding-top: 0;
 }
 
 .station-board.hidden { display: none; }
@@ -655,7 +711,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 .station-board-tabs {
   display: flex;
   gap: var(--gap-sm);
-  padding: var(--card-padding-compact) var(--card-padding) 0;
+  padding: 0;
 }
 
 .station-board-tab {
@@ -689,7 +745,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: var(--card-padding-compact) var(--card-padding) var(--card-padding-wide);
+  padding: var(--gap-sm) 0 0;
 }
 
 .station-board-loading {
@@ -700,7 +756,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--bg-card);
+  background: var(--bg-subtle);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   padding: 16px;
@@ -711,12 +767,13 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 
 .station-board-card:hover {
   border-color: var(--border-strong);
-  box-shadow: var(--shadow-soft);
-  transform: translateY(-1px);
+  box-shadow: none;
+  transform: none;
+  background: var(--surface-hover);
 }
 
 .station-board-card:active {
-  transform: scale(0.99);
+  transform: none;
 }
 
 .sb-row-main {
@@ -779,21 +836,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   flex-shrink: 0;
 }
 
-.sb-track-pill {
-  font-size: 0.9rem;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-subtle);
-  color: var(--text-soft);
-  border: 1px solid var(--border-subtle);
-}
-
-.sb-track-pill--real {
-  background: var(--state-ontime);
-  color: #fff;
-  border-color: transparent;
-}
+/* Binario (station board): usa .col-track-pill (stile timeline treno) */
 
 /* Mobile adjustments */
 @media (max-width: 480px) {
@@ -1072,11 +1115,8 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 }
 
 .train-stops-collapse {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  background: var(--bg-card);
-  margin-top: var(--timeline-gap);
-  box-shadow: var(--shadow-soft);
+  margin-top: 0;
+  padding-top: 0;
 }
 
 .train-stops-summary {
@@ -1090,6 +1130,8 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   font-weight: 600;
   list-style: none;
   border-radius: var(--radius-card);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
   transition: background var(--anim-normal), box-shadow var(--anim-normal);
 }
 
@@ -1113,7 +1155,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 .train-stops-summary:hover,
 .train-stops-summary:focus-visible {
   background: var(--surface-hover);
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
   outline: none;
 }
 
@@ -1191,7 +1233,35 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   z-index: 2;
 }
 
-.col-idx .timeline-line { --timeline-gap-size: 10px; }
+.col-idx .timeline-line { --timeline-gap: 10px; }
+
+.stop-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.stop-tag-current {
+  border-color: var(--state-ontime);
+  color: var(--state-ontime);
+  background: var(--bg-card);
+}
+
+.stop-tag-next {
+  border-color: var(--border-strong);
+  color: var(--text-main);
+  background: var(--bg-subtle);
+}
 
 .col-idx::before {
   content: '';
@@ -1228,13 +1298,23 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   box-shadow: 0 0 0 2px rgba(185, 28, 28, 0.25);
 }
 
-.stop-current td { background: #f0fdf4; }
+.stop-current td { background: var(--bg-subtle); }
+
+/* Prossima fermata (quando il treno è tra due stazioni) */
+.stop-next td { background: var(--bg-panel); }
+.stop-next .col-idx::before {
+  background: var(--bg-card);
+  border-color: var(--border-strong);
+}
 
 /* Celle della tabella */
 .st-name {
   font-size: 0.86rem;
   font-weight: 500;
   margin-bottom: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .time-block { display: flex; flex-direction: column; gap: 2px; }
@@ -1316,23 +1396,29 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   height: 14px;
   border-radius: 50%;
   border: 3px solid var(--border-strong);
-  background: #ffffff;
+  background: var(--bg-card);
   z-index: 2;
 }
 
 .stop-card.stop-past .stop-card-dot {
-  background: #16a34a;
-  border-color: #16a34a;
+  background: var(--state-ontime);
+  border-color: var(--state-ontime);
   box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
 }
 
 .stop-card.stop-current .stop-card-dot {
-  background: #ffffff;
-  border: 4px solid #16a34a;
+  background: var(--bg-card);
+  border: 4px solid var(--state-ontime);
   width: 16px;
   height: 16px;
   box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
   animation: stationPulse 1.4s ease-in-out infinite;
+}
+
+.stop-card.stop-next .stop-card-dot {
+  background: var(--bg-card);
+  border-color: var(--border-strong);
+  box-shadow: none;
 }
 
 /* .stop-card-content – blocco testo card mobile */
@@ -1366,6 +1452,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 }
 
 .stop-card-name { font-size: 1rem; font-weight: 500; }
+.stop-card-name { display: inline-flex; align-items: center; gap: 8px; }
 
 .stop-card-track {
   border-radius: var(--radius-pill);
@@ -1426,7 +1513,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 
 .trip-field input:focus {
   border-color: var(--border-strong);
-  background: #ffffff;
+  background: var(--bg-card);
 }
 
 .trip-actions {
@@ -1452,7 +1539,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   padding: 12px 14px;
-  background: #f8fafc;
+  background: var(--bg-panel);
   display: flex;
   flex-direction: column;
   gap: var(--gap-sm);
@@ -1490,7 +1577,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   height: 20px;
   border-radius: 6px;
   border: 1px solid var(--border-strong);
-  background: #ffffff;
+  background: var(--bg-card);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1797,7 +1884,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 .train-pill-remove,
 .train-pill-star {
   border: none;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 50%;
   width: 28px;
   height: 28px;
@@ -1811,7 +1898,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 
 .train-pill-remove:hover,
 .train-pill-star:hover {
-  background: #f3f4f6;
+  background: var(--bg-body);
 }
 
 .train-pill-star.is-active {
@@ -1834,6 +1921,13 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   justify-content: center;
   gap: var(--gap-xs);
   transition: background var(--anim-normal), box-shadow var(--anim-normal), transform var(--anim-fast);
+}
+
+@media (max-width: 600px) {
+  .favorite-current-btn {
+    width: 100%;
+    min-height: 44px;
+  }
 }
 
 .favorite-current-btn.is-active {
@@ -2061,7 +2155,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   grid-template-columns: 1fr auto;
   grid-template-rows: auto auto;
   gap: var(--timeline-gap);
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
 }
 
 .sol-times {
@@ -2370,7 +2464,7 @@ button.train-badge:active {
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #fff;
+    background: var(--bg-card);
     border: 2px solid var(--primary);
     z-index: 1;
   }
@@ -2529,7 +2623,7 @@ button.train-badge:active {
 /* Collapsible Details Styles */
 .sol-details {
   border-top: 1px solid var(--border-subtle);
-  background: var(--bg-subtle);
+  background: transparent;
 }
 
 .sol-summary {
@@ -2545,10 +2639,11 @@ button.train-badge:active {
   font-weight: 500;
   transition: background var(--anim-normal);
   user-select: none;
+  background: transparent;
 }
 
 .sol-summary:hover {
-  background: var(--bg-body);
+  background: var(--surface-hover);
   color: var(--primary);
 }
 
@@ -2567,7 +2662,7 @@ button.train-badge:active {
 
 .sol-details[open] .sol-summary {
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-card);
+  background: transparent;
 }
 
 /* Adjust segments container */
@@ -2575,7 +2670,7 @@ button.train-badge:active {
   padding: 16px;
   margin-top: 0;
   border-top: none;
-  background: var(--bg-card);
+  background: transparent;
 }
 
 /* Mobile adjustments for the new header */
@@ -2693,12 +2788,16 @@ button.train-badge:active {
   transition: all var(--anim-normal);
   user-select: none;
   min-height: 44px; /* Larger touch target */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
-.storage-chip:hover {
-  background: var(--surface-hover);
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-soft);
+@media (hover: hover) {
+  .storage-chip:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-soft);
+  }
 }
 
 .storage-chip:active {
@@ -2753,9 +2852,37 @@ button.train-badge:active {
   padding: 0;
 }
 
-.storage-chip-btn:hover {
-  background: var(--surface-active);
-  color: var(--text-main);
+.storage-chip-btn {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+@media (hover: hover) {
+  .storage-chip-btn:hover {
+    background: var(--surface-active);
+    color: var(--text-main);
+  }
+}
+
+@media (max-width: 600px) {
+  .storage-area { gap: 10px; }
+
+  .storage-chip {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .storage-chip-actions {
+    gap: 6px;
+    padding-left: 10px;
+  }
+
+  .storage-chip-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+  }
 }
 
 .storage-chip-fav.is-active {

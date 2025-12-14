@@ -253,6 +253,7 @@ const stationSearchBtn = document.getElementById('stationSearchBtn');
 const stationClearBtn = document.getElementById('stationClearBtn');
 const stationSearchSection = document.getElementById('stationSearch');
 const trainSearchSection = document.getElementById('trainSearch');
+const stationError = document.getElementById('stationError');
 
 const trainNumberInput = document.getElementById('trainNumber');
 const trainSearchBtn = document.getElementById('trainSearchBtn');
@@ -273,6 +274,7 @@ const tripTimeInput = document.getElementById('tripTime');
 const tripSearchBtn = document.getElementById('tripSearchBtn');
 const tripClearBtn = document.getElementById('tripClearBtn');
 const tripResults = document.getElementById('tripResults');
+const tripError = document.getElementById('tripError');
 
 let tripFromId = null;
 let tripToId = null;
@@ -288,6 +290,18 @@ function scrollToSection(element) {
 }
 
 // UTIL ---------------------------------------------------------------
+
+function setInlineError(target, message) {
+  if (!target) return;
+  const text = (message || '').toString().trim();
+  if (!text) {
+    target.textContent = '';
+    target.hidden = true;
+    return;
+  }
+  target.textContent = text;
+  target.hidden = false;
+}
 
 function debounce(fn, delay) {
   let timer = null;
@@ -630,6 +644,7 @@ function resolveRegionLabel(stationDetails, infoPayload) {
 }
 
 function resetStationDisplay(message = '') {
+  setInlineError(stationError, '');
   if (stationInfoContainer) {
     if (message) {
       stationInfoContainer.classList.remove('hidden');
@@ -653,6 +668,7 @@ function resetStationDisplay(message = '') {
 
 function clearStationSearch() {
   selectedStation = null;
+  setInlineError(stationError, '');
   if (stationQueryInput) {
     stationQueryInput.value = '';
   }
@@ -727,6 +743,7 @@ async function loadStationByCode(name, code) {
 
   setStationLoadingDisplay();
   scrollToSection(stationSearchSection);
+  setInlineError(stationError, '');
 
   try {
     const [infoRes, depRes, arrRes] = await Promise.all([
@@ -755,13 +772,8 @@ async function loadStationByCode(name, code) {
     renderStationBoard('departures');
   } catch (err) {
     console.error('Errore caricamento dati stazione:', err);
-    if (stationInfoContainer) {
-      stationInfoContainer.classList.remove('hidden');
-      stationInfoContainer.innerHTML = '<p class="error">Errore nel recupero delle informazioni della stazione.</p>';
-    }
-    if (stationBoardContainer) {
-      stationBoardContainer.classList.add('hidden');
-    }
+    resetStationDisplay();
+    setInlineError(stationError, 'Errore nel recupero delle informazioni della stazione.');
   }
 }
 
@@ -878,7 +890,7 @@ function buildStationBoardRow(entry, type) {
   const ariaLabel = `${trainLabel} ${destPrefix}${routeLabel}`.trim();
   const searchTrainNumber = trainKindMeta?.number || numericTrainCode || compTrainCode || '';
   const datasetNumber = escapeHtml(searchTrainNumber);
-  const trackClass = trackInfo.isReal ? 'sb-track-pill sb-track-pill--real' : 'sb-track-pill';
+  const trackClass = trackInfo.isReal ? 'col-track-pill col-track-pill--real' : 'col-track-pill';
   const boardTrainClass = trainKindMeta?.className || '';
 
   // New Layout mimicking solution-card
@@ -933,6 +945,7 @@ async function fetchStations(query) {
   if (q.length < 2) {
     stationList.innerHTML = '';
     stationList.hidden = true;
+    setInlineError(stationError, '');
     return;
   }
 
@@ -943,10 +956,12 @@ async function fetchStations(query) {
     const data = await res.json();
     const items = (data && data.data) || [];
     renderStationList(items);
+    setInlineError(stationError, '');
   } catch (err) {
     console.error('Errore autocomplete stazioni:', err);
-    stationList.innerHTML = '<li class="error-item">Errore nel recupero delle stazioni</li>';
-    stationList.hidden = false;
+    stationList.innerHTML = '';
+    stationList.hidden = true;
+    setInlineError(stationError, 'Errore nel recupero delle stazioni.');
   }
 }
 
@@ -972,6 +987,7 @@ function renderStationList(items) {
 stationQueryInput.addEventListener('input', (e) => {
   selectedStation = null;
   resetStationDisplay();
+  setInlineError(stationError, '');
   debouncedFetchStations(e.target.value || '');
 });
 
@@ -986,6 +1002,7 @@ if (stationSearchBtn) {
   stationSearchBtn.addEventListener('click', async () => {
     const q = stationQueryInput.value.trim();
     if (!q) return;
+    setInlineError(stationError, '');
     
     try {
       const res = await fetch(`${API_BASE}/api/viaggiatreno/autocomplete?query=${encodeURIComponent(q)}`);
@@ -1002,6 +1019,7 @@ if (stationSearchBtn) {
       }
     } catch (err) {
       console.error('Errore ricerca stazione manuale:', err);
+      setInlineError(stationError, 'Errore nel recupero delle stazioni.');
     }
   });
 }
@@ -1119,6 +1137,8 @@ function buildIsoDateTime(dateStr, timeStr) {
 
 const TRIP_RECENT_KEY = 'treninfo_recent_trips';
 const STATION_RECENT_KEY = 'treninfo_recent_stations';
+const TRIP_FAVORITES_KEY = 'treninfo_favorite_trips';
+const STATION_FAVORITES_KEY = 'treninfo_favorite_stations';
 
 const trainStorageContainer = document.getElementById('trainStorage');
 const tripStorageContainer = document.getElementById('tripStorage');
@@ -1143,11 +1163,11 @@ function saveStorage(key, list) {
   }
 }
 
-function addToStorage(key, item, uniqueKey = 'id') {
+function addToStorage(key, item, uniqueKey = 'id', maxItems = MAX_RECENT) {
   const list = loadStorage(key);
   const filtered = list.filter(i => String(i[uniqueKey]) !== String(item[uniqueKey]));
   filtered.unshift(item);
-  const trimmed = filtered.slice(0, MAX_RECENT);
+  const trimmed = filtered.slice(0, Math.max(1, Number(maxItems) || MAX_RECENT));
   saveStorage(key, trimmed);
   return trimmed;
 }
@@ -1163,6 +1183,8 @@ function removeFromStorage(key, uniqueVal, uniqueKey = 'id') {
 
 function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isFavCallback) {
   if (!container) return;
+
+  const showFav = typeof onToggleFav === 'function';
   
   if (!list || list.length === 0) {
     container.innerHTML = '';
@@ -1213,9 +1235,11 @@ function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isF
             ${contentHtml}
         </span>
         <div class="storage-chip-actions">
-            <button type="button" class="storage-chip-btn storage-chip-fav ${isFav ? 'is-active' : ''}" title="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}">
-                ${isFav ? '★' : '☆'}
-            </button>
+            ${showFav ? `
+              <button type="button" class="storage-chip-btn storage-chip-fav ${isFav ? 'is-active' : ''}" title="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}">
+                  ${isFav ? '★' : '☆'}
+              </button>
+            ` : ''}
             <button type="button" class="storage-chip-btn storage-chip-remove" title="Rimuovi">×</button>
         </div>
       </div>
@@ -1233,12 +1257,26 @@ function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isF
         onRemove(list[idx]);
       } else if (favBtn) {
         e.stopPropagation();
-        if (onToggleFav) onToggleFav(list[idx]);
+        if (showFav) onToggleFav(list[idx]);
       } else {
         onSelect(list[idx]);
       }
     });
   });
+}
+
+function normalizeTripList(rawList) {
+  if (!Array.isArray(rawList)) return [];
+  const out = [];
+  for (const raw of rawList) {
+    if (!raw) continue;
+    const from = String(raw.from || '').trim();
+    const to = String(raw.to || '').trim();
+    if (!from || !to) continue;
+    const id = `${from}|${to}`;
+    out.push({ id, from, to });
+  }
+  return out;
 }
 
 // --- TRAIN STORAGE ---
@@ -1247,10 +1285,10 @@ function updateTrainStorage() {
   const recents = loadStorage(RECENT_KEY);
   const favorites = loadStorage(FAVORITES_KEY);
   
-  // Merge lists: Recents first, then Favorites (so favorites are at the bottom/end)
+  // Preferiti prima dei recenti (più naturale). De-duplica per numero.
   const favIds = new Set(favorites.map(i => String(i.numero)));
   const uniqueRecents = recents.filter(i => !favIds.has(String(i.numero)));
-  const displayList = [...uniqueRecents, ...favorites];
+  const displayList = [...favorites, ...uniqueRecents];
 
   renderChips(trainStorageContainer, displayList, 'train', 
     (item) => {
@@ -1272,9 +1310,9 @@ function updateTrainStorage() {
       if (isFav) {
         removeFromStorage(FAVORITES_KEY, item.numero, 'numero');
         // Add back to recents if not there? It's probably there or we should add it
-        addToStorage(RECENT_KEY, item, 'numero'); 
+        addToStorage(RECENT_KEY, item, 'numero', MAX_RECENT);
       } else {
-        addToStorage(FAVORITES_KEY, item, 'numero');
+        addToStorage(FAVORITES_KEY, item, 'numero', MAX_FAVORITES);
       }
       updateTrainStorage();
     },
@@ -1290,7 +1328,7 @@ function addRecentTrain(details) {
     destinazione: details.destinazione,
     partenza: details.partenza,
     arrivo: details.arrivo
-  }, 'numero');
+  }, 'numero', MAX_RECENT);
   updateTrainStorage();
 }
 
@@ -1305,9 +1343,9 @@ function toggleFavoriteTrain(data) {
   if (isFav) {
     removeFromStorage(FAVORITES_KEY, data.numero, 'numero');
     // Ensure it's in recents so it doesn't disappear completely if it was just viewed
-    addToStorage(RECENT_KEY, data, 'numero');
+    addToStorage(RECENT_KEY, data, 'numero', MAX_RECENT);
   } else {
-    addToStorage(FAVORITES_KEY, data, 'numero');
+    addToStorage(FAVORITES_KEY, data, 'numero', MAX_FAVORITES);
   }
   updateTrainStorage();
 }
@@ -1323,8 +1361,18 @@ function updateFavoriteActionButton(btn) {
 // --- TRIP STORAGE ---
 
 function updateTripStorage() {
-  const recents = loadStorage(TRIP_RECENT_KEY);
-  renderChips(tripStorageContainer, recents, 'trip',
+  const recents = normalizeTripList(loadStorage(TRIP_RECENT_KEY));
+  const favorites = normalizeTripList(loadStorage(TRIP_FAVORITES_KEY));
+
+  // Migrazione soft: assicura che in storage ci sia sempre la forma {id,from,to}
+  saveStorage(TRIP_RECENT_KEY, recents);
+  saveStorage(TRIP_FAVORITES_KEY, favorites);
+
+  const favIds = new Set(favorites.map(i => `${i.from}|${i.to}`));
+  const uniqueRecents = recents.filter(i => !favIds.has(`${i.from}|${i.to}`));
+  const displayList = [...favorites, ...uniqueRecents];
+
+  renderChips(tripStorageContainer, displayList, 'trip',
     (item) => {
       tripFromInput.value = item.from;
       tripToInput.value = item.to;
@@ -1333,24 +1381,33 @@ function updateTripStorage() {
     },
     (item) => {
       const id = `${item.from}|${item.to}`;
-      const list = loadStorage(TRIP_RECENT_KEY);
-      const filtered = list.filter(i => `${i.from}|${i.to}` !== id);
-      saveStorage(TRIP_RECENT_KEY, filtered);
+      if (favIds.has(id)) {
+        removeFromStorage(TRIP_FAVORITES_KEY, id, 'id');
+      } else {
+        removeFromStorage(TRIP_RECENT_KEY, id, 'id');
+      }
       updateTripStorage();
-    }
+    },
+    (item) => {
+      const id = `${item.from}|${item.to}`;
+      const normalized = { ...item, id };
+      const isFav = favIds.has(id);
+      if (isFav) {
+        removeFromStorage(TRIP_FAVORITES_KEY, id, 'id');
+        addToStorage(TRIP_RECENT_KEY, normalized, 'id', MAX_RECENT);
+      } else {
+        addToStorage(TRIP_FAVORITES_KEY, normalized, 'id', MAX_FAVORITES);
+      }
+      updateTripStorage();
+    },
+    (item) => favIds.has(`${item.from}|${item.to}`)
   );
 }
 
 function addRecentTrip(from, to) {
   if (!from || !to) return;
-  const list = loadStorage(TRIP_RECENT_KEY);
-  const newItem = { from, to };
   const id = `${from}|${to}`;
-  
-  const filtered = list.filter(i => `${i.from}|${i.to}` !== id);
-  filtered.unshift(newItem);
-  const trimmed = filtered.slice(0, MAX_RECENT);
-  saveStorage(TRIP_RECENT_KEY, trimmed);
+  addToStorage(TRIP_RECENT_KEY, { id, from, to }, 'id', MAX_RECENT);
   updateTripStorage();
 }
 
@@ -1358,7 +1415,12 @@ function addRecentTrip(from, to) {
 
 function updateStationStorage() {
   const recents = loadStorage(STATION_RECENT_KEY);
-  renderChips(stationStorageContainer, recents, 'station',
+  const favorites = loadStorage(STATION_FAVORITES_KEY);
+  const favIds = new Set(favorites.map(i => String(i.id)));
+  const uniqueRecents = recents.filter(i => !favIds.has(String(i.id)));
+  const displayList = [...favorites, ...uniqueRecents];
+
+  renderChips(stationStorageContainer, displayList, 'station',
     (item) => {
       const input = document.getElementById('stationQuery');
       if (input) {
@@ -1368,15 +1430,30 @@ function updateStationStorage() {
       }
     },
     (item) => {
-      const newList = removeFromStorage(STATION_RECENT_KEY, item.id, 'id');
+      if (favIds.has(String(item.id))) {
+        removeFromStorage(STATION_FAVORITES_KEY, item.id, 'id');
+      } else {
+        removeFromStorage(STATION_RECENT_KEY, item.id, 'id');
+      }
       updateStationStorage();
-    }
+    },
+    (item) => {
+      const isFav = favIds.has(String(item.id));
+      if (isFav) {
+        removeFromStorage(STATION_FAVORITES_KEY, item.id, 'id');
+        addToStorage(STATION_RECENT_KEY, item, 'id', MAX_RECENT);
+      } else {
+        addToStorage(STATION_FAVORITES_KEY, item, 'id', MAX_FAVORITES);
+      }
+      updateStationStorage();
+    },
+    (item) => favIds.has(String(item.id))
   );
 }
 
 function addRecentStation(station) {
   if (!station || !station.name) return;
-  addToStorage(STATION_RECENT_KEY, { id: station.id, name: station.name }, 'id');
+  addToStorage(STATION_RECENT_KEY, { id: station.id, name: station.name }, 'id', MAX_RECENT);
   updateStationStorage();
 }
 
@@ -1777,13 +1854,8 @@ function computeTravelProgress(fermate, lastDepartedIdx, now = Date.now()) {
 }
 
 function getTimelineGapRange() {
-  if (typeof window !== 'undefined' && window.matchMedia) {
-    const isCompact = window.matchMedia('(max-width: 640px)').matches;
-    if (isCompact) {
-      return { min: 6, max: 58 };
-    }
-  }
-  return { min: 3, max: 28 };
+  // Manteniamo il range allineato al clamp CSS (evita gap enormi che “mangiano” la linea)
+  return { min: 6, max: 22 };
 }
 
 function mapProgressToGapPx(progress, range) {
@@ -1792,9 +1864,9 @@ function mapProgressToGapPx(progress, range) {
   return Math.round(range.max - span * ratio);
 }
 
-function getTimelineGapSize(idx, lastDepartedIdx, timelineProgress, gapRange) {
-  if (idx <= lastDepartedIdx) return 4;
+function getTimelineGapSize(idx, timelineProgress, gapRange, isActiveSegment) {
   if (
+    isActiveSegment &&
     timelineProgress &&
     timelineProgress.nextIdx === idx &&
     typeof timelineProgress.progress === 'number'
@@ -2306,6 +2378,12 @@ function renderTrainStatus(payload) {
   if (fermate.length > 0) {
     const timelineProgress = computeTravelProgress(fermate, lastDepartedIdx);
     const timelineGapRange = getTimelineGapRange();
+    const activeSegment =
+      journey.state === 'RUNNING' &&
+      typeof timelineProgress.progress === 'number' &&
+      lastDepartedIdx >= 0 &&
+      currentInfo.currentIndex === lastDepartedIdx &&
+      timelineProgress.nextIdx === lastDepartedIdx + 1;
 
     const rows = fermate.map((f, idx) => {
       const isCurrent = currentInfo.currentIndex === idx;
@@ -2382,6 +2460,11 @@ function renderTrainStatus(payload) {
         rowClass = 'stop-future';
       }
 
+      const isNextStop = activeSegment && idx === timelineProgress.nextIdx;
+      if (isNextStop) {
+        rowClass += ' stop-next';
+      }
+
       const isCancelledStop =
         journey.state === 'CANCELLED' ||
         (journey.state === 'PARTIAL' && lastOperationalIdx >= 0 && idx > lastOperationalIdx);
@@ -2397,8 +2480,21 @@ function renderTrainStatus(payload) {
         journey.state,
         lastOperationalIdx
       );
-      const gapSize = getTimelineGapSize(idx, lastDepartedIdx, timelineProgress, timelineGapRange);
-      const timelineStyleAttr = gapSize != null ? ` style="--timeline-gap-size: ${gapSize}px"` : '';
+      const gapSize = getTimelineGapSize(idx, timelineProgress, timelineGapRange, activeSegment);
+      const timelineStyleAttr = gapSize != null ? ` style="--timeline-gap: ${gapSize}px"` : '';
+
+      let stopTagHtml = '';
+      if (journey.state === 'RUNNING') {
+        if (isCurrent) {
+          if (hasRealArrival && !hasRealDeparture) {
+            stopTagHtml = '<span class="stop-tag stop-tag-current">Fermo</span>';
+          } else if (activeSegment) {
+            stopTagHtml = '<span class="stop-tag stop-tag-current">Partito</span>';
+          }
+        } else if (isNextStop) {
+          stopTagHtml = '<span class="stop-tag stop-tag-next">In arrivo</span>';
+        }
+      }
 
 
       // effettivi: verde solo se HHmm coincide con il programmato
@@ -2462,6 +2558,7 @@ function renderTrainStatus(payload) {
           <td>
             <div class="st-name station-stop-trigger station-stop-trigger--text" role="button" tabindex="0" ${stationDataAttrs}>
               ${safeStationName}
+              ${stopTagHtml}
             </div>
           </td>
           <td>
@@ -2559,6 +2656,11 @@ function renderTrainStatus(payload) {
         rowClass = 'stop-future';
       }
 
+      const isNextStop = activeSegment && idx === timelineProgress.nextIdx;
+      if (isNextStop) {
+        rowClass += ' stop-next';
+      }
+
       const isCancelledStop =
         journey.state === 'CANCELLED' ||
         (journey.state === 'PARTIAL' && lastOperationalIdx >= 0 && idx > lastOperationalIdx);
@@ -2573,8 +2675,21 @@ function renderTrainStatus(payload) {
         journey.state,
         lastOperationalIdx
       );
-      const gapSize = getTimelineGapSize(idx, lastDepartedIdx, timelineProgress, timelineGapRange);
-      const timelineStyleAttr = gapSize != null ? ` style="--timeline-gap-size: ${gapSize}px"` : '';
+      const gapSize = getTimelineGapSize(idx, timelineProgress, timelineGapRange, activeSegment);
+      const timelineStyleAttr = gapSize != null ? ` style="--timeline-gap: ${gapSize}px"` : '';
+
+      let stopTagHtml = '';
+      if (journey.state === 'RUNNING') {
+        if (isCurrent) {
+          if (hasRealArrival && !hasRealDeparture) {
+            stopTagHtml = '<span class="stop-tag stop-tag-current">Fermo</span>';
+          } else if (activeSegment) {
+            stopTagHtml = '<span class="stop-tag stop-tag-current">Partito</span>';
+          }
+        } else if (isNextStop) {
+          stopTagHtml = '<span class="stop-tag stop-tag-next">In arrivo</span>';
+        }
+      }
 
       let arrivalEffClass = '';
       if (hasRealArrival && arrRealRaw) {
@@ -2651,6 +2766,7 @@ function renderTrainStatus(payload) {
             <div class="stop-card-header">
               <div class="stop-card-name">
                 ${safeStationName}
+                ${stopTagHtml}
               </div>
               ${trackInfo.label ? `<div class="${cardTrackClass}" title="${trackInfo.isReal ? 'Binario effettivo' : 'Binario programmato'}">${trackInfo.label}</div>` : ''}
             </div>
@@ -2864,8 +2980,10 @@ if (tripSearchBtn) {
     const fromName = tripFromInput.value.trim();
     const toName = tripToInput.value.trim();
 
+    setInlineError(tripError, '');
+
     if (!fromName || !toName) {
-      alert('Inserisci stazione di partenza e arrivo.');
+      setInlineError(tripError, 'Inserisci stazione di partenza e arrivo.');
       return;
     }
 
@@ -2877,7 +2995,7 @@ if (tripSearchBtn) {
     const time = tripTimeInput.value;
     
     if (!date) {
-      alert('Seleziona una data.');
+      setInlineError(tripError, 'Seleziona una data.');
       return;
     }
 
@@ -2905,15 +3023,18 @@ if (tripSearchBtn) {
       const json = await res.json();
 
       if (!json.ok) {
-        tripResults.innerHTML = `<div class="error">Errore: ${json.error || 'Sconosciuto'}</div>`;
+        tripResults.innerHTML = '';
+        setInlineError(tripError, `Errore: ${json.error || 'Sconosciuto'}`);
         return;
       }
 
+      setInlineError(tripError, '');
       renderTripResults(json.solutions);
 
     } catch (err) {
       console.error(err);
-      tripResults.innerHTML = `<div class="error">Errore di rete.</div>`;
+      tripResults.innerHTML = '';
+      setInlineError(tripError, 'Errore di rete.');
     }
   });
 }
@@ -3107,6 +3228,7 @@ if (tripResults) {
 
 if (tripClearBtn) {
   tripClearBtn.addEventListener('click', () => {
+    setInlineError(tripError, '');
     if (tripFromInput) tripFromInput.value = '';
     if (tripToInput) tripToInput.value = '';
     if (tripDateInput) tripDateInput.value = '';
