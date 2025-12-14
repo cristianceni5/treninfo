@@ -359,34 +359,6 @@ async function resolveLocationIdByName(stationName) {
 
 
 // Ricerca soluzioni di viaggio Trenitalia (LeFrecce)
-//
-// Puoi chiamarla in due modi:
-//
-// 1) Con ID LeFrecce già noti:
-//    GET /api/solutions?fromId=830006905&toId=830006900&date=2025-12-04&time=18:00&adults=1&children=0
-//
-// 2) Con solo i nomi stazione (esattamente come li mostri in UI, presi da ViaggiaTreno):
-//    GET /api/solutions?fromName=Pontassieve&toName=Firenze%20S.%20M.%20Novella&date=2025-12-04&time=18:00
-//
-// Parametri supportati (query string):
-//   fromId        → locationId LeFrecce origine (intero)    [opzionale se passi fromName]
-//   toId          → locationId LeFrecce destinazione        [opzionale se passi toName]
-//   fromName      → nome stazione origine (usato se manca fromId)
-//   toName        → nome stazione arrivo  (usato se manca toId)
-//   date          → obbligatorio, "YYYY-MM-DD"
-//   time          → opzionale, "HH:mm" (default "00:00")
-//   adults        → opzionale, default 1
-//   children      → opzionale, default 0
-//   frecceOnly    → opzionale, "true"/"false" (default false)
-//   regionalOnly  → idem
-//   intercityOnly → idem
-//   tourismOnly   → idem
-//   noChanges     → idem
-//   order         → opzionale, default "DEPARTURE_DATE"
-//   offset        → opzionale, default 0
-//   limit         → opzionale, default 10
-//   bestFare      → opzionale, default false
-//   bikeFilter    → opzionale, default false
 app.get('/api/solutions', async (req, res) => {
   console.log('GET /api/solutions called with query:', req.query);
   try {
@@ -696,7 +668,7 @@ app.get('/api/stations/arrivals', async (req, res) => {
     });
   }
 });
-//FINE TEST
+
 
 // Stato treno per numero
 // GET /api/trains/status?trainNumber=666
