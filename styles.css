@@ -80,6 +80,9 @@
   --timeline-gap-size: clamp(6px, var(--timeline-gap, 10px), 22px);
   --timeline-color-top: var(--border-subtle);
   --timeline-color-bottom: var(--border-subtle);
+  --timeline-fill-color: var(--state-ontime);
+  --timeline-fill-top-pct: 0;
+  --timeline-fill-bottom-pct: 0;
   --timeline-top-visible: 1;
   --timeline-bottom-visible: 1;
   position: absolute;
@@ -105,14 +108,28 @@
 .timeline-line::before {
   top: 0;
   height: max(0px, calc(50% - var(--timeline-gap-size) / 2));
-  background: var(--timeline-color-top);
+  /* Fill che cresce verso il pallino (dal basso verso l'alto) */
+  background: linear-gradient(
+    to bottom,
+    var(--timeline-color-top) 0%,
+    var(--timeline-color-top) calc((100 - var(--timeline-fill-top-pct)) * 1%),
+    var(--timeline-fill-color) calc((100 - var(--timeline-fill-top-pct)) * 1%),
+    var(--timeline-fill-color) 100%
+  );
   opacity: var(--timeline-top-visible);
 }
 
 .timeline-line::after {
   bottom: 0;
   height: max(0px, calc(50% - var(--timeline-gap-size) / 2));
-  background: var(--timeline-color-bottom);
+  /* Fill che cresce dal pallino verso il basso */
+  background: linear-gradient(
+    to bottom,
+    var(--timeline-fill-color) 0%,
+    var(--timeline-fill-color) calc(var(--timeline-fill-bottom-pct) * 1%),
+    var(--timeline-color-bottom) calc(var(--timeline-fill-bottom-pct) * 1%),
+    var(--timeline-color-bottom) 100%
+  );
   opacity: var(--timeline-bottom-visible);
 }
 

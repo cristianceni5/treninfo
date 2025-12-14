@@ -1853,27 +1853,28 @@ function computeTravelProgress(fermate, lastDepartedIdx, now = Date.now()) {
   return { nextIdx, progress: clamp01(rawProgress) };
 }
 
-function getTimelineGapRange() {
-  // Manteniamo il range allineato al clamp CSS (evita gap enormi che “mangiano” la linea)
-  return { min: 6, max: 22 };
+function getActiveSegmentFillPercents(progress) {
+  const p = typeof progress === 'number' ? clamp01(progress) : 0;
+  const bottomPct = p <= 0.5 ? (p / 0.5) * 100 : 100;
+  const topPct = p <= 0.5 ? 0 : ((p - 0.5) / 0.5) * 100;
+  return {
+    bottomPct: Math.max(0, Math.min(100, Math.round(bottomPct))),
+    topPct: Math.max(0, Math.min(100, Math.round(topPct))),
+  };
 }
 
-function mapProgressToGapPx(progress, range) {
-  const ratio = clamp01(progress);
-  const span = Math.max(range.max - range.min, 1);
-  return Math.round(range.max - span * ratio);
-}
+function getTimelineFillStyleAttr(idx, lastDepartedIdx, timelineProgress, activeSegment) {
+  if (!activeSegment) return '';
+  if (!timelineProgress || typeof timelineProgress.progress !== 'number') return '';
 
-function getTimelineGapSize(idx, timelineProgress, gapRange, isActiveSegment) {
-  if (
-    isActiveSegment &&
-    timelineProgress &&
-    timelineProgress.nextIdx === idx &&
-    typeof timelineProgress.progress === 'number'
-  ) {
-    return mapProgressToGapPx(timelineProgress.progress, gapRange);
+  const { bottomPct, topPct } = getActiveSegmentFillPercents(timelineProgress.progress);
+  if (idx === lastDepartedIdx) {
+    return ` style="--timeline-fill-bottom-pct: ${bottomPct}"`;
   }
-  return null;
+  if (idx === lastDepartedIdx + 1) {
+    return ` style="--timeline-fill-top-pct: ${topPct}"`;
+  }
+  return '';
 }
 
 function getTimelineClassNames(idx, totalStops, lastDepartedIdx, journeyState, alertBoundaryIdx) {
@@ -2377,7 +2378,6 @@ function renderTrainStatus(payload) {
   let tableHtml = '';
   if (fermate.length > 0) {
     const timelineProgress = computeTravelProgress(fermate, lastDepartedIdx);
-    const timelineGapRange = getTimelineGapRange();
     const activeSegment =
       journey.state === 'RUNNING' &&
       typeof timelineProgress.progress === 'number' &&
@@ -2480,8 +2480,7 @@ function renderTrainStatus(payload) {
         journey.state,
         lastOperationalIdx
       );
-      const gapSize = getTimelineGapSize(idx, timelineProgress, timelineGapRange, activeSegment);
-      const timelineStyleAttr = gapSize != null ? ` style="--timeline-gap: ${gapSize}px"` : '';
+      const timelineStyleAttr = getTimelineFillStyleAttr(idx, lastDepartedIdx, timelineProgress, activeSegment);
 
       let stopTagHtml = '';
       if (journey.state === 'RUNNING') {
@@ -2675,8 +2674,7 @@ function renderTrainStatus(payload) {
         journey.state,
         lastOperationalIdx
       );
-      const gapSize = getTimelineGapSize(idx, timelineProgress, timelineGapRange, activeSegment);
-      const timelineStyleAttr = gapSize != null ? ` style="--timeline-gap: ${gapSize}px"` : '';
+      const timelineStyleAttr = getTimelineFillStyleAttr(idx, lastDepartedIdx, timelineProgress, activeSegment);
 
       let stopTagHtml = '';
       if (journey.state === 'RUNNING') {
