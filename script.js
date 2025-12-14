@@ -2460,6 +2460,17 @@ function renderTrainStatus(payload) {
         rowClass = 'stop-future';
       }
 
+      // stato dettagliato del "pallino" sulla fermata corrente
+      // - stop-here: treno arrivato ma non ancora partito (lampeggia)
+      // - stop-moving: treno già ripartito dalla fermata corrente (pieno verde)
+      if (journey.state === 'RUNNING' && isCurrent) {
+        if (hasRealArrival && !hasRealDeparture) {
+          rowClass += ' stop-here';
+        } else if (activeSegment) {
+          rowClass += ' stop-moving';
+        }
+      }
+
       const isNextStop = activeSegment && idx === timelineProgress.nextIdx;
       if (isNextStop) {
         rowClass += ' stop-next';
@@ -2653,6 +2664,14 @@ function renderTrainStatus(payload) {
         rowClass = 'stop-past';
       } else {
         rowClass = 'stop-future';
+      }
+
+      if (journey.state === 'RUNNING' && isCurrent) {
+        if (hasRealArrival && !hasRealDeparture) {
+          rowClass += ' stop-here';
+        } else if (activeSegment) {
+          rowClass += ' stop-moving';
+        }
       }
 
       const isNextStop = activeSegment && idx === timelineProgress.nextIdx;

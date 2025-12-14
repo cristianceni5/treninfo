@@ -1306,7 +1306,19 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   width: 16px;
   height: 16px;
   box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
+}
+
+/* Lampeggia solo quando il treno è fermo qui */
+.stop-current.stop-here .col-idx::before {
   animation: stationPulse 1.4s ease-in-out infinite;
+}
+
+/* Se è già ripartito dalla fermata corrente: pieno verde, niente pulse */
+.stop-current.stop-moving .col-idx::before {
+  background: var(--state-ontime);
+  border-color: var(--state-ontime);
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.25);
+  animation: none;
 }
 
 .stop-cancelled .col-idx::before {
@@ -1429,7 +1441,17 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   width: 16px;
   height: 16px;
   box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
+}
+
+.stop-card.stop-current.stop-here .stop-card-dot {
   animation: stationPulse 1.4s ease-in-out infinite;
+}
+
+.stop-card.stop-current.stop-moving .stop-card-dot {
+  background: var(--state-ontime);
+  border-color: var(--state-ontime);
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+  animation: none;
 }
 
 .stop-card.stop-next .stop-card-dot {
