@@ -321,10 +321,6 @@ select:focus-visible {
   box-shadow: var(--shadow-soft);
 }
 
-.card-train-search {
-  /* padding: var(--card-padding) var(--card-padding);  Removed to match generic card padding */
-}
-
 .card-train-search #trainResult {
   margin-top: var(--timeline-gap); /* Consistent gap */
 }
@@ -495,7 +491,7 @@ ul.autocomplete {
   max-height: 220px;
   overflow: auto;
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--bg-card);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-soft);
   padding: 4px;
@@ -1131,12 +1127,12 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 .train-stops-summary-count {
   font-size: 0.78rem;
   color: var(--text-soft);
-  background: #f3f4f6;
+  background: var(--bg-body);
   padding: 2px 10px;
   border-radius: var(--radius-pill);
 }
 
-.stops-table thead { background: #f3f4f6; }
+.stops-table thead { background: var(--bg-body); }
 
 .stops-table thead th {
   text-align: left;
@@ -1177,7 +1173,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 
 .stops-table tbody tr {
   position: relative;
-  background: #ffffff;
+  background: var(--bg-card);
 }
 
 .stops-table tbody td {
@@ -1207,19 +1203,19 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   height: 14px;
   border-radius: 50%;
   border: 3px solid var(--border-strong);
-  background: #ffffff;
+  background: var(--bg-card);
   z-index: 3;
 }
 
 .stop-past .col-idx::before {
-  background: #16a34a;
-  border-color: #16a34a;
+  background: var(--state-ontime);
+  border-color: var(--state-ontime);
   box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.25);
 }
 
 .stop-current .col-idx::before {
-  background: #ffffff;
-  border: 4px solid #16a34a;
+  background: var(--bg-card);
+  border: 4px solid var(--state-ontime);
   width: 16px;
   height: 16px;
   box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
@@ -2107,13 +2103,6 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   color: var(--text-main);
 }
 
-.train-badge {
-  background: var(--surface-active);
-  padding: 2px 6px;
-  border-radius: var(--radius-pill);
-  font-size: 0.75rem;
-}
-
 /* Train Link in Trip Results */
 button.train-link {
   border: none;
@@ -2135,50 +2124,6 @@ button.train-link:active {
     filter: brightness(0.97);
     /* No translation or shadow to keep it flat/clean */
   }
-}
-
-/* Detailed segments in solution card */
-.sol-segments {
-  margin-top: var(--timeline-gap);
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 8px;
-  font-size: 0.85rem;
-}
-
-.sol-segment {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-sm);
-  margin-bottom: 6px;
-  flex-wrap: wrap;
-}
-
-.sol-segment-train {
-  min-width: 120px;
-}
-
-.sol-segment-route {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-xs);
-  color: var(--text-main);
-}
-
-.sol-segment-time {
-  font-weight: 600;
-}
-
-.sol-segment-station {
-  color: var(--text-muted);
-}
-
-.sol-transfer {
-  margin: 4px 0 8px 20px;
-  padding-left: 12px;
-  border-left: 2px solid var(--border-subtle);
-  color: var(--text-soft);
-  font-size: 0.8rem;
-  font-style: italic;
 }
 
 .sol-arrow-small {
@@ -2261,47 +2206,6 @@ button.train-badge:active {
 }
 
 /* --- SEGMENT DETAILS IMPROVEMENTS --- */
-.sol-segments {
-  margin-top: 16px;
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 12px;
-}
-
-.sol-segment {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid #f3f4f6;
-}
-
-.sol-segment:last-child {
-  border-bottom: none;
-}
-
-.sol-segment-train {
-  min-width: 150px;
-  flex-shrink: 0;
-}
-
-.sol-segment-route {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-sm);
-  color: var(--text-main);
-  font-size: 0.9rem;
-  flex-wrap: wrap;
-}
-
-.sol-segment-time {
-  font-weight: 700;
-  color: var(--text-main);
-}
-
-.sol-segment-station {
-  color: var(--text-muted);
-}
-
 /* --- NEW SEGMENT LAYOUT --- */
 
 .sol-segments {
@@ -2311,16 +2215,24 @@ button.train-badge:active {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--border-subtle);
+  font-size: 0.85rem;
 }
 
 .sol-segment {
   display: flex;
   align-items: center;
   gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--bg-body);
+}
+
+.sol-segment:last-child {
+  border-bottom: none;
 }
 
 .sol-segment-train {
   min-width: 100px; /* Ensure badge has space */
+  flex-shrink: 0;
 }
 
 .sol-segment-itinerary {
@@ -2379,7 +2291,7 @@ button.train-badge:active {
   font-size: 0.85rem;
   color: var(--text-soft);
   padding: 4px 12px;
-  background: #f3f4f6;
+  background: var(--bg-body);
   border-radius: var(--radius-pill);
   align-self: flex-start;
   margin-left: 116px; /* Align with itinerary start (100px badge + 16px gap) */
@@ -2636,7 +2548,7 @@ button.train-badge:active {
 }
 
 .sol-summary:hover {
-  background: #f3f4f6;
+  background: var(--bg-body);
   color: var(--primary);
 }
 
@@ -2655,7 +2567,7 @@ button.train-badge:active {
 
 .sol-details[open] .sol-summary {
   border-bottom: 1px solid var(--border-subtle);
-  background: #fff;
+  background: var(--bg-card);
 }
 
 /* Adjust segments container */
@@ -2663,7 +2575,7 @@ button.train-badge:active {
   padding: 16px;
   margin-top: 0;
   border-top: none;
-  background: #fff;
+  background: var(--bg-card);
 }
 
 /* Mobile adjustments for the new header */

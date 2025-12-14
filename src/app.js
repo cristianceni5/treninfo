@@ -286,6 +286,11 @@ app.get('/api/stations/autocomplete', async (req, res) => {
    res.redirect(307, `/api/viaggiatreno/autocomplete?query=${encodeURIComponent(req.query.query || '')}`);
 });
 
+const STATION_REGION_OVERRIDES = {
+  S06957: 'TOSCANA', // Firenze Le Cure (linea Faentina)
+  S06950: 'TOSCANA', // Firenze San Marco Vecchio
+};
+
 // Risolve il locationId di LeFrecce partendo da un nome stazione (es. "Pontassieve")
 // usando l'endpoint ufficiale di ricerca stazioni:
 // GET https://www.lefrecce.it/Channels.Website.BFF.WEB/website/locations/search?name=[NAME]&limit=[LIMIT]
@@ -411,6 +416,33 @@ app.get('/api/solutions', async (req, res) => {
       return res.status(400).json({
         ok: false,
         error: 'Parametro obbligatorio: date (YYYY-MM-DD)',
+      });
+    }
+
+    // Se mancano gli ID LeFrecce, proviamo a ricavarli dai nomi
+    // (che tu avrai ottenuto da ViaggiaTreno lato frontend)
+    let depId = fromId ? Number(fromId) : null;
+    let arrId = toId ? Number(toId) : null;
+
+    if (!depId && fromName) {
+      depId = await resolveLocationIdByName(fromName);
+    }
+    if (!arrId && toName) {
+      arrId = await resolveLocationIdByName(toName);
+    }
+
+    // Se ancora non ho gli ID, non posso chiamare LeFrecce
+    if (!depId || !arrId) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          'Serve almeno fromId/toId oppure fromName/toName risolvibili in locationId',
+        debug: {
+          fromId,
+          toId,
+          fromName,
+          toName,
+        },
       });
     }
 
