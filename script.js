@@ -2403,9 +2403,9 @@ function renderTrainStatus(payload) {
       const arrRealRaw = f.arrivoReale ?? f.effettiva ?? null;
       const depRealRaw = f.partenzaReale ?? null;
 
-      // previsti dal backend (se esistono)
-      let arrPredRaw = !hasRealArrival ? (f.arrivoPrevista ?? null) : null;
-      let depPredRaw = !hasRealDeparture ? (f.partenzaPrevista ?? null) : null;
+      // Orario probabile (calcolato): programmato + ritardo (ignoriamo totalmente le "prevista" dalle API)
+      let arrPredRaw = null;
+      let depPredRaw = null;
 
       const arrProgMs = arrProgRaw ? parseToMillis(arrProgRaw) : null;
       const depProgMs = depProgRaw ? parseToMillis(depProgRaw) : null;
@@ -2420,29 +2420,31 @@ function renderTrainStatus(payload) {
       const ritArr = resolveDelay(f.ritardoArrivo, globalDelay);
       const ritDep = resolveDelay(f.ritardoPartenza, globalDelay);
 
-      const shouldForecastArrival =
+      const shouldPredictArrival =
         (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
+        showArrival &&
         !hasRealArrival &&
         idx >= currentIndex &&
         withinOperationalPlan &&
         arrProgMs != null &&
         Number.isFinite(ritArr) &&
-        ritArr !== 0;
+        ritArr > 0;
 
-      const shouldForecastDeparture =
+      const shouldPredictDeparture =
         (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
+        showDeparture &&
         !hasRealDeparture &&
         idx >= currentIndex &&
         withinOperationalPlan &&
         depProgMs != null &&
         Number.isFinite(ritDep) &&
-        ritDep !== 0;
+        ritDep > 0;
 
-      if (shouldForecastArrival) {
+      if (shouldPredictArrival) {
         arrPredRaw = arrProgMs + ritArr * 60000;
       }
 
-      if (shouldForecastDeparture) {
+      if (shouldPredictDeparture) {
         depPredRaw = depProgMs + ritDep * 60000;
       }
 
@@ -2533,9 +2535,8 @@ function renderTrainStatus(payload) {
       if (showArrival) {
         if (hasRealArrival && arrRealRaw) {
           arrivalLine = `<span class="time-actual ${arrivalEffClass}">${formatTimeFlexible(arrRealRaw)}</span>`;
-        } else if (arrPredRaw != null && Number.isFinite(ritArr) && ritArr !== 0 && idx >= currentIndex) {
-          const forecastClass = ritArr > 0 ? 'forecast-late' : 'forecast-early';
-          arrivalLine = `<span class="time-actual ${forecastClass}">${formatTimeFlexible(arrPredRaw)}</span>`;
+        } else if (arrPredRaw != null) {
+          arrivalLine = `<span class="time-actual forecast-late">${formatTimeFlexible(arrPredRaw)}</span>`;
         }
       }
 
@@ -2544,9 +2545,8 @@ function renderTrainStatus(payload) {
       if (showDeparture) {
         if (hasRealDeparture && depRealRaw) {
           departLine = `<span class="time-actual ${departEffClass}">${formatTimeFlexible(depRealRaw)}</span>`;
-        } else if (depPredRaw != null && Number.isFinite(ritDep) && ritDep !== 0 && idx >= currentIndex) {
-          const forecastClass = ritDep > 0 ? 'forecast-late' : 'forecast-early';
-          departLine = `<span class="time-actual ${forecastClass}">${formatTimeFlexible(depPredRaw)}</span>`;
+        } else if (depPredRaw != null) {
+          departLine = `<span class="time-actual forecast-late">${formatTimeFlexible(depPredRaw)}</span>`;
         }
       }
 
@@ -2614,8 +2614,8 @@ function renderTrainStatus(payload) {
       const arrProgMs = arrProgRaw ? parseToMillis(arrProgRaw) : null;
       const depProgMs = depProgRaw ? parseToMillis(depProgRaw) : null;
 
-      let arrPredRaw = !hasRealArrival ? (f.arrivoPrevista ?? null) : null;
-      let depPredRaw = !hasRealDeparture ? (f.partenzaPrevista ?? null) : null;
+      let arrPredRaw = null;
+      let depPredRaw = null;
 
       const arrProg = arrProgRaw ? formatTimeFlexible(arrProgRaw) : '-';
       const depProg = depProgRaw ? formatTimeFlexible(depProgRaw) : '-';
@@ -2628,29 +2628,31 @@ function renderTrainStatus(payload) {
       const ritArr = resolveDelay(f.ritardoArrivo, globalDelay);
       const ritDep = resolveDelay(f.ritardoPartenza, globalDelay);
 
-      const shouldForecastArrival =
+      const shouldPredictArrival =
         (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
+        showArrival &&
         !hasRealArrival &&
         idx >= currentIndex &&
         withinOperationalPlan &&
         arrProgMs != null &&
         Number.isFinite(ritArr) &&
-        ritArr !== 0;
+        ritArr > 0;
 
-      const shouldForecastDeparture =
+      const shouldPredictDeparture =
         (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
+        showDeparture &&
         !hasRealDeparture &&
         idx >= currentIndex &&
         withinOperationalPlan &&
         depProgMs != null &&
         Number.isFinite(ritDep) &&
-        ritDep !== 0;
+        ritDep > 0;
 
-      if (shouldForecastArrival) {
+      if (shouldPredictArrival) {
         arrPredRaw = arrProgMs + ritArr * 60000;
       }
 
-      if (shouldForecastDeparture) {
+      if (shouldPredictDeparture) {
         depPredRaw = depProgMs + ritDep * 60000;
       }
 
@@ -2734,9 +2736,9 @@ function renderTrainStatus(payload) {
         if (hasRealArrival && arrRealRaw) {
           arrivalActual = formatTimeFlexible(arrRealRaw);
           arrivalActualClass = arrivalEffClass || 'delay-ok';
-        } else if (arrPredRaw != null && Number.isFinite(ritArr) && ritArr !== 0 && idx >= currentIndex) {
+        } else if (arrPredRaw != null) {
           arrivalActual = formatTimeFlexible(arrPredRaw);
-          arrivalActualClass = ritArr > 0 ? 'forecast-late' : 'forecast-early';
+          arrivalActualClass = 'forecast-late';
         }
       }
 
@@ -2746,9 +2748,9 @@ function renderTrainStatus(payload) {
         if (hasRealDeparture && depRealRaw) {
           departureActual = formatTimeFlexible(depRealRaw);
           departureActualClass = departEffClass || 'delay-ok';
-        } else if (depPredRaw != null && Number.isFinite(ritDep) && ritDep !== 0 && idx >= currentIndex) {
+        } else if (depPredRaw != null) {
           departureActual = formatTimeFlexible(depPredRaw);
-          departureActualClass = ritDep > 0 ? 'forecast-late' : 'forecast-early';
+          departureActualClass = 'forecast-late';
         }
       }
 

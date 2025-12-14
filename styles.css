@@ -1076,8 +1076,8 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 .delay-early { color: var(--state-early); }
 .delay-mid,
 .delay-high { color: var(--state-late); }
-.forecast-late { color: #facc15; }
-.forecast-early { color: #93c5fd; }
+.forecast-late { color: var(--state-late); }
+.forecast-early { color: var(--state-early); }
 
 /* .delay-chip – badge riassuntivo anticipo/ritardo */
 .delay-chip {
