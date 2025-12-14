@@ -15,16 +15,20 @@ app.use(express.json());
 
 // Base per le API ViaggiaTreno "classiche"
 const BASE_URL =
-  'http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno';
+  'https://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno';
 // Base "new" per tabellone HTML
 const BASE_URL_BOARD =
-  'http://www.viaggiatreno.it/viaggiatrenonew/resteasy/viaggiatreno';
+  'https://www.viaggiatreno.it/viaggiatrenonew/resteasy/viaggiatreno';
 
 const LEFRECCE_BASE = 'https://www.lefrecce.it/Channels.Website.BFF.WEB';
 
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+
 // Helper per fetch testo
 async function fetchText(url) {
-  const resp = await fetch(url);
+  const resp = await fetch(url, {
+    headers: { 'User-Agent': USER_AGENT }
+  });
   if (!resp.ok) {
     const err = new Error(`HTTP ${resp.status} per ${url}`);
     err.status = resp.status;
@@ -35,7 +39,9 @@ async function fetchText(url) {
 
 // Helper per fetch JSON
 async function fetchJson(url) {
-  const resp = await fetch(url);
+  const resp = await fetch(url, {
+    headers: { 'User-Agent': USER_AGENT }
+  });
   if (resp.status === 204) {
     const err = new Error('204 No Content');
     err.status = 204;
@@ -268,7 +274,9 @@ app.get('/api/lefrecce/autocomplete', async (req, res) => {
     });
     const url = `${LEFRECCE_BASE}/website/locations/search?${params.toString()}`;
 
-    const resp = await fetch(url);
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT }
+    });
     if (!resp.ok) {
       throw new Error(`LeFrecce error ${resp.status}`);
     }
@@ -552,7 +560,7 @@ app.get('/api/stations/info', async (req, res) => {
     const urlRegion = `${BASE_URL}/regione/${encodeURIComponent(stationCode)}`;
     let regionId = '';
     try {
-      const regionResp = await fetch(urlRegion);
+      const regionResp = await fetch(urlRegion, { headers: { 'User-Agent': USER_AGENT } });
       if (regionResp.ok) {
         regionId = (await regionResp.text()).trim();
       } else {
@@ -578,7 +586,7 @@ app.get('/api/stations/info', async (req, res) => {
     const urlDetails = `${BASE_URL}/dettaglioStazione/${encodeURIComponent(
       stationCode
     )}/${encodeURIComponent(regionId)}`;
-    const detailsResp = await fetch(urlDetails);
+    const detailsResp = await fetch(urlDetails, { headers: { 'User-Agent': USER_AGENT } });
     if (!detailsResp.ok) {
       return res.status(detailsResp.status).json({
         ok: false,
@@ -591,7 +599,7 @@ app.get('/api/stations/info', async (req, res) => {
     let meteo = null;
     try {
       const urlMeteo = `${BASE_URL}/datimeteo/${encodeURIComponent(regionId)}`;
-      const meteoResp = await fetch(urlMeteo);
+      const meteoResp = await fetch(urlMeteo, { headers: { 'User-Agent': USER_AGENT } });
       if (meteoResp.ok) {
         meteo = await meteoResp.json();
       }
@@ -639,7 +647,7 @@ app.get('/api/stations/departures', async (req, res) => {
       stationCode
     )}/${encodeURIComponent(dateStr)}`;
 
-    const vtResp = await fetch(url);
+    const vtResp = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
     if (!vtResp.ok) {
       return res.status(vtResp.status).json({
         ok: false,
@@ -686,7 +694,7 @@ app.get('/api/stations/arrivals', async (req, res) => {
       stationCode
     )}/${encodeURIComponent(dateStr)}`;
 
-    const vtResp = await fetch(url);
+    const vtResp = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
     if (!vtResp.ok) {
       return res.status(vtResp.status).json({
         ok: false,
