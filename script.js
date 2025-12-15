@@ -4,6 +4,14 @@
 // Quindi l'API base resta relativa sia in dev che in produzione.
 const API_BASE = '';
 
+// Refresh “quasi real-time” (una chiamata al minuto massimo) quando un treno è in monitoraggio.
+const TRAIN_AUTO_REFRESH_INTERVAL_MS = 60_000;
+let trainAutoRefreshTimer = null;
+let trainAutoRefreshTrainNumber = null;
+let trainAutoRefreshAbortController = null;
+let trainAutoRefreshInFlight = false;
+let trainAutoRefreshLastSuccessAt = 0;
+
 
 const RECENT_KEY = 'monitor_treno_recent';
 const FAVORITES_KEY = 'monitor_treno_favorites';
@@ -328,6 +336,13 @@ function parseToMillis(raw) {
   const s = String(raw).trim();
   if (!s) return null;
 
+  // /Date(1697040000000)/ (alcune serializzazioni)
+  const dotNet = s.match(/Date\((\d{10,13})\)/i);
+  if (dotNet) {
+    const n = Number(dotNet[1]);
+    return Number.isNaN(n) ? null : n;
+  }
+
   if (/^\d+$/.test(s)) {
     if (s.length === 13) {
       const n = Number(s);
@@ -346,6 +361,10 @@ function parseToMillis(raw) {
     }
   }
 
+  // ISO / RFC parsing (es: 2025-12-14T12:30:00)
+  const parsed = Date.parse(s);
+  if (!Number.isNaN(parsed)) return parsed;
+
   return null;
 }
 
@@ -356,6 +375,38 @@ function formatTimeFlexible(raw) {
     return s || '-';
   }
   return formatTimeFromMillis(ms);
+}
+
+function computePredictedMillis(scheduledRaw, delayMinutes, baseDayMs) {
+  if (!Number.isFinite(delayMinutes)) return null;
+
+  let scheduledMs = parseToMillis(scheduledRaw);
+
+  // Fallback: se l'orario è solo HH:mm o HHmm, lo agganciamo al "giorno base" del viaggio.
+  if (scheduledMs == null && scheduledRaw != null) {
+    const s = String(scheduledRaw).trim();
+    let h = null;
+    let m = null;
+
+    const m1 = s.match(/^(\d{2}):(\d{2})/);
+    if (m1) {
+      h = Number(m1[1]);
+      m = Number(m1[2]);
+    } else if (/^\d{4}$/.test(s)) {
+      h = Number(s.slice(0, 2));
+      m = Number(s.slice(2, 4));
+    }
+
+    if (Number.isFinite(h) && Number.isFinite(m)) {
+      const base = baseDayMs != null ? new Date(baseDayMs) : new Date();
+      const d = new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m, 0, 0);
+      const ms = d.getTime();
+      if (!Number.isNaN(ms)) scheduledMs = ms;
+    }
+  }
+
+  if (scheduledMs == null) return null;
+  return scheduledMs + delayMinutes * 60000;
 }
 
 function getPlannedTimes(fermate) {
@@ -428,6 +479,19 @@ function resolveDelay(primary, fallback) {
   const parsedPrimary = parseDelayMinutes(primary);
   if (parsedPrimary != null) return parsedPrimary;
   return parseDelayMinutes(fallback);
+}
+
+function getPredictionDelayMinutes(stopDelayRaw, globalDelayMinutes, hasRealTime) {
+  const stopDelay = parseDelayMinutes(stopDelayRaw);
+  const globalDelay = parseDelayMinutes(globalDelayMinutes);
+
+  // Per molte corse VT/RFI le fermate future riportano 0 anche se il treno è in ritardo.
+  // Se non abbiamo ancora un orario reale per quella fermata, preferiamo il ritardo globale (>0).
+  if (!hasRealTime && globalDelay != null && globalDelay > 0) {
+    if (stopDelay == null || stopDelay <= 0) return globalDelay;
+  }
+
+  return stopDelay != null ? stopDelay : globalDelay;
 }
 
 function encodeDatasetValue(value) {
@@ -680,6 +744,7 @@ function clearStationSearch() {
 }
 
 function clearTrainSearch() {
+  stopTrainAutoRefresh('clear');
   if (trainNumberInput) {
     trainNumberInput.value = '';
   }
@@ -690,6 +755,67 @@ function clearTrainSearch() {
     trainResult.innerHTML = '';
   }
 }
+
+function stopTrainAutoRefresh() {
+  if (trainAutoRefreshTimer) {
+    clearInterval(trainAutoRefreshTimer);
+    trainAutoRefreshTimer = null;
+  }
+  trainAutoRefreshTrainNumber = null;
+  trainAutoRefreshInFlight = false;
+  trainAutoRefreshLastSuccessAt = 0;
+  if (trainAutoRefreshAbortController) {
+    try {
+      trainAutoRefreshAbortController.abort();
+    } catch {
+      // ignore
+    }
+    trainAutoRefreshAbortController = null;
+  }
+}
+
+function startTrainAutoRefresh(trainNumber) {
+  const num = String(trainNumber || '').trim();
+  if (!num) return;
+
+  // Se stiamo già monitorando lo stesso treno, non ricreiamo il timer.
+  if (trainAutoRefreshTrainNumber === num && trainAutoRefreshTimer) return;
+
+  stopTrainAutoRefresh();
+  trainAutoRefreshTrainNumber = num;
+
+  trainAutoRefreshTimer = setInterval(() => {
+    if (!trainAutoRefreshTrainNumber) return;
+    if (document.hidden) return;
+    if (trainAutoRefreshInFlight) return;
+    cercaStatoTreno(trainAutoRefreshTrainNumber, { silent: true, isAuto: true });
+  }, TRAIN_AUTO_REFRESH_INTERVAL_MS);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    // In pausa: abortiamo l'eventuale richiesta in corso.
+    if (trainAutoRefreshAbortController) {
+      try {
+        trainAutoRefreshAbortController.abort();
+      } catch {
+        // ignore
+      }
+      trainAutoRefreshAbortController = null;
+    }
+    trainAutoRefreshInFlight = false;
+    return;
+  }
+
+  // Tornati visibili: se è passato più di 1 intervallo dall'ultimo successo, aggiorniamo subito.
+  if (trainAutoRefreshTrainNumber) {
+    const now = Date.now();
+    const stale = !trainAutoRefreshLastSuccessAt || now - trainAutoRefreshLastSuccessAt >= TRAIN_AUTO_REFRESH_INTERVAL_MS;
+    if (stale && !trainAutoRefreshInFlight) {
+      cercaStatoTreno(trainAutoRefreshTrainNumber, { silent: true, isAuto: true });
+    }
+  }
+});
 
 function setStationLoadingDisplay() {
   if (!stationInfoContainer) return;
@@ -1506,26 +1632,28 @@ function getTrainKindInfo(d) {
 }
 
 function getLastRealStopIndex(fermate) {
+  const hasAnyRealDeparture = fermate.some((f) => parseToMillis(f?.partenzaReale) != null);
   let last = -1;
   fermate.forEach((f, i) => {
-    const arrRealMs = parseToMillis(f.arrivoReale ?? f.effettiva);
-    const depRealMs = parseToMillis(f.partenzaReale);
+    const arrRealMs = parseToMillis(f?.arrivoReale) ?? (hasAnyRealDeparture ? parseToMillis(f?.effettiva) : null);
+    const depRealMs = parseToMillis(f?.partenzaReale);
     if (arrRealMs || depRealMs) last = i;
   });
   return last;
 }
 
 function getLastDepartedStopIndex(fermate) {
+  const hasAnyRealDeparture = fermate.some((f) => parseToMillis(f?.partenzaReale) != null);
   let last = -1;
   const finalIdx = fermate.length - 1;
   fermate.forEach((f, i) => {
-    const depRealMs = parseToMillis(f.partenzaReale);
+    const depRealMs = parseToMillis(f?.partenzaReale);
     if (depRealMs) {
       last = i;
       return;
     }
-    if (i === finalIdx) {
-      const arrRealMs = parseToMillis(f.arrivoReale ?? f.effettiva);
+    if (i === finalIdx && hasAnyRealDeparture) {
+      const arrRealMs = parseToMillis(f?.arrivoReale) ?? parseToMillis(f?.effettiva);
       if (arrRealMs) last = i;
     }
   });
@@ -1548,22 +1676,62 @@ function pickFirstValidTime(...values) {
   return null;
 }
 
+function romanToInt(roman) {
+  const s = String(roman || '').toUpperCase();
+  if (!s) return null;
+  // Validazione roman numeral standard (1..3999)
+  if (!/^(M{0,3})(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/.test(s)) {
+    return null;
+  }
+
+  const values = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+  let total = 0;
+  let prev = 0;
+  for (let i = s.length - 1; i >= 0; i -= 1) {
+    const val = values[s[i]];
+    if (!val) return null;
+    if (val < prev) total -= val;
+    else {
+      total += val;
+      prev = val;
+    }
+  }
+  return total;
+}
+
+function normalizeTrackLabel(label) {
+  const raw = String(label || '').trim();
+  if (!raw) return '';
+
+  // Converte solo un numerale romano iniziale (es. "XV", "IV Est")
+  const match = raw.match(/^([IVXLCDM]+)\b(.*)$/i);
+  if (!match) return raw;
+  const romanToken = match[1];
+  const rest = match[2] || '';
+  const parsed = romanToInt(romanToken);
+  if (parsed == null) return raw;
+  return `${parsed}${rest}`.trim();
+}
+
 function extractTrackInfo(stop) {
   if (!stop) {
     return { label: '', isReal: false, planned: '', actual: '' };
   }
 
-  const actual = stop.binarioEffettivoArrivoDescrizione ||
+  const actualRaw = stop.binarioEffettivoArrivoDescrizione ||
     stop.binarioEffettivoPartenzaDescrizione ||
     stop.binarioEffettivoArrivo ||
     stop.binarioEffettivoPartenza ||
     '';
 
-  const planned = stop.binarioProgrammatoArrivoDescrizione ||
+  const plannedRaw = stop.binarioProgrammatoArrivoDescrizione ||
     stop.binarioProgrammatoPartenzaDescrizione ||
     stop.binarioProgrammatoArrivo ||
     stop.binarioProgrammatoPartenza ||
     '';
+
+  const actual = normalizeTrackLabel(actualRaw);
+  const planned = normalizeTrackLabel(plannedRaw);
 
   const label = actual || planned || '';
 
@@ -1853,6 +2021,178 @@ function computeTravelProgress(fermate, lastDepartedIdx, now = Date.now()) {
   return { nextIdx, progress: clamp01(rawProgress) };
 }
 
+function deriveTimelineFromTimes(fermate, { journeyState, globalDelay, now = Date.now() } = {}) {
+  const stops = Array.isArray(fermate) ? fermate : [];
+  const total = stops.length;
+
+  if (total === 0) {
+    return {
+      mode: 'UNKNOWN',
+      currentIdx: -1,
+      fromIdx: -1,
+      toIdx: -1,
+      progress: null,
+      activeSegment: false,
+      linePastIdx: -1,
+      preDepartureAtOrigin: false,
+    };
+  }
+
+  const hasAnyRealDeparture = stops.some((f) => parseToMillis(f?.partenzaReale) != null);
+
+  let journeyBaseMs = null;
+  for (const f of stops) {
+    journeyBaseMs = pickFirstValidTime(
+      f.programmata,
+      f.partenza_teorica,
+      f.partenzaTeorica,
+      f.arrivo_teorico,
+      f.arrivoTeorica
+    );
+    if (journeyBaseMs != null) break;
+  }
+
+  const preDepartureAtOrigin =
+    journeyState === 'PLANNED' &&
+    Boolean(extractTrackInfo(stops[0])?.isReal);
+
+  // Se lo stato è "Pianificato", evitiamo di dedurre movimenti solo dagli orari.
+  // Eccezione: binario effettivo all'origine (preDepartureAtOrigin).
+  if (journeyState === 'PLANNED') {
+    return {
+      mode: 'PRE',
+      currentIdx: preDepartureAtOrigin ? 0 : -1,
+      fromIdx: -1,
+      toIdx: -1,
+      progress: null,
+      activeSegment: false,
+      linePastIdx: -1,
+      preDepartureAtOrigin,
+    };
+  }
+
+  const getStopArrivalRealMs = (idx) => {
+    const f = stops[idx];
+    if (!f) return null;
+    return parseToMillis(f?.arrivoReale) ?? (hasAnyRealDeparture ? parseToMillis(f?.effettiva) : null);
+  };
+
+  const getStopDepartureRealMs = (idx) => {
+    const f = stops[idx];
+    if (!f) return null;
+    return parseToMillis(f?.partenzaReale);
+  };
+
+  const getStopArrivalPredMs = (idx) => {
+    const f = stops[idx];
+    if (!f) return null;
+    const raw = f?.arrivo_teorico ?? f?.arrivoTeorica ?? f?.programmata;
+    if (raw == null) return null;
+    const delay = getPredictionDelayMinutes(f?.ritardoArrivo, globalDelay, false);
+    const minutes = Number.isFinite(delay) ? delay : 0;
+    return computePredictedMillis(raw, minutes, journeyBaseMs) ?? parseToMillis(raw);
+  };
+
+  const getStopDeparturePredMs = (idx) => {
+    const f = stops[idx];
+    if (!f) return null;
+    const raw = f?.partenza_teorica ?? f?.partenzaTeorica ?? f?.programmata;
+    if (raw == null) return null;
+    const delay = getPredictionDelayMinutes(f?.ritardoPartenza, globalDelay, false);
+    const minutes = Number.isFinite(delay) ? delay : 0;
+    return computePredictedMillis(raw, minutes, journeyBaseMs) ?? parseToMillis(raw);
+  };
+
+  const firstDep = getStopDeparturePredMs(0);
+  if (firstDep != null && now < firstDep) {
+    return {
+      mode: 'PRE',
+      currentIdx: preDepartureAtOrigin ? 0 : -1,
+      fromIdx: -1,
+      toIdx: -1,
+      progress: null,
+      activeSegment: false,
+      linePastIdx: -1,
+      preDepartureAtOrigin,
+    };
+  }
+
+  // Timeline “onesta”: decidiamo STOPPED/MOVING/DONE solo da evidenze reali.
+  // STOPPED: arrivo reale alla fermata i, ma nessuna partenza reale (o non ancora partito).
+  for (let i = 1; i < total; i += 1) {
+    const arrReal = getStopArrivalRealMs(i);
+    if (arrReal == null || now < arrReal) continue;
+    const depReal = i < total - 1 ? getStopDepartureRealMs(i) : null;
+    if (depReal == null || now < depReal) {
+      return {
+        mode: 'STOPPED',
+        currentIdx: i,
+        fromIdx: -1,
+        toIdx: -1,
+        progress: null,
+        activeSegment: false,
+        linePastIdx: i - 1,
+        preDepartureAtOrigin: false,
+      };
+    }
+  }
+
+  // MOVING: esiste una partenza reale dalla fermata i e non abbiamo ancora un arrivo reale alla i+1.
+  for (let i = 0; i < total - 1; i += 1) {
+    const depReal = getStopDepartureRealMs(i);
+    if (depReal == null || now < depReal) continue;
+
+    const nextArrReal = getStopArrivalRealMs(i + 1);
+    if (nextArrReal != null && now >= nextArrReal) continue;
+
+    const nextArrPred = getStopArrivalPredMs(i + 1);
+    let progress = null;
+    if (nextArrPred != null && nextArrPred > depReal) {
+      const rawProgress = (now - depReal) / (nextArrPred - depReal);
+      const clamped = clamp01(rawProgress);
+      // Se non c'è ancora arrivo reale, evitiamo di arrivare a 100% “finto”.
+      progress = nextArrReal == null && clamped >= 1 ? 0.98 : clamped;
+    }
+
+    return {
+      mode: 'MOVING',
+      currentIdx: i,
+      fromIdx: i,
+      toIdx: i + 1,
+      progress,
+      activeSegment: true,
+      linePastIdx: i - 1,
+      preDepartureAtOrigin: false,
+    };
+  }
+
+  const lastArrReal = getStopArrivalRealMs(total - 1);
+  if (lastArrReal != null && now >= lastArrReal) {
+    return {
+      mode: 'DONE',
+      currentIdx: total - 1,
+      fromIdx: -1,
+      toIdx: -1,
+      progress: null,
+      activeSegment: false,
+      linePastIdx: total - 2,
+      preDepartureAtOrigin: false,
+    };
+  }
+
+  // Fallback conservativo: niente "posizione certa".
+  return {
+    mode: 'UNKNOWN',
+    currentIdx: -1,
+    fromIdx: -1,
+    toIdx: -1,
+    progress: null,
+    activeSegment: false,
+    linePastIdx: -1,
+    preDepartureAtOrigin,
+  };
+}
+
 function getActiveSegmentFillPercents(progress) {
   const p = typeof progress === 'number' ? clamp01(progress) : 0;
   const bottomPct = p <= 0.5 ? (p / 0.5) * 100 : 100;
@@ -2022,7 +2362,7 @@ function getCompletionChip(d, journey, globalDelay) {
 
 function buildPositionText(journey, currentInfo, fermate, lastOperationalIdx) {
   const total = journey.total || (Array.isArray(fermate) ? fermate.length : 0);
-  const currentIndex = currentInfo.currentIndex >= 0 ? currentInfo.currentIndex : 0;
+  const currentIndex = currentInfo.currentIndex;
   if (total <= 0) return '';
 
   if (journey.state === 'PARTIAL') {
@@ -2045,6 +2385,7 @@ function buildPositionText(journey, currentInfo, fermate, lastOperationalIdx) {
     }
     return `Corsa interrotta a ${friendlyStop} (${positionLabel}).`;
   } else if (journey.state === 'RUNNING' && total > 0) {
+    if (currentIndex == null || currentIndex < 0) return '';
     return `Fermata ${currentIndex + 1} di ${total}.`;
   } else if (journey.state === 'PLANNED' && journey.minutesToDeparture != null) {
     const human = humanizeDeltaMinutes(journey.minutesToDeparture);
@@ -2271,8 +2612,16 @@ function renderTrainStatus(payload) {
   }
 
   const journey = computeJourneyState(d);
-  const currentInfo = findCurrentStopInfo(d);
   const fermate = Array.isArray(d.fermate) ? d.fermate : [];
+  const globalDelay = getGlobalDelayMinutes(d);
+  const timelineState = deriveTimelineFromTimes(fermate, {
+    journeyState: journey.state,
+    globalDelay,
+  });
+  const currentInfo = {
+    currentStop: timelineState.currentIdx >= 0 ? fermate[timelineState.currentIdx] : null,
+    currentIndex: timelineState.currentIdx,
+  };
   const { departure: plannedDeparture, arrival: plannedArrival } = getPlannedTimes(fermate);
   const lastRealIdx = fermate.length > 0 ? getLastRealStopIndex(fermate) : -1;
   const lastDepartedIdx = fermate.length > 0 ? getLastDepartedStopIndex(fermate) : -1;
@@ -2280,7 +2629,6 @@ function renderTrainStatus(payload) {
     ? getLastOperationalStopIndex(journey, fermate, lastRealIdx, lastDepartedIdx)
     : -1;
   const primary = buildPrimaryStatus(d, journey, currentInfo);
-  const globalDelay = getGlobalDelayMinutes(d);
   const trainMeta = {
     numero: d.numeroTreno || d.numeroTrenoEsteso || payload.originCode || '',
     origine: d.origine || '',
@@ -2348,7 +2696,7 @@ function renderTrainStatus(payload) {
     </div>
   `;
 
-  const currentIndex = currentInfo.currentIndex >= 0 ? currentInfo.currentIndex : 0;
+  const currentIndex = currentInfo.currentIndex;
   const positionText = buildPositionText(journey, currentInfo, fermate, lastOperationalIdx);
 
   const primaryHtml = `
@@ -2377,16 +2725,31 @@ function renderTrainStatus(payload) {
 
   let tableHtml = '';
   if (fermate.length > 0) {
-    const timelineProgress = computeTravelProgress(fermate, lastDepartedIdx);
-    const activeSegment =
-      journey.state === 'RUNNING' &&
-      typeof timelineProgress.progress === 'number' &&
-      lastDepartedIdx >= 0 &&
-      currentInfo.currentIndex === lastDepartedIdx &&
-      timelineProgress.nextIdx === lastDepartedIdx + 1;
+    const hasAnyRealDeparture = fermate.some((f) => parseToMillis(f?.partenzaReale) != null);
+    const timelineCurrentIndex = timelineState.currentIdx;
+    const preDepartureAtOrigin = timelineState.preDepartureAtOrigin === true;
+    const activeSegment = timelineState.activeSegment === true && journey.state === 'RUNNING';
+    const timelineProgress = activeSegment
+      ? { nextIdx: timelineState.toIdx, progress: timelineState.progress }
+      : { nextIdx: -1, progress: null };
+    const lastDepartedIdxForFill = activeSegment ? timelineState.fromIdx : -1;
+    const linePastIdx = Number.isFinite(timelineState.linePastIdx) ? timelineState.linePastIdx : -1;
+
+    // Base per costruire millis quando un orario è solo HH:mm/HHmm
+    let journeyBaseMs = null;
+    for (const f of fermate) {
+      journeyBaseMs = pickFirstValidTime(
+        f.programmata,
+        f.partenza_teorica,
+        f.partenzaTeorica,
+        f.arrivo_teorico,
+        f.arrivoTeorica
+      );
+      if (journeyBaseMs != null) break;
+    }
 
     const rows = fermate.map((f, idx) => {
-      const isCurrent = currentInfo.currentIndex === idx;
+      const isCurrent = timelineCurrentIndex === idx;
       const isFirstStop = idx === 0;
       const isLastStop = idx === fermate.length - 1;
       const showArrival = !isFirstStop;
@@ -2397,18 +2760,16 @@ function renderTrainStatus(payload) {
       const arrProgRaw = f.arrivo_teorico ?? f.arrivoTeorico ?? f.programmata;
       const depProgRaw = f.partenza_teorica ?? f.partenzaTeorica ?? f.programmata;
 
-      const hasRealArrival = f.arrivoReale != null || f.effettiva != null;
+      const hasRealArrival = f.arrivoReale != null || (hasAnyRealDeparture && f.effettiva != null);
       const hasRealDeparture = f.partenzaReale != null;
 
-      const arrRealRaw = f.arrivoReale ?? f.effettiva ?? null;
+      const arrRealRaw = f.arrivoReale ?? (hasAnyRealDeparture ? f.effettiva : null);
       const depRealRaw = f.partenzaReale ?? null;
 
       // Orario probabile (calcolato): programmato + ritardo (ignoriamo totalmente le "prevista" dalle API)
-      let arrPredRaw = null;
-      let depPredRaw = null;
+      let arrPredMs = null;
+      let depPredMs = null;
 
-      const arrProgMs = arrProgRaw ? parseToMillis(arrProgRaw) : null;
-      const depProgMs = depProgRaw ? parseToMillis(depProgRaw) : null;
       const arrProg = arrProgRaw ? formatTimeFlexible(arrProgRaw) : '-';
       const depProg = depProgRaw ? formatTimeFlexible(depProgRaw) : '-';
 
@@ -2419,33 +2780,35 @@ function renderTrainStatus(payload) {
 
       const ritArr = resolveDelay(f.ritardoArrivo, globalDelay);
       const ritDep = resolveDelay(f.ritardoPartenza, globalDelay);
+      const predArrDelay = getPredictionDelayMinutes(f.ritardoArrivo, globalDelay, hasRealArrival);
+      const predDepDelay = getPredictionDelayMinutes(f.ritardoPartenza, globalDelay, hasRealDeparture);
 
       const shouldPredictArrival =
         (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
         showArrival &&
         !hasRealArrival &&
-        idx >= currentIndex &&
+        idx >= timelineCurrentIndex &&
         withinOperationalPlan &&
-        arrProgMs != null &&
-        Number.isFinite(ritArr) &&
-        ritArr > 0;
+        Number.isFinite(predArrDelay) &&
+        predArrDelay !== 0 &&
+        arrProgRaw != null;
 
       const shouldPredictDeparture =
         (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
         showDeparture &&
         !hasRealDeparture &&
-        idx >= currentIndex &&
+        idx >= timelineCurrentIndex &&
         withinOperationalPlan &&
-        depProgMs != null &&
-        Number.isFinite(ritDep) &&
-        ritDep > 0;
+        Number.isFinite(predDepDelay) &&
+        predDepDelay !== 0 &&
+        depProgRaw != null;
 
       if (shouldPredictArrival) {
-        arrPredRaw = arrProgMs + ritArr * 60000;
+        arrPredMs = computePredictedMillis(arrProgRaw, predArrDelay, journeyBaseMs);
       }
 
       if (shouldPredictDeparture) {
-        depPredRaw = depProgMs + ritDep * 60000;
+        depPredMs = computePredictedMillis(depProgRaw, predDepDelay, journeyBaseMs);
       }
 
       const trackInfo = extractTrackInfo(f);
@@ -2455,7 +2818,7 @@ function renderTrainStatus(payload) {
       let rowClass = '';
       if (isCurrent) {
         rowClass = 'stop-current';
-      } else if (lastDepartedIdx >= 0 && idx <= lastDepartedIdx) {
+      } else if (linePastIdx >= 0 && idx <= linePastIdx) {
         // tutte le fermate fino all'ultima con effettivi → passate
         rowClass = 'stop-past';
       } else {
@@ -2465,11 +2828,15 @@ function renderTrainStatus(payload) {
       // stato dettagliato del "pallino" sulla fermata corrente
       // - stop-here: treno arrivato ma non ancora partito (lampeggia)
       // - stop-moving: treno già ripartito dalla fermata corrente (pieno verde)
-      if (journey.state === 'RUNNING' && isCurrent) {
+      if (isCurrent) {
         if (hasRealArrival && !hasRealDeparture) {
           rowClass += ' stop-here';
         } else if (activeSegment) {
           rowClass += ' stop-moving';
+        }
+
+        if (preDepartureAtOrigin && idx === 0) {
+          rowClass += ' stop-preboard';
         }
       }
 
@@ -2489,11 +2856,11 @@ function renderTrainStatus(payload) {
       const timelineClasses = getTimelineClassNames(
         idx,
         fermate.length,
-        lastDepartedIdx,
+        linePastIdx,
         journey.state,
         lastOperationalIdx
       );
-      const timelineStyleAttr = getTimelineFillStyleAttr(idx, lastDepartedIdx, timelineProgress, activeSegment);
+      const timelineStyleAttr = getTimelineFillStyleAttr(idx, lastDepartedIdxForFill, timelineProgress, activeSegment);
 
       let stopTagHtml = '';
       if (journey.state === 'RUNNING') {
@@ -2535,8 +2902,9 @@ function renderTrainStatus(payload) {
       if (showArrival) {
         if (hasRealArrival && arrRealRaw) {
           arrivalLine = `<span class="time-actual ${arrivalEffClass}">${formatTimeFlexible(arrRealRaw)}</span>`;
-        } else if (arrPredRaw != null) {
-          arrivalLine = `<span class="time-actual forecast-late">${formatTimeFlexible(arrPredRaw)}</span>`;
+        } else if (arrPredMs != null) {
+          const forecastClass = predArrDelay < 0 ? 'forecast-early' : 'forecast-late';
+          arrivalLine = `<span class="time-actual ${forecastClass} time-predicted"><span class="time-predicted-mark">≈</span>&nbsp;${formatTimeFromMillis(arrPredMs)}</span>`;
         }
       }
 
@@ -2545,8 +2913,9 @@ function renderTrainStatus(payload) {
       if (showDeparture) {
         if (hasRealDeparture && depRealRaw) {
           departLine = `<span class="time-actual ${departEffClass}">${formatTimeFlexible(depRealRaw)}</span>`;
-        } else if (depPredRaw != null) {
-          departLine = `<span class="time-actual forecast-late">${formatTimeFlexible(depPredRaw)}</span>`;
+        } else if (depPredMs != null) {
+          const forecastClass = predDepDelay < 0 ? 'forecast-early' : 'forecast-late';
+          departLine = `<span class="time-actual ${forecastClass} time-predicted"><span class="time-predicted-mark">≈</span>&nbsp;${formatTimeFromMillis(depPredMs)}</span>`;
         }
       }
 
@@ -2594,7 +2963,7 @@ function renderTrainStatus(payload) {
 
     // Generate mobile card HTML
     const cardRows = fermate.map((f, idx) => {
-      const isCurrent = currentInfo.currentIndex === idx;
+      const isCurrent = timelineCurrentIndex === idx;
       const isFirstStop = idx === 0;
       const isLastStop = idx === fermate.length - 1;
       const showArrival = !isFirstStop;
@@ -2605,17 +2974,14 @@ function renderTrainStatus(payload) {
       const arrProgRaw = f.arrivo_teorico ?? f.arrivoTeorico ?? f.programmata;
       const depProgRaw = f.partenza_teorica ?? f.partenzaTeorica ?? f.programmata;
 
-      const hasRealArrival = f.arrivoReale != null || f.effettiva != null;
+      const hasRealArrival = f.arrivoReale != null || (hasAnyRealDeparture && f.effettiva != null);
       const hasRealDeparture = f.partenzaReale != null;
 
-      const arrRealRaw = f.arrivoReale ?? f.effettiva ?? null;
+      const arrRealRaw = f.arrivoReale ?? (hasAnyRealDeparture ? f.effettiva : null);
       const depRealRaw = f.partenzaReale ?? null;
 
-      const arrProgMs = arrProgRaw ? parseToMillis(arrProgRaw) : null;
-      const depProgMs = depProgRaw ? parseToMillis(depProgRaw) : null;
-
-      let arrPredRaw = null;
-      let depPredRaw = null;
+      let arrPredMs = null;
+      let depPredMs = null;
 
       const arrProg = arrProgRaw ? formatTimeFlexible(arrProgRaw) : '-';
       const depProg = depProgRaw ? formatTimeFlexible(depProgRaw) : '-';
@@ -2627,33 +2993,35 @@ function renderTrainStatus(payload) {
 
       const ritArr = resolveDelay(f.ritardoArrivo, globalDelay);
       const ritDep = resolveDelay(f.ritardoPartenza, globalDelay);
+      const predArrDelay = getPredictionDelayMinutes(f.ritardoArrivo, globalDelay, hasRealArrival);
+      const predDepDelay = getPredictionDelayMinutes(f.ritardoPartenza, globalDelay, hasRealDeparture);
 
       const shouldPredictArrival =
         (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
         showArrival &&
         !hasRealArrival &&
-        idx >= currentIndex &&
+        idx >= timelineCurrentIndex &&
         withinOperationalPlan &&
-        arrProgMs != null &&
-        Number.isFinite(ritArr) &&
-        ritArr > 0;
+        Number.isFinite(predArrDelay) &&
+        predArrDelay !== 0 &&
+        arrProgRaw != null;
 
       const shouldPredictDeparture =
         (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
         showDeparture &&
         !hasRealDeparture &&
-        idx >= currentIndex &&
+        idx >= timelineCurrentIndex &&
         withinOperationalPlan &&
-        depProgMs != null &&
-        Number.isFinite(ritDep) &&
-        ritDep > 0;
+        Number.isFinite(predDepDelay) &&
+        predDepDelay !== 0 &&
+        depProgRaw != null;
 
       if (shouldPredictArrival) {
-        arrPredRaw = arrProgMs + ritArr * 60000;
+        arrPredMs = computePredictedMillis(arrProgRaw, predArrDelay, journeyBaseMs);
       }
 
       if (shouldPredictDeparture) {
-        depPredRaw = depProgMs + ritDep * 60000;
+        depPredMs = computePredictedMillis(depProgRaw, predDepDelay, journeyBaseMs);
       }
 
       const trackInfo = extractTrackInfo(f);
@@ -2662,17 +3030,21 @@ function renderTrainStatus(payload) {
       let rowClass = '';
       if (isCurrent) {
         rowClass = 'stop-current';
-      } else if (lastDepartedIdx >= 0 && idx <= lastDepartedIdx) {
+      } else if (linePastIdx >= 0 && idx <= linePastIdx) {
         rowClass = 'stop-past';
       } else {
         rowClass = 'stop-future';
       }
 
-      if (journey.state === 'RUNNING' && isCurrent) {
+      if (isCurrent) {
         if (hasRealArrival && !hasRealDeparture) {
           rowClass += ' stop-here';
         } else if (activeSegment) {
           rowClass += ' stop-moving';
+        }
+
+        if (preDepartureAtOrigin && idx === 0) {
+          rowClass += ' stop-preboard';
         }
       }
 
@@ -2691,11 +3063,11 @@ function renderTrainStatus(payload) {
       const timelineClasses = getTimelineClassNames(
         idx,
         fermate.length,
-        lastDepartedIdx,
+        linePastIdx,
         journey.state,
         lastOperationalIdx
       );
-      const timelineStyleAttr = getTimelineFillStyleAttr(idx, lastDepartedIdx, timelineProgress, activeSegment);
+      const timelineStyleAttr = getTimelineFillStyleAttr(idx, lastDepartedIdxForFill, timelineProgress, activeSegment);
 
       let stopTagHtml = '';
       if (journey.state === 'RUNNING') {
@@ -2736,9 +3108,9 @@ function renderTrainStatus(payload) {
         if (hasRealArrival && arrRealRaw) {
           arrivalActual = formatTimeFlexible(arrRealRaw);
           arrivalActualClass = arrivalEffClass || 'delay-ok';
-        } else if (arrPredRaw != null) {
-          arrivalActual = formatTimeFlexible(arrPredRaw);
-          arrivalActualClass = 'forecast-late';
+        } else if (arrPredMs != null) {
+          arrivalActual = `<span class="time-predicted-mark">≈</span>&nbsp;${formatTimeFromMillis(arrPredMs)}`;
+          arrivalActualClass = `${predArrDelay < 0 ? 'forecast-early' : 'forecast-late'} time-predicted`;
         }
       }
 
@@ -2748,9 +3120,9 @@ function renderTrainStatus(payload) {
         if (hasRealDeparture && depRealRaw) {
           departureActual = formatTimeFlexible(depRealRaw);
           departureActualClass = departEffClass || 'delay-ok';
-        } else if (depPredRaw != null) {
-          departureActual = formatTimeFlexible(depPredRaw);
-          departureActualClass = 'forecast-late';
+        } else if (depPredMs != null) {
+          departureActual = `<span class="time-predicted-mark">≈</span>&nbsp;${formatTimeFromMillis(depPredMs)}`;
+          departureActualClass = `${predDepDelay < 0 ? 'forecast-early' : 'forecast-late'} time-predicted`;
         }
       }
 
@@ -2856,9 +3228,15 @@ function escapeHtml(str) {
 
 // HANDLER RICERCA -----------------------------------------------------
 
-async function cercaStatoTreno(trainNumberOverride = '') {
+async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
+  const opts = options && typeof options === 'object' ? options : {};
+  const silent = !!opts.silent;
+  const isAuto = !!opts.isAuto;
+
   trainError.textContent = '';
-  trainResult.innerHTML = '';
+  if (!silent) {
+    trainResult.innerHTML = '';
+  }
 
   const overrideValue = typeof trainNumberOverride === 'string' ? trainNumberOverride : '';
   const num = (overrideValue || trainNumberInput.value || '').trim();
@@ -2867,21 +3245,35 @@ async function cercaStatoTreno(trainNumberOverride = '') {
     return;
   }
 
-  trainResult.innerHTML = `
-    <div class="loading-container">
-      <div class="loading-bar"></div>
-      <div class="loading-text">Caricamento stato treno...</div>
-    </div>
-  `;
+  if (!silent) {
+    trainResult.innerHTML = `
+      <div class="loading-container">
+        <div class="loading-bar"></div>
+        <div class="loading-text">Caricamento stato treno...</div>
+      </div>
+    `;
+  }
 
   try {
+    if (trainAutoRefreshAbortController) {
+      try {
+        trainAutoRefreshAbortController.abort();
+      } catch {
+        // ignore
+      }
+    }
+
+    trainAutoRefreshAbortController = new AbortController();
+    trainAutoRefreshInFlight = true;
+
     const res = await fetch(
-      `${API_BASE}/api/trains/status?trainNumber=${encodeURIComponent(num)}`
+      `${API_BASE}/api/trains/status?trainNumber=${encodeURIComponent(num)}`,
+      { signal: trainAutoRefreshAbortController.signal }
     );
 
     if (!res.ok) {
       trainError.textContent = `Errore HTTP dal backend: ${res.status}`;
-      trainResult.innerHTML = '';
+      if (!silent) trainResult.innerHTML = '';
       return;
     }
 
@@ -2889,30 +3281,44 @@ async function cercaStatoTreno(trainNumberOverride = '') {
 
     if (!data.ok) {
       trainError.textContent = data.error || 'Errore logico dal backend.';
-      trainResult.innerHTML = '';
+      if (!silent) trainResult.innerHTML = '';
       return;
     }
 
     if (!data.data) {
-      trainResult.innerHTML = `<p class='muted'>${data.message || 'Nessun treno trovato.'}</p>`;
+      if (!silent) {
+        trainResult.innerHTML = `<p class='muted'>${data.message || 'Nessun treno trovato.'}</p>`;
+      }
       return;
     }
 
     const dd = data.data;
     const { departure, arrival } = getPlannedTimes(dd.fermate);
-    addRecentTrain({
-      numero: dd.numeroTreno || num,
-      origine: dd.origine,
-      destinazione: dd.destinazione,
-      partenza: departure,
-      arrivo: arrival,
-    });
+    if (!isAuto) {
+      addRecentTrain({
+        numero: dd.numeroTreno || num,
+        origine: dd.origine,
+        destinazione: dd.destinazione,
+        partenza: departure,
+        arrivo: arrival,
+      });
+    }
 
     renderTrainStatus(data);
+
+    trainAutoRefreshLastSuccessAt = Date.now();
+    startTrainAutoRefresh(dd.numeroTreno || num);
   } catch (err) {
+    // Abort è normale quando cambiamo treno o la tab va in background.
+    if (err && (err.name === 'AbortError' || err.code === 20)) {
+      return;
+    }
     console.error('Errore fetch train status:', err);
     trainError.textContent = 'Errore di comunicazione con il backend locale.';
-    trainResult.innerHTML = '';
+    if (!silent) trainResult.innerHTML = '';
+  } finally {
+    trainAutoRefreshInFlight = false;
+    trainAutoRefreshAbortController = null;
   }
 }
 

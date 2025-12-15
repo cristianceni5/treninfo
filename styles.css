@@ -108,13 +108,13 @@
 .timeline-line::before {
   top: 0;
   height: max(0px, calc(50% - var(--timeline-gap-size) / 2));
-  /* Fill che cresce verso il pallino (dal basso verso l'alto) */
+  /* Fill che cresce dall'alto verso il pallino */
   background: linear-gradient(
     to bottom,
-    var(--timeline-color-top) 0%,
-    var(--timeline-color-top) calc((100 - var(--timeline-fill-top-pct)) * 1%),
-    var(--timeline-fill-color) calc((100 - var(--timeline-fill-top-pct)) * 1%),
-    var(--timeline-fill-color) 100%
+    var(--timeline-fill-color) 0%,
+    var(--timeline-fill-color) calc(var(--timeline-fill-top-pct) * 1%),
+    var(--timeline-color-top) calc(var(--timeline-fill-top-pct) * 1%),
+    var(--timeline-color-top) 100%
   );
   opacity: var(--timeline-top-visible);
 }
@@ -765,6 +765,13 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   padding: var(--gap-sm) 0 0;
 }
 
+@media (max-width: 640px) {
+  .station-board-list {
+    gap: 14px;
+    padding-top: 12px;
+  }
+}
+
 .station-board-loading {
   padding: 18px 0;
 }
@@ -780,6 +787,16 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   cursor: pointer;
   transition: all var(--anim-normal);
   position: relative;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+@media (hover: none) {
+  /* Su touch: niente hover, quindi feedback su tap */
+  .station-board-card:active {
+    background: var(--surface-active);
+    border-color: var(--border-strong);
+  }
 }
 
 .station-board-card:hover {
@@ -791,6 +808,19 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 
 .station-board-card:active {
   transform: none;
+}
+
+.station-board-card:focus-visible {
+  outline: 2px solid rgba(15, 23, 42, 0.35);
+  outline-offset: 2px;
+}
+
+/* Touch: niente hover, quindi feedback su tap */
+@media (hover: none) {
+  .station-board-card:active {
+    background: var(--surface-active);
+    border-color: var(--border-strong);
+  }
 }
 
 .sb-row-main {
@@ -858,24 +888,26 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 /* Mobile adjustments */
 @media (max-width: 480px) {
   .station-board-card {
-    padding: 12px;
-    flex-direction: column;
-    align-items: stretch;
+    padding: 14px;
+    /* Manteniamo layout “a riga”: più compatto e meno confuso */
+    flex-direction: row;
+    align-items: center;
     gap: 12px;
   }
   
-  .sb-row-main {
-    width: 100%;
-  }
-  
   .sb-row-meta {
-    flex-direction: row;
-    justify-content: flex-end;
+    /* Niente divider/seconda riga: il binario resta “badge” a destra */
+    flex-direction: column;
+    justify-content: center;
     margin-left: 0;
-    margin-top: 4px;
-    border-top: 1px solid var(--border-subtle);
-    padding-top: 8px;
+    margin-top: 0;
+    border-top: 0;
+    padding-top: 0;
   }
+
+  .sb-row-main { gap: 14px; }
+  .sb-time { font-size: 1.15rem; }
+  .sb-time-col { min-width: 64px; }
 }
 
 .station-stop-trigger {
@@ -901,6 +933,8 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 .station-stop-trigger--card {
   border-radius: var(--radius-card);
   transition: background var(--anim-normal), box-shadow var(--anim-normal);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .station-stop-trigger--card:focus-visible {
@@ -921,6 +955,21 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   box-shadow: var(--shadow-soft);
 }
 .station-stop-trigger--card:active { box-shadow: none; }
+
+@media (hover: none) {
+  .station-stop-trigger--card:active .stop-card-content {
+    background: var(--surface-active);
+  }
+}
+
+/* iOS: disabilita la formattazione automatica (data detectors) che può sottolineare/colorare testi */
+a[x-apple-data-detectors],
+a[x-apple-data-detectors] *,
+a[href^='tel'],
+a[href^='mailto'] {
+  color: inherit !important;
+  text-decoration: none !important;
+}
 
 /* Old board styles removed */
 
@@ -1076,8 +1125,19 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 .delay-early { color: var(--state-early); }
 .delay-mid,
 .delay-high { color: var(--state-late); }
-.forecast-late { color: var(--state-late); }
-.forecast-early { color: var(--state-early); }
+
+/* Orario probabile (≈): giallo, sempre distinguibile dall'effettivo */
+.forecast-late { color: var(--color-favorite); }
+.forecast-early { color: var(--color-favorite); }
+
+.time-predicted {
+  font-weight: 500;
+}
+
+.time-predicted-mark {
+  font-size: 0.78em;
+  opacity: 0.85;
+}
 
 /* .delay-chip – badge riassuntivo anticipo/ritardo */
 .delay-chip {
@@ -1310,15 +1370,24 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 
 /* Lampeggia solo quando il treno è fermo qui */
 .stop-current.stop-here .col-idx::before {
-  animation: stationPulse 1.4s ease-in-out infinite;
+  animation: stationPulseCentered 1.4s ease-in-out infinite;
+}
+
+/* Pre-partenza: binario effettivo disponibile (animazione del pallino) */
+.stop-current.stop-preboard .col-idx::before {
+  animation: stationPulseCentered 1.4s ease-in-out infinite;
 }
 
 /* Se è già ripartito dalla fermata corrente: pieno verde, niente pulse */
 .stop-current.stop-moving .col-idx::before {
   background: var(--state-ontime);
   border-color: var(--state-ontime);
+  border-width: 3px !important;
+  width: 14px !important;
+  height: 14px !important;
   box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.25);
-  animation: none;
+  animation: none !important;
+  transform: translate(-50%, -50%) !important;
 }
 
 .stop-cancelled .col-idx::before {
@@ -1447,11 +1516,19 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   animation: stationPulse 1.4s ease-in-out infinite;
 }
 
+.stop-card.stop-current.stop-preboard .stop-card-dot {
+  animation: stationPulse 1.4s ease-in-out infinite;
+}
+
 .stop-card.stop-current.stop-moving .stop-card-dot {
   background: var(--state-ontime);
   border-color: var(--state-ontime);
+  border-width: 3px !important;
+  width: 14px !important;
+  height: 14px !important;
   box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
-  animation: none;
+  animation: none !important;
+  transform: none !important;
 }
 
 .stop-card.stop-next .stop-card-dot {
@@ -2047,6 +2124,21 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   }
 }
 
+@keyframes stationPulseCentered {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.08);
+    box-shadow: 0 0 0 7px rgba(22, 163, 74, 0);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.15);
+  }
+}
+
 /* JSON DEBUG --------------------------------------------------------- */
 /* .json-debug – pannello collapsible per dati raw */
 .json-debug { margin-top: 10px; }
@@ -2244,6 +2336,15 @@ button.train-link {
   font-family: inherit;
   /* background is already set by .train-badge */
   transition: transform var(--anim-fast), filter var(--anim-fast);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+@media (max-width: 640px) {
+  button.train-link {
+    min-height: 44px;
+    padding: 8px 14px;
+  }
 }
 
 button.train-link:active {
@@ -2807,6 +2908,14 @@ button.train-badge:active {
   flex-wrap: wrap;
   gap: 12px;
   width: 100%;
+}
+
+@media (max-width: 600px) {
+  .storage-area {
+    margin-top: 20px;
+    padding-top: 18px;
+    gap: 12px;
+  }
 }
 
 .storage-area.hidden {
