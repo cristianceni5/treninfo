@@ -468,6 +468,20 @@ select:focus-visible {
   gap: 16px; /* Increased gap between cards */
 }
 
+.solutions-date-sep {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  padding-top: 10px;
+  margin-top: 2px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.solutions-date-sep:first-child {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: 0;
+}
+
 /* Remove specific dark overrides so it inherits standard button styles */
 
 
@@ -1020,11 +1034,21 @@ a[href^='mailto'] {
   padding: 16px 0;
 }
 
-/* .train-logo – icona aziendale della corsa */
+/* .train-logo – wrapper icona aziendale (img scala a tutta altezza) */
 .train-logo {
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.train-logo-img {
+  height: 100%;
+  width: 100%;
   object-fit: contain;
+  display: block;
 }
 
 /* .train-header – blocco con nome, logo e badge */
@@ -1089,6 +1113,14 @@ a[href^='mailto'] {
 .train-last {
   color: var(--text-soft);
   font-size: 0.78rem;
+}
+
+.train-info-icon {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+  margin-left: 4px;
+  opacity: 0.9;
 }
 
 .train-last--stale {
@@ -2277,6 +2309,23 @@ a[href^='mailto'] {
   .stop-card-time-values { font-size: 0.88rem; gap: var(--gap-sm); }
 }
 /* Trip Search Results */
+.solutions-day-note {
+  margin: 6px 0 8px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.solutions-end-note {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.sol-when {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
 .solution-card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -2375,8 +2424,8 @@ button.train-link:active {
 .train-badge {
   display: inline-flex;
   align-items: center;
-  gap: var(--gap-sm);
-  padding: 4px 12px;
+  gap: 8px;
+  padding: 4px 10px;
   border-radius: var(--radius-pill);
   font-size: 0.85rem;
   font-weight: 600;
@@ -2388,42 +2437,147 @@ button.train-link:active {
   line-height: 1.2;
 }
 
-.train-badge img {
-  width: 16px;
-  height: 16px;
+.train-badge-icon {
+  height: 34px;
+  width: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+/* Nei dettagli viaggio i loghi devono essere più evidenti */
+.sol-segments .train-badge-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.train-badge-icon img {
+  height: 100%;
+  width: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* Back-compat: se resta qualche <img> diretto nei badge */
+.train-badge > img {
+  height: 18px;
+  width: 18px;
+  object-fit: contain;
+  display: block;
+}
+
+/* Icone riassuntive dei tipi treno nella riga orari */
+.sol-times {
+  flex-wrap: wrap;
+}
+
+.sol-times-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  margin-left: var(--gap-sm);
+}
+
+.sol-train-icon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.sol-itinerary-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-hover);
+  border-radius: var(--radius-card);
+  padding: 8px 10px;
+  padding-right: 34px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  position: relative;
+}
+
+.sol-itinerary-btn::after {
+  content: '›';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-soft);
+  font-weight: 700;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.sol-itinerary-btn:active {
+  transform: var(--anim-scale-active);
+  filter: brightness(0.97);
+}
+
+.sol-itinerary-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  .sol-itinerary-btn:hover {
+    filter: brightness(0.98);
+  }
+}
+
+.sol-train-plus,
+.sol-train-more {
+  color: var(--text-soft);
+  font-weight: 700;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.sol-train-icon img {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   display: block;
 }
 
 /* Specific Train Types Colors */
 .train-type-fr {
-  background: #fef2f2; /* Red 50 */
-  border-color: #fecaca; /* Red 200 */
-  color: #b91c1c; /* Red 700 */
+  background: var(--bg-card);
+  border-color: var(--border-subtle);
+  color: var(--text-main);
 }
 
 .train-type-ic {
-  background: #eff6ff; /* Blue 50 */
-  border-color: #bfdbfe; /* Blue 200 */
-  color: #1d4ed8; /* Blue 700 */
+  background: var(--bg-card);
+  border-color: var(--border-subtle);
+  color: var(--text-main);
 }
 
 .train-type-reg {
-  background: #f0fdf4; /* Green 50 */
-  border-color: #bbf7d0; /* Green 200 */
-  color: #15803d; /* Green 700 */
+  background: var(--bg-card);
+  border-color: var(--border-subtle);
+  color: var(--text-main);
 }
 
 .train-type-ec, .train-type-en {
-  background: #fff7ed; /* Orange 50 */
-  border-color: #fed7aa; /* Orange 200 */
-  color: #c2410c; /* Orange 700 */
+  background: var(--bg-card);
+  border-color: var(--border-subtle);
+  color: var(--text-main);
 }
 
 .train-type-other {
-  background: var(--bg-subtle); /* Gray 50 */
-  border-color: var(--border-subtle); /* Gray 200 */
-  color: #374151; /* Gray 700 */
+  background: var(--bg-card);
+  border-color: var(--border-subtle);
+  color: var(--text-main);
 }
 
 /* Hover effects */
@@ -2445,36 +2599,92 @@ button.train-badge:active {
 .sol-segments {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-subtle);
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: none;
   font-size: 0.85rem;
 }
 
 .sol-segment {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--bg-body);
+  display: block;
+  padding: 6px 0;
+  border-bottom: none;
 }
 
 .sol-segment:last-child {
   border-bottom: none;
 }
 
+.sol-segment-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+button.sol-segment-row {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  position: relative;
+  padding-right: 18px;
+}
+
+button.sol-segment-row::after {
+  content: '›';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-soft);
+  font-weight: 700;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+button.sol-segment-row:active {
+  transform: var(--anim-scale-active);
+  filter: brightness(0.97);
+}
+
+.sol-segment-row .train-badge {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
 .sol-segment-train {
-  min-width: 100px; /* Ensure badge has space */
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .sol-segment-itinerary {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 0.9rem;
+}
+
+.sol-itinerary-compact {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sol-itinerary-arrow {
+  color: var(--text-soft);
+  font-weight: 700;
+  line-height: 1;
 }
 
 .sol-itinerary-point {
@@ -2498,37 +2708,30 @@ button.train-badge:active {
 }
 
 .sol-itinerary-connector {
-  flex: 1;
-  height: 1px;
-  background: var(--border-strong);
-  min-width: 20px;
+  flex: 0 0 auto;
+  min-width: auto;
+  height: auto;
+  background: none;
   position: relative;
+  color: var(--text-soft);
+  line-height: 1;
 }
 
-.sol-itinerary-connector::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 0; 
-  height: 0; 
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-left: 4px solid var(--border-strong);
+.sol-itinerary-connector::before {
+  content: '→';
 }
 
 .sol-transfer {
   display: flex;
   align-items: center;
-  gap: var(--gap-sm);
-  font-size: 0.85rem;
-  color: var(--text-soft);
-  padding: 4px 12px;
-  background: var(--bg-body);
-  border-radius: var(--radius-pill);
+  gap: var(--gap-xs);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
   align-self: flex-start;
-  margin-left: 116px; /* Align with itinerary start (100px badge + 16px gap) */
+  margin: 2px 0 8px;
 }
 
 .transfer-icon {
@@ -2555,37 +2758,10 @@ button.train-badge:active {
     padding-top: 12px;
   }
 
-  .sol-segment {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--gap-sm);
-    position: relative;
-    padding-bottom: 16px;
-  }
+  .sol-segment { padding-bottom: 12px; }
 
-  .sol-segment-train {
-    min-width: auto;
-    margin-bottom: 4px;
-  }
-
-  .sol-segment-itinerary {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0;
-    width: 100%;
-    position: relative;
-    padding-left: 14px; /* Space for vertical line */
-  }
-
-  /* Vertical Line */
-  .sol-segment-itinerary::before {
-    content: '';
-    position: absolute;
-    left: 4px;
-    top: 8px;
-    bottom: 8px;
-    width: 2px;
-    background: var(--border-subtle);
+  button.sol-segment-row {
+    padding-right: 18px;
   }
 
   .sol-itinerary-point {
@@ -2596,22 +2772,7 @@ button.train-badge:active {
     position: relative;
   }
 
-  /* Dots on the line */
-  .sol-itinerary-point::before {
-    content: '';
-    position: absolute;
-    left: -14px; /* Align with line */
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--bg-card);
-    border: 2px solid var(--primary);
-    z-index: 1;
-  }
-  
-  .sol-itinerary-point:last-child::before {
-    background: var(--primary); /* Filled dot for arrival */
-  }
+  .sol-itinerary-point::before { display: none; }
 
   .sol-itinerary-connector {
     display: none; /* Hide horizontal connector */
@@ -2627,22 +2788,12 @@ button.train-badge:active {
   }
 
   .sol-transfer {
-    margin: 0 0 16px 14px; /* Align with line */
+    margin: 6px 0 14px;
     background: transparent;
     padding: 0;
     color: var(--text-muted);
-    font-size: 0.8rem;
-    border: none;
-  }
-  
-  .sol-transfer .transfer-icon {
-    display: none;
-  }
-  
-  .sol-transfer::before {
-    content: '•';
-    margin-right: 6px;
-    color: var(--border-strong);
+    font-size: 0.82rem;
+    align-self: stretch;
   }
 
   /* Adjust badge size for mobile */
@@ -2650,12 +2801,23 @@ button.train-badge:active {
     font-size: 0.8rem;
     padding: 4px 10px;
   }
-  
-  .train-badge img {
-    width: 16px;
-    height: 16px;
+
+  /* Non ridurre tutte le img nei badge: usiamo i wrapper */
+  .train-badge-icon { width: 34px; height: 34px; }
+  .train-badge-icon img { width: 100%; height: 100%; }
+  .sol-segments .train-badge-icon { width: 40px; height: 40px; }
+  .sol-train-icon { width: 36px; height: 36px; }
+  .sol-train-icon img { width: 100%; height: 100%; }
+
+  .sol-itinerary-btn {
+    min-height: 44px;
+    padding: 10px 12px;
   }
 }
+
+/* Rimuove linee "sezione" sui dettagli */
+.sol-details { border-top: none; }
+.sol-details[open] .sol-summary { border-bottom: none; }
 
 /* --- TOUCH ANIMATIONS --- */
 button.train-badge {
@@ -3080,11 +3242,11 @@ button.train-badge:active {
 }
 
 .chip-number {
-  font-weight: 500;
-  background: var(--bg-body);
-  padding: 1px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--border-subtle);
+  font-weight: 600;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  border: 0;
 }
 
 .chip-time {

@@ -47,19 +47,19 @@ const TRAIN_KIND_RULES = [
   {
     matches: ['FRECCIAROSSA', 'FRECCIAROSSA AV', 'FRECCIAROSSAAV', 'FR', 'FR AV', 'FRAV', 'FR EC', 'FRECCIAROSSA EC'],
     boardLabel: 'Frecciarossa',
-    detailLabel: 'Frecciarossa AV',
+    detailLabel: 'FR',
     className: 'train-title--fr',
   },
   {
     matches: ['FRECCIARGENTO', 'FRECCIARGENTO AV', 'FRECCIARGENTOAV', 'FA', 'FA AV'],
     boardLabel: 'Frecciargento',
-    detailLabel: 'Frecciargento AV',
+    detailLabel: 'FA',
     className: 'train-title--fr',
   },
   {
     matches: ['FRECCIABIANCA', 'FB'],
     boardLabel: 'Frecciabianca',
-    detailLabel: 'Frecciabianca',
+    detailLabel: 'FB',
     className: 'train-title--ic',
   },
   {
@@ -71,13 +71,13 @@ const TRAIN_KIND_RULES = [
   {
     matches: ['EUROCITY', 'EC'],
     boardLabel: 'EuroCity',
-    detailLabel: 'EuroCity',
+    detailLabel: 'EC',
     className: 'train-title--ic',
   },
   {
     matches: ['EURONIGHT', 'EN'],
     boardLabel: 'EuroNight',
-    detailLabel: 'EuroNight',
+    detailLabel: 'EN',
     className: 'train-title--ic',
   },
   {
@@ -96,38 +96,38 @@ const TRAIN_KIND_RULES = [
   {
     matches: ['INTERCITY NOTTE', 'INTERCITYNOTTE', 'ICN'],
     boardLabel: 'Intercity Notte',
-    detailLabel: 'Intercity Notte',
+    detailLabel: 'ICN',
     className: 'train-title--ic',
   },
   {
     matches: ['INTERCITY', 'IC'],
     boardLabel: 'Intercity',
-    detailLabel: 'Intercity',
+    detailLabel: 'IC',
     className: 'train-title--ic',
   },
   {
     matches: ['ESPRESSO', 'EXP', 'E'],
     boardLabel: 'Espresso',
-    detailLabel: 'Espresso',
+    detailLabel: 'EXP',
     className: 'train-title--ic',
   },
   {
     matches: ['EUROSTAR', 'EUROSTAR CITY', 'EUROSTARCITY', 'ES', 'ESC', 'ES CITY', 'ES AV', 'ESAV', 'ES FAST'],
     boardLabel: 'Eurostar',
-    detailLabel: 'Eurostar',
+    detailLabel: 'ES',
     className: 'train-title--fr',
   },
   // Regionali e suburbani
   {
     matches: ['REGIONALE VELOCE', 'REGIONALEVELOCE', 'RV', 'RGV'],
     boardLabel: 'Regionale Veloce',
-    detailLabel: 'Regionale Veloce',
+    detailLabel: 'RV',
     className: 'train-title--reg',
   },
   {
     matches: ['REGIOEXPRESS', 'REGIO EXPRESS', 'RE'],
     boardLabel: 'RegioExpress',
-    detailLabel: 'RegioExpress',
+    detailLabel: 'RE',
     className: 'train-title--reg',
   },
   {
@@ -187,7 +187,7 @@ const TRAIN_KIND_RULES = [
   {
     matches: ['REGIONALE', 'REG', 'R'],
     boardLabel: 'Regionale',
-    detailLabel: 'Regionale',
+    detailLabel: 'REG',
     className: 'train-title--reg',
   },
   {
@@ -214,7 +214,95 @@ const TRAIN_KIND_RULES = [
     detailLabel: 'Accelerato',
     className: 'train-title--reg',
   },
+  {
+    matches: ['BUS', 'BU', 'FI'],
+    boardLabel: 'Bus',
+    detailLabel: 'BU',
+    className: 'train-title--reg',
+  },
 ];
+
+const TRAIN_KIND_ICON_SRC = {
+  FR: '/img/FR.svg',
+  FA: '/img/FA.svg',
+  FB: '/img/FB.svg',
+  IC: '/img/IC.svg',
+  ICN: '/img/NI.svg',
+  BU: '/img/BU.svg',
+  EC: '/img/EC.svg',
+  REG: '/img/RV.svg',
+  RV: '/img/RV.svg',
+};
+
+const REGIONAL_ICON_CODES = new Set([
+  'REG', 'RV', 'RE', 'IR',
+  'SUB', 'MET', 'SFM',
+  'MXP', 'FL',
+  'DD', 'DIR', 'ACC',
+  'PE',
+]);
+
+function getTrainKindIconSrc(kindCode) {
+  const code = (kindCode || '').toString().trim().toUpperCase();
+  if (REGIONAL_ICON_CODES.has(code)) return '/img/RV.svg';
+  return TRAIN_KIND_ICON_SRC[code] || '/img/trenitalia.png';
+}
+
+function normalizeTrainShortCode(raw) {
+  const code = (raw || '').toString().trim().toUpperCase();
+  return /^[A-Z]{1,4}$/.test(code) ? code : '';
+}
+
+const PREFERRED_SHORT_CODES = [
+  'ICN',
+  'FR',
+  'FA',
+  'FB',
+  'IC',
+  'BU',
+  'EC',
+  'EN',
+  'RJ',
+  'TGV',
+  'ITA',
+  'REG',
+  'RV',
+  'RE',
+  'IR',
+  'SUB',
+  'MET',
+  'MXP',
+  'FL',
+  'DD',
+  'DIR',
+  'ACC',
+  'EXP',
+  'ES',
+  'ESC',
+  'SFM',
+  'PE',
+];
+
+function deriveShortCodeFromRule(rule) {
+  const raw = Array.isArray(rule?.matches) ? rule.matches : [];
+  const candidates = new Set(
+    raw
+      .map((x) => String(x || '').toUpperCase().trim())
+      .filter(Boolean)
+      .map((x) => x.replace(/[^A-Z]/g, ''))
+      .filter((x) => x.length >= 1 && x.length <= 4)
+  );
+
+  for (const preferred of PREFERRED_SHORT_CODES) {
+    if (candidates.has(preferred)) return preferred;
+  }
+
+  // fallback: prima sigla "compatta" (2-4 lettere)
+  for (const c of candidates) {
+    if (c.length >= 2 && c.length <= 4) return c;
+  }
+  return '';
+}
 
 function resolveTrainKindFromCode(...rawValues) {
   for (const raw of rawValues) {
@@ -241,6 +329,7 @@ function resolveTrainKindFromCode(...rawValues) {
           boardLabel: rule.boardLabel,
           detailLabel: rule.detailLabel,
           className: rule.className,
+          shortCode: deriveShortCodeFromRule(rule),
           number: numberMatch ? numberMatch[1] : '',
         };
       }
@@ -290,6 +379,122 @@ let tripToId = null;
 let selectedStation = null;
 let stationBoardData = { departures: [], arrivals: [] };
 let stationBoardActiveTab = 'departures';
+
+// --- INDICE STAZIONI LOCALE (TSV) --------------------------------------
+// Usato per l'autocomplete della ricerca stazione (evita chiamate a ViaggiaTreno).
+
+let stationIndex = [];
+let stationIndexByCode = new Map();
+let stationIndexLoadPromise = null;
+
+function normalizeStationSearchKey(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .trim();
+}
+
+async function ensureStationIndexLoaded() {
+  if (stationIndexLoadPromise) return stationIndexLoadPromise;
+
+  stationIndexLoadPromise = (async () => {
+    try {
+      // Preferiamo il root (più semplice da servire in produzione), ma teniamo un fallback.
+      const paths = ['/stazioni_regioni.tsv', '/src/stazioni_regioni.tsv'];
+      let text = null;
+
+      for (const path of paths) {
+        const res = await fetch(path, { cache: 'force-cache' });
+        if (res.ok) {
+          text = await res.text();
+          break;
+        }
+      }
+
+      if (!text) throw new Error('TSV non trovato in /stazioni_regioni.tsv (fallback /src)');
+
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      if (lines.length <= 1) {
+        stationIndex = [];
+        stationIndexByCode = new Map();
+        return;
+      }
+
+      const parsed = [];
+      const byCode = new Map();
+
+      for (let i = 1; i < lines.length; i += 1) {
+        const line = lines[i];
+        if (!line) continue;
+        const parts = line.split('\t');
+        const name = (parts[0] || '').trim();
+        const code = (parts[1] || '').trim();
+        const regionId = (parts[2] || '').trim();
+        if (!name || !code) continue;
+        const item = {
+          name,
+          code,
+          regionId,
+          key: normalizeStationSearchKey(name),
+        };
+        parsed.push(item);
+        byCode.set(code.toUpperCase(), item);
+      }
+
+      parsed.sort((a, b) => a.key.localeCompare(b.key, 'it'));
+      stationIndex = parsed;
+      stationIndexByCode = byCode;
+    } catch (err) {
+      console.error('Errore caricamento indice stazioni TSV:', err);
+      stationIndex = [];
+      stationIndexByCode = new Map();
+    }
+  })();
+
+  return stationIndexLoadPromise;
+}
+
+function findStationsLocal(query, limit = 12) {
+  const qRaw = String(query || '').trim();
+  if (!qRaw) return [];
+
+  const qCode = qRaw.toUpperCase();
+  // Supporto ricerca diretta per codice stazione (es: S01062)
+  if (/^[A-Z]\d{5}$/.test(qCode)) {
+    const hit = stationIndexByCode.get(qCode);
+    return hit ? [hit] : [];
+  }
+
+  const q = normalizeStationSearchKey(qRaw);
+  if (q.length < 2) return [];
+
+  const starts = [];
+  const contains = [];
+
+  for (let i = 0; i < stationIndex.length; i += 1) {
+    const s = stationIndex[i];
+    if (!s?.key) continue;
+    if (s.key.startsWith(q)) {
+      starts.push(s);
+      if (starts.length >= limit) break;
+    }
+  }
+
+  if (starts.length >= limit) return starts;
+
+  for (let i = 0; i < stationIndex.length; i += 1) {
+    const s = stationIndex[i];
+    if (!s?.key) continue;
+    if (s.key.includes(q) && !s.key.startsWith(q)) {
+      contains.push(s);
+      if (starts.length + contains.length >= limit) break;
+    }
+  }
+
+  return [...starts, ...contains].slice(0, limit);
+}
+
 function scrollToSection(element) {
   if (!element || typeof element.scrollIntoView !== 'function') return;
   requestAnimationFrame(() => {
@@ -1076,18 +1281,15 @@ async function fetchStations(query) {
   }
 
   try {
-    // Usa endpoint specifico ViaggiaTreno
-    const res = await fetch(`${API_BASE}/api/viaggiatreno/autocomplete?query=${encodeURIComponent(q)}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const items = (data && data.data) || [];
-    renderStationList(items);
-    setInlineError(stationError, '');
+    await ensureStationIndexLoaded();
+    const matches = findStationsLocal(q, 12);
+    renderStationList(matches);
+    setInlineError(stationError, matches.length ? '' : 'Nessuna stazione trovata.');
   } catch (err) {
     console.error('Errore autocomplete stazioni:', err);
     stationList.innerHTML = '';
     stationList.hidden = true;
-    setInlineError(stationError, 'Errore nel recupero delle stazioni.');
+    setInlineError(stationError, 'Errore nel caricamento dell\'indice stazioni.');
   }
 }
 
@@ -1101,9 +1303,11 @@ function renderStationList(items) {
   }
 
   const parts = items.map(item => {
-    const name = item.name || item.nome || '';
-    const code = item.code || item.id || '';
-    return `<li data-code="${code}" data-name="${name}">${name} <span class="muted">(${code})</span></li>`;
+    const name = (item.name || item.nome || item.stazione || '').toString();
+    const code = (item.code || item.id || item.idStazione || '').toString();
+    const safeName = escapeHtml(name);
+    const safeCode = escapeHtml(code);
+    return `<li data-code="${safeCode}" data-name="${safeName}">${safeName} <span class="muted">(${safeCode})</span></li>`;
   });
 
   stationList.innerHTML = parts.join('');
@@ -1131,21 +1335,21 @@ if (stationSearchBtn) {
     setInlineError(stationError, '');
     
     try {
-      const res = await fetch(`${API_BASE}/api/viaggiatreno/autocomplete?query=${encodeURIComponent(q)}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      const items = (data && data.data) || [];
-      if (items.length > 0) {
-        const first = items[0];
-        const name = first.name || first.nome || '';
-        const code = first.code || first.id || '';
+      await ensureStationIndexLoaded();
+      const matches = findStationsLocal(q, 1);
+      if (matches.length > 0) {
+        const first = matches[0];
+        const name = first.name || first.stazione || '';
+        const code = first.code || first.idStazione || '';
         if (name && code) {
-            await loadStationByCode(name, code);
+          await loadStationByCode(name, code);
+          return;
         }
       }
+      setInlineError(stationError, 'Nessuna stazione trovata.');
     } catch (err) {
       console.error('Errore ricerca stazione manuale:', err);
-      setInlineError(stationError, 'Errore nel recupero delle stazioni.');
+      setInlineError(stationError, 'Errore nel caricamento dell\'indice stazioni.');
     }
   });
 }
@@ -1331,6 +1535,10 @@ function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isF
       const route = (item.origine && item.destinazione) 
         ? `${item.origine} → ${item.destinazione}` 
         : `Treno ${item.numero}`;
+
+      const rawKindCode = (item.kindCode || item.kind || item.sigla || '').toString().trim().toUpperCase();
+      const kindCode = /^[A-Z]{1,4}$/.test(rawKindCode) ? rawKindCode : '';
+      const numberLabel = kindCode ? `${kindCode} ${item.numero}` : `Treno ${item.numero}`;
       
       const timeInfo = item.partenza ? `<span class="chip-time">${item.partenza}</span>` : '';
       
@@ -1338,7 +1546,7 @@ function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isF
         <div class="chip-train-info">
             <div class="chip-route">${escapeHtml(route)}</div>
             <div class="chip-meta">
-                <span class="chip-number">Treno ${item.numero}</span>
+                <span class="chip-number">${escapeHtml(numberLabel)}</span>
                 ${timeInfo}
             </div>
         </div>
@@ -1453,7 +1661,8 @@ function addRecentTrain(details) {
     origine: details.origine,
     destinazione: details.destinazione,
     partenza: details.partenza,
-    arrivo: details.arrivo
+    arrivo: details.arrivo,
+    kindCode: details.kindCode || ''
   }, 'numero', MAX_RECENT);
   updateTrainStorage();
 }
@@ -1588,6 +1797,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateTrainStorage();
   updateTripStorage();
   updateStationStorage();
+  ensureStationIndexLoaded();
 });
 
 // Old init calls removed
@@ -1600,6 +1810,7 @@ if (trainResult) {
     if (favBtn) {
       const data = {
         numero: favBtn.getAttribute('data-num') || '',
+        kindCode: decodeDatasetValue(favBtn.getAttribute('data-kind') || ''),
         origine: decodeDatasetValue(favBtn.getAttribute('data-orig') || ''),
         destinazione: decodeDatasetValue(favBtn.getAttribute('data-dest') || ''),
         partenza: decodeDatasetValue(favBtn.getAttribute('data-dep') || ''),
@@ -1629,6 +1840,34 @@ function getTrainKindInfo(d) {
   const rawType = (d.compNumeroTreno || '').toString().toUpperCase();
   if (!rawType) return { label: '', kindClass: '' };
   return { label: rawType, kindClass: '' };
+}
+
+function getTrainKindShortCode(d) {
+  const metadata = resolveTrainKindFromCode(
+    d?.compNumeroTreno,
+    d?.siglaTreno,
+    d?.compTipologiaTreno,
+    d?.categoriaDescrizione,
+    d?.tipoTreno
+  );
+
+  const direct = (metadata?.shortCode || '').toString().trim().toUpperCase();
+  if (/^[A-Z]{1,4}$/.test(direct)) return direct;
+
+  const detail = (metadata?.detailLabel || '').toString().toUpperCase();
+  const board = (metadata?.boardLabel || '').toString().toUpperCase();
+
+  if (detail.includes('INTERCITY NOTTE') || board.includes('INTERCITY NOTTE')) return 'ICN';
+  if (detail.includes('EUROCITY') || board.includes('EUROCITY')) return 'EC';
+  if (detail.includes('EURONIGHT') || board.includes('EURONIGHT')) return 'EN';
+  if (detail.includes('INTERCITY') || board.includes('INTERCITY')) return 'IC';
+  if (detail.includes('FRECCIAROSSA') || board.includes('FRECCIAROSSA')) return 'FR';
+  if (detail.includes('FRECCIARGENTO') || board.includes('FRECCIARGENTO')) return 'FA';
+  if (detail.includes('FRECCIABIANCA') || board.includes('FRECCIABIANCA')) return 'FB';
+  if (detail.includes('REGIONALE VELOCE') || board.includes('REGIONALE VELOCE')) return 'RV';
+  if (detail.includes('REGIONALE') || board.includes('REGIONALE')) return 'REG';
+
+  return '';
 }
 
 function getLastRealStopIndex(fermate) {
@@ -2289,8 +2528,6 @@ function computeJourneyState(d) {
     } else {
       state = 'PLANNED';
     }
-  } else if (pastCount >= total && lastArrReal) {
-    state = 'COMPLETED';
   } else {
     state = 'RUNNING';
   }
@@ -2451,9 +2688,6 @@ function buildPrimaryStatus(d, journey, currentInfo) {
       }
       break;
     }
-    case 'COMPLETED':
-      mainLine = 'Il treno ha terminato la corsa.';
-      break;
     case 'CANCELLED':
       if (cancellationType === 'FULL_SUPPRESSION') {
         const originName = cancellationSegment?.origin || origin || 'la stazione di origine';
@@ -2608,7 +2842,7 @@ function renderTrainStatus(payload) {
       ? payload.message
       : 'Nessun dato disponibile per questo treno.';
     trainResult.innerHTML = `<p class='muted'>${msg}</p>`;
-    return;
+    return { concluded: false };
   }
 
   const journey = computeJourneyState(d);
@@ -2618,6 +2852,17 @@ function renderTrainStatus(payload) {
     journeyState: journey.state,
     globalDelay,
   });
+
+  const isConcludedAtLastStop = (() => {
+    if (journey.state === 'CANCELLED' || journey.state === 'PARTIAL') return false;
+    if (!Array.isArray(fermate) || fermate.length === 0) return false;
+    const lastIdx = fermate.length - 1;
+    if (timelineState?.mode !== 'STOPPED') return false;
+    if (timelineState?.currentIdx !== lastIdx) return false;
+    const lastStop = fermate[lastIdx];
+    const arrRealMs = parseToMillis(lastStop?.arrivoReale ?? lastStop?.effettiva);
+    return arrRealMs != null;
+  })();
   const currentInfo = {
     currentStop: timelineState.currentIdx >= 0 ? fermate[timelineState.currentIdx] : null,
     currentIndex: timelineState.currentIdx,
@@ -2635,6 +2880,7 @@ function renderTrainStatus(payload) {
     destinazione: d.destinazione || '',
     partenza: plannedDeparture,
     arrivo: plannedArrival,
+    kindCode: getTrainKindShortCode(d),
   };
   const trainIsFavorite = trainMeta.numero ? isFavoriteTrain(trainMeta.numero) : false;
 
@@ -2642,9 +2888,9 @@ function renderTrainStatus(payload) {
   const lastDetectionAgeMinutes = lastDetectionMillis != null
     ? (Date.now() - lastDetectionMillis) / 60000
     : null;
-  const lastDetectionIsStale = lastDetectionAgeMinutes != null && lastDetectionAgeMinutes > 15;
+  const lastDetectionIsStale = lastDetectionAgeMinutes != null && lastDetectionAgeMinutes > 10;
   const lastDetectionTitle = lastDetectionIsStale
-    ? 'Ultimo rilevamento più vecchio di 15 minuti'
+    ? 'Ultimo rilevamento più vecchio di 10 minuti'
     : '';
 
   const badgeLabelMap = {
@@ -2656,21 +2902,24 @@ function renderTrainStatus(payload) {
     UNKNOWN: 'Sconosciuto',
   };
 
-  const stateKey = journey.state || 'UNKNOWN';
+  const stateKey = isConcludedAtLastStop ? 'COMPLETED' : (journey.state || 'UNKNOWN');
   const badgeStateClass = `badge-status-${stateKey.toLowerCase()}`;
   const badgeStateLabel = badgeLabelMap[stateKey] || badgeLabelMap.UNKNOWN;
 
-  const completionChip = getCompletionChip(d, journey, globalDelay);
-
   const favoriteBtnHtml = trainMeta.numero
-    ? `<button type="button" class="favorite-current-btn${trainIsFavorite ? ' is-active' : ''}" data-num="${trainMeta.numero}" data-orig="${encodeDatasetValue(trainMeta.origine)}" data-dest="${encodeDatasetValue(trainMeta.destinazione)}" data-dep="${encodeDatasetValue(trainMeta.partenza || '')}" data-arr="${encodeDatasetValue(trainMeta.arrivo || '')}">${trainIsFavorite ? 'Rimuovi dai preferiti' : 'Salva nei preferiti'}</button>`
+    ? `<button type="button" class="favorite-current-btn${trainIsFavorite ? ' is-active' : ''}" data-num="${trainMeta.numero}" data-kind="${encodeDatasetValue(trainMeta.kindCode || '')}" data-orig="${encodeDatasetValue(trainMeta.origine)}" data-dest="${encodeDatasetValue(trainMeta.destinazione)}" data-dep="${encodeDatasetValue(trainMeta.partenza || '')}" data-arr="${encodeDatasetValue(trainMeta.arrivo || '')}">${trainIsFavorite ? 'Rimuovi dai preferiti' : 'Salva nei preferiti'}</button>`
     : '';
+
+  const headerIconSrc = getTrainKindIconSrc(trainMeta.kindCode);
+  const headerIconAlt = normalizeTrainShortCode(trainMeta.kindCode) || 'Treno';
 
   const headerHtml = `
     <div class='train-header'>
       <div class='train-main'>
         <div class='train-title-row'>
-          <img src='/img/trenitalia.png' alt='Logo Trenitalia' class='train-logo' />
+          <span class='train-logo' aria-hidden='true'>
+            <img src='${headerIconSrc}' alt='${escapeHtml(headerIconAlt)}' class='train-logo-img' />
+          </span>
           <h2 class='train-title ${primary.kindClass || ''}'>${primary.title || 'Dettagli treno'}</h2>
           <span class='badge-status ${badgeStateClass}'>
             ${badgeStateLabel}
@@ -2685,10 +2934,13 @@ function renderTrainStatus(payload) {
         </div>
       </div>
       <div class='train-meta'>
-        ${d.oraUltimoRilevamento
+        ${!isConcludedAtLastStop && d.oraUltimoRilevamento
       ? `<div class='train-last${lastDetectionIsStale ? ' train-last--stale' : ''}'${lastDetectionTitle ? ` title='${lastDetectionTitle}'` : ''}>
                 Ultimo rilevamento ${formatTimeFlexible(d.oraUltimoRilevamento)}
                 ${d.stazioneUltimoRilevamento ? ` – ${d.stazioneUltimoRilevamento}` : ''}
+                ${lastDetectionIsStale
+                  ? ` · ultimo rilevamento risale a oltre 10 min fa <img src="/img/ah.png" alt="Info" class="train-info-icon" title="Il dato potrebbe non essere aggiornato in tempo reale" />`
+                  : ''}
               </div>`
       : ''
     }
@@ -2699,9 +2951,13 @@ function renderTrainStatus(payload) {
   const currentIndex = currentInfo.currentIndex;
   const positionText = buildPositionText(journey, currentInfo, fermate, lastOperationalIdx);
 
+  const primaryMainLine = isConcludedAtLastStop
+    ? 'Il treno ha concluso il viaggio.'
+    : primary.mainLine;
+
   const primaryHtml = `
     <div class='train-primary-stat'>
-      <p class='train-primary-main'>${primary.mainLine}</p>
+      <p class='train-primary-main'>${primaryMainLine}</p>
       ${primary.delayLine
       ? `<p class="train-primary-sub">${primary.delayLine}</p>`
       : ''
@@ -3215,6 +3471,8 @@ function renderTrainStatus(payload) {
   `;
 
   trainResult.innerHTML = headerHtml + primaryHtml + tableHtml + jsonDebugHtml;
+
+  return { concluded: isConcludedAtLastStop };
 }
 
 function escapeHtml(str) {
@@ -3295,19 +3553,25 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
     const dd = data.data;
     const { departure, arrival } = getPlannedTimes(dd.fermate);
     if (!isAuto) {
+      const kindCode = getTrainKindShortCode(dd);
       addRecentTrain({
         numero: dd.numeroTreno || num,
         origine: dd.origine,
         destinazione: dd.destinazione,
         partenza: departure,
         arrivo: arrival,
+        kindCode,
       });
     }
 
-    renderTrainStatus(data);
+    const renderResult = renderTrainStatus(data);
 
     trainAutoRefreshLastSuccessAt = Date.now();
-    startTrainAutoRefresh(dd.numeroTreno || num);
+    if (renderResult?.concluded) {
+      stopTrainAutoRefresh();
+    } else {
+      startTrainAutoRefresh(dd.numeroTreno || num);
+    }
   } catch (err) {
     // Abort è normale quando cambiamo treno o la tab va in background.
     if (err && (err.name === 'AbortError' || err.code === 20)) {
@@ -3454,7 +3718,7 @@ if (tripSearchBtn) {
       }
 
       setInlineError(tripError, '');
-      renderTripResults(json.solutions);
+      renderTripResults(json.solutions, { requestedDate: date, requestedTime: time || '00:00' });
 
     } catch (err) {
       console.error(err);
@@ -3464,38 +3728,195 @@ if (tripSearchBtn) {
   });
 }
 
-function renderTripResults(solutions) {
+function renderTripResults(solutions, context = {}) {
   if (!solutions || solutions.length === 0) {
     tripResults.innerHTML = '<div class="info">Nessuna soluzione trovata.</div>';
     return;
   }
 
-  let html = '<div class="solutions-list">';
-  
-  solutions.forEach(item => {
+  const requestedDateKey = (context.requestedDate || '').toString().trim();
+  const toLocalDateKey = (dt) => {
+    const d = dt instanceof Date ? dt : new Date(dt);
+    if (Number.isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const formatItDateLong = (dt) => {
+    const d = dt instanceof Date ? dt : new Date(dt);
+    if (Number.isNaN(d.getTime())) return '';
+    const formatted = new Intl.DateTimeFormat('it-IT', {
+      weekday: 'long',
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    }).format(d);
+    return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+  };
+
+  const requestedDateObj = requestedDateKey ? new Date(`${requestedDateKey}T00:00:00`) : null;
+  const searchDayHtml = requestedDateObj && !Number.isNaN(requestedDateObj.getTime())
+    ? `<div class="solutions-day-note">Ricerca per <strong>${formatItDateLong(requestedDateObj)}</strong></div>`
+    : '';
+
+  let lastDepartureOnRequestedDay = null;
+  if (requestedDateKey) {
+    for (const item of solutions) {
+      const sol = item?.solution || item;
+      const t = sol?.departureTime;
+      if (!t) continue;
+      const d = new Date(t);
+      if (Number.isNaN(d.getTime())) continue;
+      if (toLocalDateKey(d) !== requestedDateKey) continue;
+      if (!lastDepartureOnRequestedDay || d.getTime() > lastDepartureOnRequestedDay.getTime()) {
+        lastDepartureOnRequestedDay = d;
+      }
+    }
+  }
+
+  const endOfDayHtml = lastDepartureOnRequestedDay
+    ? `<div class="solutions-end-note">Soluzioni di questo giorno fino alle <strong>${lastDepartureOnRequestedDay.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</strong></div>`
+    : (requestedDateKey
+      ? `<div class="solutions-end-note">Nessuna soluzione per questo giorno.</div>`
+      : '');
+
+  const solutionsByDay = new Map();
+  for (const item of solutions) {
+    const sol = item?.solution || item;
+    const depDateObj = new Date(sol?.departureTime);
+    const depDateKey = !Number.isNaN(depDateObj.getTime()) ? toLocalDateKey(depDateObj) : 'unknown';
+    if (!solutionsByDay.has(depDateKey)) solutionsByDay.set(depDateKey, []);
+    solutionsByDay.get(depDateKey).push(item);
+  }
+
+  const isValidDateKey = (k) => /^\d{4}-\d{2}-\d{2}$/.test(String(k || ''));
+  const asMidnightDate = (k) => {
+    if (!isValidDateKey(k)) return null;
+    const d = new Date(`${k}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  const isNextDayOfRequested = (k) => {
+    const a = asMidnightDate(k);
+    const b = asMidnightDate(requestedDateKey);
+    if (!a || !b) return false;
+    return (a.getTime() - b.getTime()) === 24 * 60 * 60 * 1000;
+  };
+
+  let orderedDayKeys = Array.from(solutionsByDay.keys());
+  if (requestedDateKey) {
+    orderedDayKeys = orderedDayKeys.filter((k) => k !== requestedDateKey);
+    orderedDayKeys.sort((a, b) => String(a).localeCompare(String(b)));
+    orderedDayKeys.unshift(requestedDateKey);
+  } else {
+    orderedDayKeys.sort((a, b) => String(a).localeCompare(String(b)));
+  }
+
+  const seen = new Set();
+  orderedDayKeys = orderedDayKeys.filter((k) => {
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+
+  let html = `${searchDayHtml}${endOfDayHtml}<div class="solutions-list">`;
+
+  orderedDayKeys.forEach((dayKey, groupIdx) => {
+    const groupItems = solutionsByDay.get(dayKey) || [];
+    if (groupItems.length === 0) return;
+
+    let groupLabel = '';
+    if (dayKey === 'unknown') {
+      groupLabel = 'Data non disponibile';
+    } else {
+      const d = asMidnightDate(dayKey);
+      groupLabel = d ? formatItDateLong(d) : dayKey;
+      if (requestedDateKey && dayKey !== requestedDateKey && isNextDayOfRequested(dayKey)) {
+        groupLabel = `Giorno dopo — ${groupLabel}`;
+      }
+    }
+
+    html += `<div class="solutions-date-sep" data-day="${escapeHtml(String(dayKey))}">${escapeHtml(groupLabel)}</div>`;
+
+    groupItems.forEach(item => {
     // A volte l'oggetto è { solution: {...}, ... } altre volte è direttamente la soluzione
     const sol = item.solution || item;
 
-    const depTime = new Date(sol.departureTime).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const arrTime = new Date(sol.arrivalTime).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const depDateObj = new Date(sol.departureTime);
+    const arrDateObj = new Date(sol.arrivalTime);
+    const depTime = depDateObj.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const arrTime = arrDateObj.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     const duration = sol.duration || '-'; 
+
+    const isPast = !Number.isNaN(depDateObj.getTime()) && depDateObj.getTime() < Date.now();
+    const whenHtml = isPast ? '<div class="sol-when">Questa soluzione è nel passato</div>' : '';
     
     // Treni: cerchiamo in diverse proprietà possibili.
     // Priorità a 'nodes' o 'solutionSegments' che contengono orari e stazioni per ogni tratta.
     const vehicleList = sol.nodes || sol.solutionSegments || sol.segments || sol.trains || sol.vehicles || [];
+
+    const buildTrainIdentFromNode = (n) => {
+      let ident = '';
+      let num = '';
+      const t = n?.train || n;
+
+      if (t?.name && /^\d+$/.test(t.name)) {
+        num = t.name;
+        const cat = t.acronym || t.denomination || t.trainCategory || 'Treno';
+        ident = `${cat} ${num}`;
+      } else if (t?.number) {
+        num = t.number;
+        const cat = t.acronym || t.trainCategory || 'Treno';
+        ident = `${cat} ${num}`;
+      } else if (typeof t?.trainIdentifier === 'string') {
+        ident = t.trainIdentifier;
+      } else if (t?.transportMeanIdentifier) {
+        ident = t.transportMeanIdentifier;
+      } else if (t?.transportMeanAcronym && t?.transportMeanName) {
+         ident = `${t.transportMeanAcronym} ${t.transportMeanName}`;
+      } else {
+         ident = t?.trainName || t?.acronym || t?.transportMeanName || 'Treno';
+      }
+
+      ident = (ident || '').toString().trim();
+      if (!num) {
+        const match = ident.match(/(\d+)/);
+        if (match) num = match[0];
+      }
+      if (!ident || ident === num) ident = 'Treno ' + (num || '');
+      return ident;
+    };
     
+    const deriveKindCodeFromIdent = (ident, t) => {
+      const meta = resolveTrainKindFromCode(
+        ident,
+        t?.acronym,
+        t?.denomination,
+        t?.trainCategory,
+        t?.trainName,
+        t?.transportMeanIdentifier,
+        t?.transportMeanAcronym,
+        t?.transportMeanName
+      );
+      return normalizeTrainShortCode(meta?.shortCode);
+    };
+
     // Helper per determinare la classe CSS in base al tipo di treno
-    const getTrainTypeClass = (ident) => {
-        const s = ident.toUpperCase();
-        if (s.includes('FRECCIAROSSA') || s.includes('FR ') || s.includes('FRECCIARGENTO') || s.includes('FA ') || s.includes('FRECCIABIANCA') || s.includes('FB ')) return 'train-type-fr';
-        if (s.includes('INTERCITY') || s.includes('IC ') || s.includes('ICN ')) return 'train-type-ic';
-        if (s.includes('REGIONALE') || s.includes('REG ') || s.includes('RV ')) return 'train-type-reg';
-        if (s.includes('EUROCITY') || s.includes('EC ') || s.includes('EURONIGHT') || s.includes('EN ')) return 'train-type-ec';
-        return 'train-type-other';
+    const getTrainTypeClass = (kindCode, ident) => {
+      const k = normalizeTrainShortCode(kindCode);
+      if (['FR', 'FA', 'FB', 'TGV', 'RJ', 'ITA', 'ES', 'ESC'].includes(k)) return 'train-type-fr';
+      if (['IC', 'ICN', 'EC', 'EN'].includes(k)) return 'train-type-ic';
+      if (['REG', 'RV', 'RE', 'SUB', 'MET', 'SFM', 'IR', 'DIR', 'DD', 'ACC', 'MXP', 'FL', 'PE'].includes(k)) return 'train-type-reg';
+
+      const s = (ident || '').toUpperCase();
+      if (s.includes('EUROCITY') || s.includes('EC ') || s.includes('EURONIGHT') || s.includes('EN ')) return 'train-type-ec';
+      return 'train-type-other';
     };
 
     // Helper per generare il badge del treno
-    const getTrainBadge = (n) => {
+    const getTrainBadge = (n, options = {}) => {
+      const clickable = options.clickable !== false;
         let ident = '';
         let num = '';
         const t = n.train || n;
@@ -3525,14 +3946,50 @@ function renderTripResults(solutions) {
         }
         if (!ident || ident === num) ident = 'Treno ' + (num || '');
 
-        const typeClass = getTrainTypeClass(ident);
-        const logoHtml = `<img src="/img/trenitalia.png" alt="Trenitalia" />`;
+        const kindCode = deriveKindCodeFromIdent(ident, t);
+        const typeClass = getTrainTypeClass(kindCode, ident);
+        const badgeIconSrc = getTrainKindIconSrc(kindCode);
+        const badgeIconAlt = kindCode || 'Treno';
+        const logoHtml = `<span class=\"train-badge-icon\" aria-hidden=\"true\"><img src=\"${badgeIconSrc}\" alt=\"${escapeHtml(badgeIconAlt)}\" /></span>`;
 
-        if (num) {
-             return `<button type="button" class="train-badge train-link ${typeClass}" data-num="${num}" title="Vedi stato treno ${num}">${logoHtml} ${ident}</button>`;
+        if (num && clickable) {
+          return `<button type="button" class="train-badge train-link ${typeClass}" data-num="${num}" title="Vedi stato treno ${num}">${logoHtml} ${ident}</button>`;
         }
         return `<span class="train-badge ${typeClass}">${logoHtml} ${ident}</span>`;
     };
+
+    const solutionIconCodes = Array.from(
+        new Set(
+            vehicleList
+              .map((node) => {
+                  const ident = buildTrainIdentFromNode(node);
+                  const t = node?.train || node;
+            const code = deriveKindCodeFromIdent(ident, t);
+            return REGIONAL_ICON_CODES.has(code) ? 'REG' : code;
+              })
+              .filter(Boolean)
+        )
+    );
+
+    const buildSolutionIconsHtml = (codes) => {
+      if (!codes || codes.length === 0) return '';
+
+      const renderIcon = (code) => {
+        const src = getTrainKindIconSrc(code);
+        const alt = escapeHtml(code);
+        return `<span class=\"sol-train-icon\"><img src=\"${src}\" alt=\"${alt}\" /></span>`;
+      };
+
+      const parts = [];
+      codes.forEach((code, idx) => {
+        if (idx > 0) parts.push('<span class="sol-train-plus">+</span>');
+        parts.push(renderIcon(code));
+      });
+
+      return `<span class="sol-times-icons" aria-hidden="true">${parts.join('')}</span>`;
+    };
+
+    const solutionIconsHtml = buildSolutionIconsHtml(solutionIconCodes);
 
     let trainsHtml = '';
     let segmentsHtml = '';
@@ -3543,7 +4000,26 @@ function renderTripResults(solutions) {
         
         let innerSegments = '<div class="sol-segments">';
         vehicleList.forEach((node, idx) => {
-            const badge = getTrainBadge(node);
+          const badge = getTrainBadge(node, { clickable: false });
+          const tNode = node?.train || node;
+
+          const extractTrainNumber = (t) => {
+            if (!t) return '';
+            if (t.name && /^\d+$/.test(t.name)) return t.name;
+            if (t.number && /^\d+$/.test(String(t.number))) return String(t.number);
+            const ident = String(
+              t.trainIdentifier ||
+              t.transportMeanIdentifier ||
+              t.trainName ||
+              t.acronym ||
+              t.transportMeanName ||
+              ''
+            );
+            const m = ident.match(/(\d+)/);
+            return m ? m[1] : '';
+          };
+
+          const nodeTrainNum = extractTrainNumber(tNode);
             
             // Parsing sicuro delle date
             const formatTime = (d) => {
@@ -3556,21 +4032,30 @@ function renderTripResults(solutions) {
             const arr = formatTime(node.arrivalTime);
             const origin = node.origin || node.startLocation || '';
             const dest = node.destination || node.endLocation || '';
+
+            const safeOrigin = escapeHtml(origin);
+            const safeDest = escapeHtml(dest);
             
+            const itineraryInnerHtml = `
+                <span class="sol-itinerary-time">${dep}</span>
+                <span class="sol-itinerary-station">${safeOrigin}</span>
+                <span class="sol-itinerary-arrow" aria-hidden="true">→</span>
+                <span class="sol-itinerary-time">${arr}</span>
+                <span class="sol-itinerary-station">${safeDest}</span>
+            `;
+
+            const segmentInnerHtml = `
+                <span class="sol-segment-train">${badge}</span>
+                <span class="sol-segment-itinerary"><span class="sol-itinerary-compact">${itineraryInnerHtml}</span></span>
+            `;
+
+            const segmentRowHtml = nodeTrainNum
+              ? `<button type="button" class="sol-segment-row train-link" data-num="${escapeHtml(nodeTrainNum)}" title="Vedi stato treno ${escapeHtml(nodeTrainNum)}">${segmentInnerHtml}</button>`
+              : `<div class="sol-segment-row">${segmentInnerHtml}</div>`;
+
             innerSegments += `
                 <div class="sol-segment">
-                    <div class="sol-segment-train">${badge}</div>
-                    <div class="sol-segment-itinerary">
-                        <div class="sol-itinerary-point">
-                            <span class="sol-itinerary-time">${dep}</span>
-                            <span class="sol-itinerary-station">${origin}</span>
-                        </div>
-                        <div class="sol-itinerary-connector"></div>
-                        <div class="sol-itinerary-point">
-                            <span class="sol-itinerary-time">${arr}</span>
-                            <span class="sol-itinerary-station">${dest}</span>
-                        </div>
-                    </div>
+                    ${segmentRowHtml}
                 </div>
             `;
             
@@ -3582,9 +4067,9 @@ function renderTripResults(solutions) {
                  if (!isNaN(arrDate.getTime()) && !isNaN(nextDepDate.getTime())) {
                      const diffMs = nextDepDate - arrDate;
                      const diffMins = Math.floor(diffMs / 60000);
-                     innerSegments += `<div class="sol-transfer"><span class="transfer-icon">⇄</span> Cambio a ${dest} <span class="transfer-time">(${diffMins} min)</span></div>`;
+                   innerSegments += `<div class="sol-transfer">Cambio a ${safeDest} <span class="transfer-time">· ${diffMins} min</span></div>`;
                  } else {
-                     innerSegments += `<div class="sol-transfer"><span class="transfer-icon">⇄</span> Cambio a ${dest}</div>`;
+                   innerSegments += `<div class="sol-transfer">Cambio a ${safeDest}</div>`;
                  }
             }
         });
@@ -3618,9 +4103,11 @@ function renderTripResults(solutions) {
                   <div class="sol-time">${depTime}</div>
                   <div class="sol-arrow">→</div>
                   <div class="sol-time">${arrTime}</div>
+                  ${solutionIconsHtml}
                 </div>
                 <div class="sol-meta">
                     <div class="sol-duration">${duration}</div>
+                  ${whenHtml}
                     <div class="sol-trains">${trainsHtml}</div>
                 </div>
             </div>
@@ -3631,6 +4118,7 @@ function renderTripResults(solutions) {
         ${segmentsHtml}
       </div>
     `;
+    });
   });
   
   html += '</div>';
