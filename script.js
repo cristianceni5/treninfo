@@ -2968,7 +2968,7 @@ function renderTrainStatus(payload) {
           <span class='train-logo' aria-hidden='true' data-kind='${escapeHtml(normalizeTrainShortCode(trainMeta.kindCode))}'>
             <img src='${headerIconSrc}' alt='${escapeHtml(headerIconAlt)}' class='train-logo-img' />
           </span>
-          <h2 class='train-title ${primary.kindClass || ''}'>${primary.title || 'Dettagli treno'}</h2>
+          <h2 class='train-title'>${primary.title || 'Dettagli treno'}</h2>
           <span class='badge-status ${badgeStateClass}'>
             ${badgeStateLabel}
           </span>
@@ -3678,9 +3678,9 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
 
   if (!silent) {
     trainResult.innerHTML = `
-      <div class="loading-container">
-        <div class="loading-bar"></div>
-        <div class="loading-text">Caricamento stato treno...</div>
+      <div class="loading-indicator loading-indicator--centered" role="status" aria-live="polite">
+        <span class="loading-indicator__spinner" aria-hidden="true"></span>
+        <span>Caricamento stato treno…</span>
       </div>
     `;
   }
@@ -3922,9 +3922,9 @@ if (tripSearchBtn) {
     }
 
     tripResults.innerHTML = `
-      <div class="loading-container">
-        <div class="loading-bar"></div>
-        <div class="loading-text">Caricamento soluzioni...</div>
+      <div class="loading-indicator loading-indicator--centered" role="status" aria-live="polite">
+        <span class="loading-indicator__spinner" aria-hidden="true"></span>
+        <span>Caricamento soluzioni…</span>
       </div>
     `;
 
@@ -4301,9 +4301,9 @@ function renderTripResults(solutions, context = {}) {
                  if (!isNaN(arrDate.getTime()) && !isNaN(nextDepDate.getTime())) {
                      const diffMs = nextDepDate - arrDate;
                      const diffMins = Math.floor(diffMs / 60000);
-                   innerSegments += `<div class="sol-transfer">Cambio a ${safeDest} <span class="transfer-time">· ${diffMins} min</span></div>`;
+                   innerSegments += `<div class="sol-transfer">&#x21C6; Cambio a ${safeDest} <span class="transfer-time">· ${diffMins} min</span></div>`;
                  } else {
-                   innerSegments += `<div class="sol-transfer">Cambio a ${safeDest}</div>`;
+                   innerSegments += `<div class="sol-transfer">&#x21C6; Cambio a ${safeDest}</div>`;
                  }
             }
         });

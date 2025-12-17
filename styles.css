@@ -619,6 +619,12 @@ select:focus-visible {
   gap: 16px; /* Increased gap between cards */
 }
 
+@media (max-width: 600px) {
+  .solutions-list {
+    gap: 12px;
+  }
+}
+
 .solutions-date-sep {
   font-size: 0.82rem;
   color: var(--text-muted);
@@ -945,7 +951,7 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--bg-subtle);
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   padding: 16px;
@@ -2403,7 +2409,14 @@ a[href^='mailto'] {
   .app-inner { padding: 14px 12px; }
   .app-header { flex-direction: column; align-items: flex-start; }
   .train-header { flex-direction: column; align-items: stretch; }
+  .train-header { margin-top: 14px; margin-bottom: 8px; }
   .train-meta { align-items: flex-start; min-width: 0; }
+
+  /* Mobile: riduce il “vuoto” tra separatore e tabellone stazione */
+  .card .station-board {
+    margin-top: var(--gap-sm);
+    padding-top: var(--gap-xs);
+  }
 
   input[type='text'],
   input[type='search'],
@@ -2957,14 +2970,14 @@ button.sol-segment-row:active {
   }
 
   .sol-segments {
-    gap: 0; /* Remove gap, use padding in segments */
-    padding-top: 12px;
+    gap: 10px;
+    padding: 12px;
   }
 
-  .sol-segment { padding-bottom: 12px; }
+  .sol-segment { padding-bottom: 0; }
 
   button.sol-segment-row {
-    padding-right: 18px;
+    padding-right: 34px;
   }
 
   .sol-itinerary-point {
@@ -2982,16 +2995,16 @@ button.sol-segment-row:active {
   }
 
   .sol-itinerary-time {
-    min-width: 45px;
+    min-width: 42px;
   }
 
   .sol-itinerary-station {
-    max-width: none; /* Allow full width */
+    max-width: 44vw;
     font-size: 0.9rem;
   }
 
   .sol-transfer {
-    margin: 6px 0 14px;
+    margin: 4px 0 12px;
     background: transparent;
     padding: 0;
     color: var(--text-muted);
@@ -3200,61 +3213,30 @@ button.train-badge:active {
   }
 }
 
-/* --- LOADING BAR --- */
-.loading-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px 0;
-  width: 100%;
-  gap: 12px;
-}
-
-.loading-bar {
-  width: 100%;
-  max-width: 200px;
-  height: 4px;
-  background-color: var(--border-subtle);
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-  position: relative;
-}
-
-.loading-bar::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  height: 100%;
-  width: 40%;
-  background-color: var(--text-main);
-  border-radius: var(--radius-pill);
-  animation: loading-bar-anim 1.2s infinite ease-in-out;
-}
-
-.loading-text {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  font-weight: 500;
-}
-
-@keyframes loading-bar-anim {
-  0% { left: -40%; }
-  100% { left: 100%; }
-}
-
 /* Fix spacing in search form */
-.trip-search-form .form-row:last-child,
 .station-search-form .form-row:last-child,
 .train-search-form .form-row:last-child {
   margin-bottom: 0;
 }
 
+/* Spazio coerente tra ultimi field (data/ora) e bottoni del viaggio */
+.trip-search-form .form-row:last-child {
+  margin-bottom: 0;
+}
+
 /* Specific styles for Trip Search buttons (stacked) */
 .trip-search-form .buttons-row {
+  display: flex;
   flex-direction: column;
   align-items: stretch;
+  gap: var(--gap-sm);
+}
+
+@media (max-width: 640px) {
+  .trip-search-form .buttons-row {
+    margin-top: 8px;
+    gap: var(--gap-xs);
+  }
 }
 
 .trip-search-form .buttons-row button {
