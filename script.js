@@ -8,6 +8,7 @@ const API_BASE = '';
 const TRAIN_AUTO_REFRESH_INTERVAL_MS = 60_000;
 let trainAutoRefreshTimer = null;
 let trainAutoRefreshTrainNumber = null;
+let trainAutoRefreshOriginCode = null;
 let trainAutoRefreshAbortController = null;
 let trainAutoRefreshInFlight = false;
 let trainAutoRefreshLastSuccessAt = 0;
@@ -43,17 +44,18 @@ const REGION_LABELS = {
 };
 
 const TRAIN_KIND_RULES = [
+  //matches: icche cerca nel JSON | boardLabel: etichetta stazioni | detailLabel: etichetta stato treno
   // Alta velocità e servizi internazionali (fonte: classificazioni Trenitalia/Wikipedia)
   {
     matches: ['FRECCIAROSSA', 'FRECCIAROSSA AV', 'FRECCIAROSSAAV', 'FR', 'FR AV', 'FRAV', 'FR EC', 'FRECCIAROSSA EC'],
-    boardLabel: 'Frecciarossa',
-    detailLabel: 'FR',
+    boardLabel: 'FR',
+    detailLabel: 'FR AV',
     className: 'train-title--fr',
   },
   {
     matches: ['FRECCIARGENTO', 'FRECCIARGENTO AV', 'FRECCIARGENTOAV', 'FA', 'FA AV'],
-    boardLabel: 'Frecciargento',
-    detailLabel: 'FA',
+    boardLabel: 'FA',
+    detailLabel: 'FA AV',
     className: 'train-title--fr',
   },
   {
@@ -64,19 +66,19 @@ const TRAIN_KIND_RULES = [
   },
   {
     matches: ['ITALO', 'ITALO AV', 'ITALOAV', 'NTV', 'ITA'],
-    boardLabel: 'Italo',
-    detailLabel: 'Italo AV',
-    className: 'train-title--fr',
+    boardLabel: 'ITA',
+    detailLabel: 'ITA AV',
+    className: 'train-title--ita',
   },
   {
     matches: ['EUROCITY', 'EC'],
-    boardLabel: 'EuroCity',
+    boardLabel: 'EC',
     detailLabel: 'EC',
     className: 'train-title--ic',
   },
   {
     matches: ['EURONIGHT', 'EN'],
-    boardLabel: 'EuroNight',
+    boardLabel: 'EN',
     detailLabel: 'EN',
     className: 'train-title--ic',
   },
@@ -88,76 +90,76 @@ const TRAIN_KIND_RULES = [
   },
   {
     matches: ['RAILJET', 'RJ'],
-    boardLabel: 'Railjet',
-    detailLabel: 'Railjet',
+    boardLabel: 'RJ',
+    detailLabel: 'RJ',
     className: 'train-title--ic',
   },
   // Lunga percorrenza tradizionale
   {
     matches: ['INTERCITY NOTTE', 'INTERCITYNOTTE', 'ICN'],
-    boardLabel: 'Intercity Notte',
+    boardLabel: 'ICN',
     detailLabel: 'ICN',
     className: 'train-title--ic',
   },
   {
     matches: ['INTERCITY', 'IC'],
-    boardLabel: 'Intercity',
+    boardLabel: 'IC',
     detailLabel: 'IC',
     className: 'train-title--ic',
   },
-  {
-    matches: ['ESPRESSO', 'EXP', 'E'],
-    boardLabel: 'Espresso',
+  { //Deprecato quasi sicuramente ma io ce lo metto
+  matches: ['ESPRESSO', 'EXP', 'E'],
+    boardLabel: 'EXP',
     detailLabel: 'EXP',
     className: 'train-title--ic',
   },
-  {
+  { //Deprecato quasi sicuramente ma io ce lo metto
     matches: ['EUROSTAR', 'EUROSTAR CITY', 'EUROSTARCITY', 'ES', 'ESC', 'ES CITY', 'ES AV', 'ESAV', 'ES FAST'],
-    boardLabel: 'Eurostar',
+    boardLabel: 'ES',
     detailLabel: 'ES',
     className: 'train-title--fr',
   },
   // Regionali e suburbani
   {
     matches: ['REGIONALE VELOCE', 'REGIONALEVELOCE', 'RV', 'RGV'],
-    boardLabel: 'Regionale Veloce',
+    boardLabel: 'RV',
     detailLabel: 'RV',
     className: 'train-title--reg',
   },
   {
     matches: ['REGIOEXPRESS', 'REGIO EXPRESS', 'RE'],
-    boardLabel: 'RegioExpress',
-    detailLabel: 'RE',
+    boardLabel: 'REX',
+    detailLabel: 'REX',
     className: 'train-title--reg',
   },
   {
     matches: ['SUBURBANO', 'SERVIZIO SUBURBANO', 'SUB', 'S'],
-    boardLabel: 'Suburbano',
-    detailLabel: 'Suburbano',
+    boardLabel: 'SUB',
+    detailLabel: 'SUB',
     className: 'train-title--reg',
   },
   {
     matches: ['METROPOLITANO', 'MET', 'METROPOLITANA', 'M', 'SFM'],
-    boardLabel: 'Metropolitano',
-    detailLabel: 'Metropolitano',
+    boardLabel: 'MET',
+    detailLabel: 'MET',
     className: 'train-title--reg',
   },
   {
     matches: ['MALPENSA EXPRESS', 'MALPENSAEXPRESS', 'MXP'],
-    boardLabel: 'Malpensa Express',
-    detailLabel: 'Malpensa Express',
+    boardLabel: 'MXP',
+    detailLabel: 'MXP',
     className: 'train-title--reg',
   },
   {
     matches: ['LEONARDO EXPRESS', 'LEONARDOEXPRESS', 'LEONARDO'],
-    boardLabel: 'Leonardo Express',
-    detailLabel: 'Leonardo Express',
+    boardLabel: 'LEX',
+    detailLabel: 'LEX',
     className: 'train-title--reg',
   },
   {
     matches: ['FERROVIE LAZIALI', 'FL'],
-    boardLabel: 'Ferrovie Laziali',
-    detailLabel: 'Ferrovie Laziali',
+    boardLabel: 'FL',
+    detailLabel: 'FL',
     className: 'train-title--reg',
   },
   {
@@ -168,56 +170,56 @@ const TRAIN_KIND_RULES = [
   },
   {
     matches: ['TROPEA EXPRESS', 'TROPEAEXPRESS', 'TROPEA'],
-    boardLabel: 'Tropea Express',
-    detailLabel: 'Tropea Express',
+    boardLabel: 'TEXP',
+    detailLabel: 'TEXP',
     className: 'train-title--reg',
   },
   {
     matches: ['CIVITAVECCHIA EXPRESS', 'CIVITAVECCHIAEXPRESS', 'CIVITAVECCHIA'],
-    boardLabel: 'Civitavecchia Express',
-    detailLabel: 'Civitavecchia Express',
+    boardLabel: 'CEXP',
+    detailLabel: 'CEXP',
     className: 'train-title--reg',
   },
-  {
+  { // Mai sentiti giuro
     matches: ['PANORAMA EXPRESS', 'PANORAMAEXPRESS', 'PE'],
-    boardLabel: 'Panorama Express',
-    detailLabel: 'Panorama Express',
+    boardLabel: 'Panorama PEXP',
+    detailLabel: 'PEXP',
     className: 'train-title--reg',
   },
   {
     matches: ['REGIONALE', 'REG', 'R'],
-    boardLabel: 'Regionale',
+    boardLabel: 'REG',
     detailLabel: 'REG',
     className: 'train-title--reg',
   },
   {
     matches: ['INTERREGIONALE', 'IR'],
-    boardLabel: 'Interregionale',
-    detailLabel: 'Interregionale',
+    boardLabel: 'IREG',
+    detailLabel: 'IREG',
     className: 'train-title--reg',
   },
   {
     matches: ['DIRETTISSIMO', 'DD'],
-    boardLabel: 'Direttissimo',
-    detailLabel: 'Direttissimo',
+    boardLabel: 'DD',
+    detailLabel: 'DD',
     className: 'train-title--reg',
   },
   {
     matches: ['DIRETTO', 'DIR', 'D'],
-    boardLabel: 'Diretto',
-    detailLabel: 'Diretto',
+    boardLabel: 'D',
+    detailLabel: 'D',
     className: 'train-title--reg',
   },
   {
     matches: ['ACCELERATO', 'ACC', 'A'],
-    boardLabel: 'Accelerato',
-    detailLabel: 'Accelerato',
+    boardLabel: 'ACC',
+    detailLabel: 'ACC',
     className: 'train-title--reg',
   },
   {
     matches: ['BUS', 'BU', 'FI'],
-    boardLabel: 'Bus',
-    detailLabel: 'BU',
+    boardLabel: 'BUS',
+    detailLabel: 'BUS',
     className: 'train-title--reg',
   },
 ];
@@ -229,17 +231,21 @@ const TRAIN_KIND_ICON_SRC = {
   IC: '/img/IC.svg',
   ICN: '/img/NI.svg',
   BU: '/img/BU.svg',
+  BUS: '/img/BU.svg',
   EC: '/img/EC.svg',
   REG: '/img/RV.svg',
   RV: '/img/RV.svg',
 };
 
 const REGIONAL_ICON_CODES = new Set([
-  'REG', 'RV', 'RE', 'IR',
+  'REG', 'RV', 'IR', 'IREG',
+  'RE', 'REX',
+  'LEX',
   'SUB', 'MET', 'SFM',
   'MXP', 'FL',
-  'DD', 'DIR', 'ACC',
-  'PE',
+  'DD', 'DIR', 'D', 'ACC',
+  'PE', 'PEXP',
+  'TEXP', 'CEXP',
 ]);
 
 function getTrainKindIconSrc(kindCode) {
@@ -259,34 +265,42 @@ const PREFERRED_SHORT_CODES = [
   'FA',
   'FB',
   'IC',
+  'ITA',
   'BU',
+  'BUS',
   'EC',
   'EN',
   'RJ',
   'TGV',
-  'ITA',
+  'ES',
+  'ESC',
   'REG',
   'RV',
+  'REX',
   'RE',
+  'IREG',
   'IR',
+  'LEX',
   'SUB',
   'MET',
   'MXP',
   'FL',
   'DD',
-  'DIR',
+  'D',
   'ACC',
   'EXP',
-  'ES',
-  'ESC',
   'SFM',
+  'PEXP',
   'PE',
+  'TEXP',
+  'CEXP',
 ];
 
 function deriveShortCodeFromRule(rule) {
   const raw = Array.isArray(rule?.matches) ? rule.matches : [];
+  const extra = [rule?.detailLabel, rule?.boardLabel];
   const candidates = new Set(
-    raw
+    [...raw, ...extra]
       .map((x) => String(x || '').toUpperCase().trim())
       .filter(Boolean)
       .map((x) => x.replace(/[^A-Z]/g, ''))
@@ -967,6 +981,7 @@ function stopTrainAutoRefresh() {
     trainAutoRefreshTimer = null;
   }
   trainAutoRefreshTrainNumber = null;
+  trainAutoRefreshOriginCode = null;
   trainAutoRefreshInFlight = false;
   trainAutoRefreshLastSuccessAt = 0;
   if (trainAutoRefreshAbortController) {
@@ -979,21 +994,27 @@ function stopTrainAutoRefresh() {
   }
 }
 
-function startTrainAutoRefresh(trainNumber) {
+function startTrainAutoRefresh(trainNumber, originCode = '') {
   const num = String(trainNumber || '').trim();
+  const origin = String(originCode || '').trim();
   if (!num) return;
 
   // Se stiamo già monitorando lo stesso treno, non ricreiamo il timer.
-  if (trainAutoRefreshTrainNumber === num && trainAutoRefreshTimer) return;
+  if (trainAutoRefreshTrainNumber === num && trainAutoRefreshOriginCode === origin && trainAutoRefreshTimer) return;
 
   stopTrainAutoRefresh();
   trainAutoRefreshTrainNumber = num;
+  trainAutoRefreshOriginCode = origin;
 
   trainAutoRefreshTimer = setInterval(() => {
     if (!trainAutoRefreshTrainNumber) return;
     if (document.hidden) return;
     if (trainAutoRefreshInFlight) return;
-    cercaStatoTreno(trainAutoRefreshTrainNumber, { silent: true, isAuto: true });
+    cercaStatoTreno(trainAutoRefreshTrainNumber, {
+      silent: true,
+      isAuto: true,
+      originCode: trainAutoRefreshOriginCode,
+    });
   }, TRAIN_AUTO_REFRESH_INTERVAL_MS);
 }
 
@@ -1017,7 +1038,11 @@ document.addEventListener('visibilitychange', () => {
     const now = Date.now();
     const stale = !trainAutoRefreshLastSuccessAt || now - trainAutoRefreshLastSuccessAt >= TRAIN_AUTO_REFRESH_INTERVAL_MS;
     if (stale && !trainAutoRefreshInFlight) {
-      cercaStatoTreno(trainAutoRefreshTrainNumber, { silent: true, isAuto: true });
+      cercaStatoTreno(trainAutoRefreshTrainNumber, {
+        silent: true,
+        isAuto: true,
+        originCode: trainAutoRefreshOriginCode,
+      });
     }
   }
 });
@@ -1861,6 +1886,10 @@ function getTrainKindShortCode(d) {
   if (detail.includes('EUROCITY') || board.includes('EUROCITY')) return 'EC';
   if (detail.includes('EURONIGHT') || board.includes('EURONIGHT')) return 'EN';
   if (detail.includes('INTERCITY') || board.includes('INTERCITY')) return 'IC';
+  if (detail.includes('REGIOEXPRESS') || board.includes('REGIOEXPRESS')) return 'REX';
+  if (detail.includes('LEONARDO') || board.includes('LEONARDO')) return 'LEX';
+  if (detail.includes('INTERREGIONALE') || board.includes('INTERREGIONALE')) return 'IREG';
+  if (detail.includes('BUS') || board.includes('BUS')) return 'BUS';
   if (detail.includes('FRECCIAROSSA') || board.includes('FRECCIAROSSA')) return 'FR';
   if (detail.includes('FRECCIARGENTO') || board.includes('FRECCIARGENTO')) return 'FA';
   if (detail.includes('FRECCIABIANCA') || board.includes('FRECCIABIANCA')) return 'FB';
@@ -3484,12 +3513,54 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+function renderTrainNumberDisambiguationMenu(trainNumber, choices) {
+  const safeNum = escapeHtml(trainNumber);
+  const items = (Array.isArray(choices) ? choices : [])
+    .map((choice) => {
+      const display = escapeHtml(choice?.display || 'Treno');
+      const originCode = escapeHtml(choice?.originCode || '');
+      const technical = escapeHtml(choice?.technical || '');
+      return `
+        <button
+          type="button"
+          class="train-pick-btn"
+          data-origin-code="${originCode}"
+          data-technical="${technical}"
+        >
+          <span class="train-pick-btn-title">${display}</span>
+          <span class="train-pick-btn-meta muted">${originCode}${technical ? ` · ${technical}` : ''}</span>
+        </button>
+      `;
+    })
+    .join('');
+
+  trainResult.innerHTML = `
+    <div class="train-pick" role="group" aria-label="Selezione treno">
+      <div class="train-pick-head">
+        <div class="train-pick-title">Più treni con numero <strong>${safeNum}</strong></div>
+        <div class="train-pick-sub muted">Scegli quello che vuoi monitorare.</div>
+      </div>
+      <div class="train-pick-list">${items}</div>
+    </div>
+  `;
+
+  trainResult.querySelectorAll('.train-pick-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const originCode = (btn.getAttribute('data-origin-code') || '').trim();
+      const technical = (btn.getAttribute('data-technical') || '').trim();
+      cercaStatoTreno(trainNumber, { originCode, technical });
+    });
+  });
+}
+
 // HANDLER RICERCA -----------------------------------------------------
 
 async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
   const opts = options && typeof options === 'object' ? options : {};
   const silent = !!opts.silent;
   const isAuto = !!opts.isAuto;
+  const originCode = String(opts.originCode || '').trim();
+  const technical = String(opts.technical || '').trim();
 
   trainError.textContent = '';
   if (!silent) {
@@ -3524,10 +3595,13 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
     trainAutoRefreshAbortController = new AbortController();
     trainAutoRefreshInFlight = true;
 
-    const res = await fetch(
-      `${API_BASE}/api/trains/status?trainNumber=${encodeURIComponent(num)}`,
-      { signal: trainAutoRefreshAbortController.signal }
-    );
+    const params = new URLSearchParams({ trainNumber: num });
+    if (originCode) params.set('originCode', originCode);
+    if (technical) params.set('technical', technical);
+
+    const res = await fetch(`${API_BASE}/api/trains/status?${params.toString()}`, {
+      signal: trainAutoRefreshAbortController.signal,
+    });
 
     if (!res.ok) {
       trainError.textContent = `Errore HTTP dal backend: ${res.status}`;
@@ -3540,6 +3614,14 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
     if (!data.ok) {
       trainError.textContent = data.error || 'Errore logico dal backend.';
       if (!silent) trainResult.innerHTML = '';
+      return;
+    }
+
+    if (data.needsSelection && Array.isArray(data.choices) && data.choices.length) {
+      // In auto-refresh (silent) non mostriamo menu: serve una scelta esplicita.
+      if (!silent) {
+        renderTrainNumberDisambiguationMenu(num, data.choices);
+      }
       return;
     }
 
@@ -3570,7 +3652,7 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
     if (renderResult?.concluded) {
       stopTrainAutoRefresh();
     } else {
-      startTrainAutoRefresh(dd.numeroTreno || num);
+      startTrainAutoRefresh(dd.numeroTreno || num, data.originCode || originCode);
     }
   } catch (err) {
     // Abort è normale quando cambiamo treno o la tab va in background.
@@ -3907,7 +3989,7 @@ function renderTripResults(solutions, context = {}) {
       const k = normalizeTrainShortCode(kindCode);
       if (['FR', 'FA', 'FB', 'TGV', 'RJ', 'ITA', 'ES', 'ESC'].includes(k)) return 'train-type-fr';
       if (['IC', 'ICN', 'EC', 'EN'].includes(k)) return 'train-type-ic';
-      if (['REG', 'RV', 'RE', 'SUB', 'MET', 'SFM', 'IR', 'DIR', 'DD', 'ACC', 'MXP', 'FL', 'PE'].includes(k)) return 'train-type-reg';
+      if (['REG', 'RV', 'REX', 'RE', 'IREG', 'IR', 'LEX', 'SUB', 'MET', 'SFM', 'D', 'DIR', 'DD', 'ACC', 'MXP', 'FL', 'PEXP', 'PE', 'TEXP', 'CEXP', 'BUS', 'BU'].includes(k)) return 'train-type-reg';
 
       const s = (ident || '').toUpperCase();
       if (s.includes('EUROCITY') || s.includes('EC ') || s.includes('EURONIGHT') || s.includes('EN ')) return 'train-type-ec';

@@ -674,6 +674,8 @@ app.get('/api/stations/arrivals', async (req, res) => {
 // GET /api/trains/status?trainNumber=666
 app.get('/api/trains/status', async (req, res) => {
   const trainNumber = (req.query.trainNumber || '').trim();
+  const originCodeHint = (req.query.originCode || '').trim();
+  const technicalHint = (req.query.technical || '').trim();
 
   if (!trainNumber) {
     return res
@@ -699,19 +701,59 @@ app.get('/api/trains/status', async (req, res) => {
       });
     }
 
-    const first = lines[0];
-    const parts = first.split('|');
-    const technical = (parts[1] || '').trim(); // es. "666-S06000"
-    const [, originCode] = technical.split('-');
+    const candidates = lines
+      .map((rawLine) => {
+        const parts = String(rawLine).split('|');
+        const display = (parts[0] || '').trim();
+        const technical = (parts[1] || '').trim(); // es. "666-S06000"
+        const [numFromTechnical, originCode] = technical.split('-');
+        return {
+          rawLine,
+          display,
+          technical,
+          trainNumber: (numFromTechnical || trainNumber).trim(),
+          originCode: (originCode || '').trim(),
+        };
+      })
+      .filter((c) => c.originCode);
 
-    if (!originCode) {
+    if (!candidates.length) {
       return res.json({
         ok: false,
         error:
-          'Impossibile ricavare il codice stazione origine dal risultato ViaggiaTreno',
-        raw: first,
+          'Impossibile ricavare il codice stazione origine dai risultati ViaggiaTreno',
+        raw: lines[0],
       });
     }
+
+    let selected = null;
+    if (technicalHint) {
+      selected = candidates.find((c) => c.technical === technicalHint) || null;
+    }
+    if (!selected && originCodeHint) {
+      selected = candidates.find((c) => c.originCode === originCodeHint) || null;
+    }
+
+    if (!selected) {
+      if (candidates.length === 1) {
+        selected = candidates[0];
+      } else {
+        return res.json({
+          ok: true,
+          data: null,
+          needsSelection: true,
+          message: 'Più treni trovati con questo numero: seleziona quello giusto.',
+          choices: candidates.map((c) => ({
+            display: c.display,
+            technical: c.technical,
+            originCode: c.originCode,
+            rawLine: c.rawLine,
+          })),
+        });
+      }
+    }
+
+    const originCode = selected.originCode;
 
     const nowMs = Date.now();
     const hourOffsets = [0, -6, -12, -18, -24];
@@ -758,7 +800,8 @@ app.get('/api/trains/status', async (req, res) => {
     res.json({
       ok: true,
       originCode,
-      rawSearchLine: first,
+      rawSearchLine: selected.rawLine,
+      technical: selected.technical,
       referenceTimestamp: finalSnapshot.referenceTimestamp,
       data: finalSnapshot.data,
     });

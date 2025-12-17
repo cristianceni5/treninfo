@@ -31,8 +31,9 @@
 
   --color-favorite: #eab308;
 
-  --kind-fr: #b91c1c;
-  --kind-reg: #16a34a;
+  --kind-fr: #c81f1f;
+  --kind-ita: #671717;
+  --kind-reg: #2aa52e;
   --kind-ic: #0ea5e9;
 
   --radius-card: 16px;
@@ -70,6 +71,7 @@
 
 /* TRAIN TYPE COLORS (Global) */
 .train-title--fr, .kind-fr, .train-type-fr { color: var(--kind-fr); }
+.train-title--ita, .kind-ita, .train-type-ita { color: var(--kind-ita); }
 .train-title--reg, .kind-reg, .train-type-reg { color: var(--kind-reg); }
 .train-title--ic, .kind-ic, .train-type-ic, .train-type-ec { color: var(--kind-ic); }
 .train-type-other { color: var(--text-main); }
@@ -363,6 +365,63 @@ select:focus-visible {
 
 .card-train-search #trainResult {
   margin-top: var(--timeline-gap); /* Consistent gap */
+}
+
+/* Selezione treno (numero ambiguo) --------------------------------- */
+.train-pick {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--card-padding-compact);
+}
+
+.train-pick-head {
+  margin-bottom: 10px;
+}
+
+.train-pick-title {
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+
+.train-pick-sub {
+  font-size: 0.85rem;
+}
+
+.train-pick-list {
+  display: grid;
+  gap: var(--gap-xs);
+}
+
+.train-pick-btn {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--bg-card);
+  transition: background var(--anim-normal), transform var(--anim-fast);
+}
+
+.train-pick-btn:hover {
+  background: var(--surface-hover);
+}
+
+.train-pick-btn:active {
+  transform: var(--anim-scale-active);
+  background: var(--surface-active);
+}
+
+.train-pick-btn-title {
+  display: block;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.train-pick-btn-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.8rem;
 }
 
 @media (max-width: 600px) {
@@ -1036,8 +1095,8 @@ a[href^='mailto'] {
 
 /* .train-logo – wrapper icona aziendale (img scala a tutta altezza) */
 .train-logo {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1067,7 +1126,7 @@ a[href^='mailto'] {
 .train-title-row {
   display: flex;
   align-items: center;
-  gap: var(--gap-sm);
+  gap: var(--gap-xs);
   margin-bottom: 5px;
 }
 
@@ -2424,7 +2483,7 @@ button.train-link:active {
 .train-badge {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-xs);
   padding: 4px 10px;
   border-radius: var(--radius-pill);
   font-size: 0.85rem;
@@ -2438,8 +2497,8 @@ button.train-link:active {
 }
 
 .train-badge-icon {
-  height: 34px;
-  width: 34px;
+  height: 44px;
+  width: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2448,8 +2507,8 @@ button.train-link:active {
 
 /* Nei dettagli viaggio i loghi devono essere più evidenti */
 .sol-segments .train-badge-icon {
-  width: 40px;
-  height: 40px;
+  width: 52px;
+  height: 52px;
 }
 
 .train-badge-icon img {
@@ -2480,8 +2539,8 @@ button.train-link:active {
 }
 
 .sol-train-icon {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
