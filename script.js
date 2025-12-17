@@ -241,8 +241,8 @@ const TRAIN_KIND_ICON_SRC = {
   BU: '/img/BU.svg',
   BUS: '/img/BU.svg',
   EC: '/img/EC.svg',
-  R: '/img/REG.svg',
-  REG: '/img/REG.svg',
+  R: '/img/RV.svg',
+  REG: '/img/RV.svg',
   RV: '/img/RV.svg',
 };
 
@@ -260,6 +260,8 @@ const REGIONAL_ICON_CODES = new Set([
 
 function getTrainKindIconSrc(kindCode) {
   const code = (kindCode || '').toString().trim().toUpperCase();
+  // Tutte le sigle che iniziano per R (es. RXP) sono regionali (escluso RJ).
+  if (code && code.startsWith('R') && code !== 'RJ') return '/img/RV.svg';
   if (TRAIN_KIND_ICON_SRC[code]) return TRAIN_KIND_ICON_SRC[code];
   if (REGIONAL_ICON_CODES.has(code)) return '/img/REG.svg';
   return '/img/trenitalia.png';
@@ -1890,7 +1892,11 @@ function getTrainKindShortCode(d) {
   );
 
   const direct = (metadata?.shortCode || '').toString().trim().toUpperCase();
-  if (/^[A-Z]{1,4}$/.test(direct)) return direct;
+  if (/^[A-Z]{1,4}$/.test(direct)) {
+    // Tutte le sigle che iniziano per R (es. RXP) le trattiamo come REG (escluso RJ).
+    if (direct.startsWith('R') && direct !== 'RJ') return 'REG';
+    return direct;
+  }
 
   const detail = (metadata?.detailLabel || '').toString().toUpperCase();
   const board = (metadata?.boardLabel || '').toString().toUpperCase();
@@ -4192,6 +4198,7 @@ function renderTripResults(solutions, context = {}) {
                   const ident = buildTrainIdentFromNode(node);
                   const t = node?.train || node;
             const code = deriveKindCodeFromIdent(ident, t);
+            if (code && code.startsWith('R') && code !== 'RJ') return 'REG';
             return REGIONAL_ICON_CODES.has(code) ? 'REG' : code;
               })
               .filter(Boolean)

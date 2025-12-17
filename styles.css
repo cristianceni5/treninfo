@@ -432,11 +432,12 @@ select:focus-visible {
 }
 
 .train-pick-icon {
-  width: 44px;
-  height: 44px;
+  height: 20px;
+  width: auto;
+  max-width: 105px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   flex: 0 0 auto;
 }
 
@@ -446,11 +447,12 @@ select:focus-visible {
 }
 
 .train-pick-icon img {
-  width: 100%;
   height: 100%;
+  width: auto;
+  max-width: 100%;
   object-fit: contain;
   display: block;
-  transform-origin: center;
+  transform: none;
 }
 
 .train-pick-btn-text {
@@ -1185,19 +1187,30 @@ a[href^='mailto'] {
 
 /* .train-logo – wrapper icona aziendale (img scala a tutta altezza) */
 .train-logo {
-  width: 44px;
-  height: 44px;
+  height: 20px;
+  width: auto;
+  max-width: 96px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   flex: 0 0 auto;
 }
 
 .train-logo-img {
   height: 100%;
-  width: 100%;
+  width: auto;
+  max-width: 100%;
   object-fit: contain;
   display: block;
+}
+
+/* EC e Regionali: un pelo più piccoli (logo molto "pieno") */
+.train-logo[data-kind='EC'],
+.train-logo[data-kind='REG'],
+.train-logo[data-kind='RV'],
+.train-logo[data-kind='R'] {
+  height: 18px;
+  max-width: 82px;
 }
 
 /* .train-header – blocco con nome, logo e badge */
@@ -2587,62 +2600,63 @@ button.train-link:active {
 }
 
 .train-badge-icon {
-  height: 44px;
-  width: 44px;
+  height: 16px;
+  width: auto;
+  max-width: 70px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   flex: 0 0 auto;
   overflow: visible;
 }
 
 /* Nei dettagli viaggio i loghi devono essere più evidenti */
 .sol-segments .train-badge-icon {
-  width: 52px;
-  height: 52px;
+  height: 18px;
+  width: auto;
+  max-width: 88px;
 }
 
 .train-badge-icon img {
   height: 100%;
-  width: 100%;
+  width: auto;
+  max-width: 100%;
   object-fit: contain;
   display: block;
-  transform-origin: center;
+  transform: none;
 }
 
-/* Loghi FR/FA/FB: spesso hanno molto margine nel file, quindi li scalamo un po' */
-.train-badge[data-kind='FR'] .train-badge-icon img,
-.train-badge[data-kind='FA'] .train-badge-icon img,
-.train-badge[data-kind='FB'] .train-badge-icon img,
-.train-badge[data-kind='IC'] .train-badge-icon img,
-.train-badge[data-kind='ICN'] .train-badge-icon img {
-  transform: scale(1.35);
+/* EC e Regionali: un pelo più piccoli nei badge */
+.train-badge[data-kind='EC'] .train-badge-icon,
+.train-badge[data-kind='REG'] .train-badge-icon,
+.train-badge[data-kind='RV'] .train-badge-icon,
+.train-badge[data-kind='R'] .train-badge-icon {
+  height: 14px;
+  max-width: 60px;
 }
 
-.train-logo[data-kind='FR'] .train-logo-img,
-.train-logo[data-kind='FA'] .train-logo-img,
-.train-logo[data-kind='FB'] .train-logo-img,
-.train-logo[data-kind='IC'] .train-logo-img,
-.train-logo[data-kind='ICN'] .train-logo-img {
-  transform: scale(1.35);
-  transform-origin: center;
+.sol-segments .train-badge[data-kind='EC'] .train-badge-icon,
+.sol-segments .train-badge[data-kind='REG'] .train-badge-icon,
+.sol-segments .train-badge[data-kind='RV'] .train-badge-icon,
+.sol-segments .train-badge[data-kind='R'] .train-badge-icon {
+  height: 16px;
+  max-width: 76px;
 }
 
-.sol-train-icon[data-kind='FR'] img,
-.sol-train-icon[data-kind='FA'] img,
-.sol-train-icon[data-kind='FB'] img,
-.sol-train-icon[data-kind='IC'] img,
-.sol-train-icon[data-kind='ICN'] img {
-  transform: scale(1.35);
-  transform-origin: center;
+.sol-train-icon[data-kind='EC'],
+.sol-train-icon[data-kind='REG'],
+.sol-train-icon[data-kind='RV'],
+.sol-train-icon[data-kind='R'] {
+  height: 14px;
+  max-width: 60px;
 }
 
-.train-pick-btn[data-kind='FR'] .train-pick-icon img,
-.train-pick-btn[data-kind='FA'] .train-pick-icon img,
-.train-pick-btn[data-kind='FB'] .train-pick-icon img,
-.train-pick-btn[data-kind='IC'] .train-pick-icon img,
-.train-pick-btn[data-kind='ICN'] .train-pick-icon img {
-  transform: scale(1.35);
+.train-pick-btn[data-kind='EC'] .train-pick-icon,
+.train-pick-btn[data-kind='REG'] .train-pick-icon,
+.train-pick-btn[data-kind='RV'] .train-pick-icon,
+.train-pick-btn[data-kind='R'] .train-pick-icon {
+  height: 18px;
+  max-width: 86px;
 }
 
 /* Back-compat: se resta qualche <img> diretto nei badge */
@@ -2666,11 +2680,12 @@ button.train-link:active {
 }
 
 .sol-train-icon {
-  width: 44px;
-  height: 44px;
+  height: 16px;
+  width: auto;
+  max-width: 70px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   flex: 0 0 auto;
 }
 
@@ -2785,7 +2800,7 @@ button.train-badge:active {
 .sol-segments {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   margin-top: 10px;
   padding-top: 10px;
   border-top: none;
@@ -2794,7 +2809,7 @@ button.train-badge:active {
 
 .sol-segment {
   display: block;
-  padding: 6px 0;
+  padding: 0;
   border-bottom: none;
 }
 
@@ -2804,13 +2819,15 @@ button.train-badge:active {
 
 .sol-segment-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
   gap: 10px;
   width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-hover);
+  border-radius: var(--radius-card);
+  overflow: hidden;
   text-align: left;
   font: inherit;
   color: inherit;
@@ -2821,13 +2838,13 @@ button.sol-segment-row {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   position: relative;
-  padding-right: 18px;
+  padding-right: 34px;
 }
 
 button.sol-segment-row::after {
   content: '›';
   position: absolute;
-  right: 0;
+  right: 12px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-soft);
@@ -2989,11 +3006,9 @@ button.sol-segment-row:active {
   }
 
   /* Non ridurre tutte le img nei badge: usiamo i wrapper */
-  .train-badge-icon { width: 34px; height: 34px; }
-  .train-badge-icon img { width: 100%; height: 100%; }
-  .sol-segments .train-badge-icon { width: 40px; height: 40px; }
-  .sol-train-icon { width: 36px; height: 36px; }
-  .sol-train-icon img { width: 100%; height: 100%; }
+  .train-badge-icon { height: 14px; max-width: 60px; }
+  .sol-segments .train-badge-icon { height: 16px; max-width: 76px; }
+  .sol-train-icon { height: 14px; max-width: 60px; }
 
   .sol-itinerary-btn {
     min-height: 44px;
