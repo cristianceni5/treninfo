@@ -16,6 +16,7 @@ let trainAutoRefreshLastSuccessAt = 0;
 
 const RECENT_KEY = 'monitor_treno_recent';
 const FAVORITES_KEY = 'monitor_treno_favorites';
+const TRAIN_CHOICE_BY_NUMBER_KEY = 'train_choice_by_number';
 const MAX_RECENT = 5;
 const MAX_FAVORITES = 8;
 
@@ -187,7 +188,13 @@ const TRAIN_KIND_RULES = [
     className: 'train-title--reg',
   },
   {
-    matches: ['REGIONALE', 'REG', 'R'],
+    matches: ['R'],
+    boardLabel: 'R',
+    detailLabel: 'R',
+    className: 'train-title--reg',
+  },
+  {
+    matches: ['REGIONALE', 'REG'],
     boardLabel: 'REG',
     detailLabel: 'REG',
     className: 'train-title--reg',
@@ -230,14 +237,17 @@ const TRAIN_KIND_ICON_SRC = {
   FB: '/img/FB.svg',
   IC: '/img/IC.svg',
   ICN: '/img/NI.svg',
+  ITA: '/img/ITA.svg',
   BU: '/img/BU.svg',
   BUS: '/img/BU.svg',
   EC: '/img/EC.svg',
-  REG: '/img/RV.svg',
+  R: '/img/REG.svg',
+  REG: '/img/REG.svg',
   RV: '/img/RV.svg',
 };
 
 const REGIONAL_ICON_CODES = new Set([
+  'R',
   'REG', 'RV', 'IR', 'IREG',
   'RE', 'REX',
   'LEX',
@@ -250,8 +260,9 @@ const REGIONAL_ICON_CODES = new Set([
 
 function getTrainKindIconSrc(kindCode) {
   const code = (kindCode || '').toString().trim().toUpperCase();
-  if (REGIONAL_ICON_CODES.has(code)) return '/img/RV.svg';
-  return TRAIN_KIND_ICON_SRC[code] || '/img/trenitalia.png';
+  if (TRAIN_KIND_ICON_SRC[code]) return TRAIN_KIND_ICON_SRC[code];
+  if (REGIONAL_ICON_CODES.has(code)) return '/img/REG.svg';
+  return '/img/trenitalia.png';
 }
 
 function normalizeTrainShortCode(raw) {
@@ -274,6 +285,7 @@ const PREFERRED_SHORT_CODES = [
   'TGV',
   'ES',
   'ESC',
+  'R',
   'REG',
   'RV',
   'REX',
@@ -384,6 +396,7 @@ const tripDateInput = document.getElementById('tripDate');
 const tripTimeInput = document.getElementById('tripTime');
 const tripSearchBtn = document.getElementById('tripSearchBtn');
 const tripClearBtn = document.getElementById('tripClearBtn');
+const tripSwapBtn = document.getElementById('tripSwapBtn');
 const tripResults = document.getElementById('tripResults');
 const tripError = document.getElementById('tripError');
 
@@ -1406,7 +1419,7 @@ if (stationBoardList) {
     if (trainNumberInput) {
       trainNumberInput.value = trainNum;
     }
-    cercaStatoTreno(trainNum);
+    cercaStatoTreno(trainNum, { useRememberedChoice: true });
     scrollToSection(trainSearchSection);
   };
 
@@ -1652,7 +1665,7 @@ function updateTrainStorage() {
   renderChips(trainStorageContainer, displayList, 'train', 
     (item) => {
       trainNumberInput.value = item.numero;
-      cercaStatoTreno();
+      cercaStatoTreno(String(item.numero || '').trim(), { useRememberedChoice: true });
     }, 
     (item) => {
       // Remove
@@ -2946,7 +2959,7 @@ function renderTrainStatus(payload) {
     <div class='train-header'>
       <div class='train-main'>
         <div class='train-title-row'>
-          <span class='train-logo' aria-hidden='true'>
+          <span class='train-logo' aria-hidden='true' data-kind='${escapeHtml(normalizeTrainShortCode(trainMeta.kindCode))}'>
             <img src='${headerIconSrc}' alt='${escapeHtml(headerIconAlt)}' class='train-logo-img' />
           </span>
           <h2 class='train-title ${primary.kindClass || ''}'>${primary.title || 'Dettagli treno'}</h2>
@@ -3513,22 +3526,93 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+function loadTrainChoiceByNumber() {
+  try {
+    const raw = localStorage.getItem(TRAIN_CHOICE_BY_NUMBER_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveTrainChoiceByNumber(nextMap) {
+  try {
+    localStorage.setItem(TRAIN_CHOICE_BY_NUMBER_KEY, JSON.stringify(nextMap || {}));
+  } catch {
+    // ignore
+  }
+}
+
+function rememberTrainChoice(trainNumber, choice) {
+  const num = String(trainNumber || '').trim();
+  if (!num) return;
+  const originCode = String(choice?.originCode || '').trim();
+  const technical = String(choice?.technical || '').trim();
+  if (!originCode && !technical) return;
+
+  const map = loadTrainChoiceByNumber();
+  map[num] = {
+    originCode,
+    technical,
+    updatedAt: Date.now(),
+  };
+
+  // Limita la crescita (tieni i 30 più recenti)
+  const entries = Object.entries(map)
+    .map(([k, v]) => [k, v])
+    .sort((a, b) => (b[1]?.updatedAt || 0) - (a[1]?.updatedAt || 0));
+  const trimmed = entries.slice(0, 30);
+  const out = {};
+  for (const [k, v] of trimmed) out[k] = v;
+  saveTrainChoiceByNumber(out);
+}
+
+function getRememberedTrainChoice(trainNumber) {
+  const num = String(trainNumber || '').trim();
+  if (!num) return null;
+  const map = loadTrainChoiceByNumber();
+  const v = map[num];
+  if (!v || typeof v !== 'object') return null;
+  const originCode = String(v.originCode || '').trim();
+  const technical = String(v.technical || '').trim();
+  if (!originCode && !technical) return null;
+  return { originCode, technical };
+}
+
 function renderTrainNumberDisambiguationMenu(trainNumber, choices) {
   const safeNum = escapeHtml(trainNumber);
   const items = (Array.isArray(choices) ? choices : [])
     .map((choice) => {
-      const display = escapeHtml(choice?.display || 'Treno');
-      const originCode = escapeHtml(choice?.originCode || '');
+      const displayRaw = String(choice?.display || 'Treno');
+      const display = escapeHtml(displayRaw);
+      const originCodeRaw = String(choice?.originCode || '').trim().toUpperCase();
+      const originCode = escapeHtml(originCodeRaw);
       const technical = escapeHtml(choice?.technical || '');
+
+      const kindMeta = resolveTrainKindFromCode(displayRaw);
+      const kindCode = normalizeTrainShortCode(kindMeta?.shortCode);
+      // Se non riconosciamo il tipo (o non abbiamo un logo dedicato), NON mostriamo un logo generico (crea confusione).
+      const showIcon = !!kindCode && (Boolean(TRAIN_KIND_ICON_SRC[kindCode]) || REGIONAL_ICON_CODES.has(kindCode));
+      const iconSrc = showIcon ? getTrainKindIconSrc(kindCode) : '';
+      const iconAlt = escapeHtml(kindCode || '');
+      const iconHtml = showIcon
+        ? `<span class="train-pick-icon" aria-hidden="true"><img src="${iconSrc}" alt="${iconAlt}" /></span>`
+        : '';
+      const btnClass = showIcon ? 'train-pick-btn' : 'train-pick-btn train-pick-btn--no-icon';
       return `
         <button
           type="button"
-          class="train-pick-btn"
+          class="${btnClass}"
           data-origin-code="${originCode}"
           data-technical="${technical}"
+          data-kind="${escapeHtml(kindCode)}"
         >
-          <span class="train-pick-btn-title">${display}</span>
-          <span class="train-pick-btn-meta muted">${originCode}${technical ? ` · ${technical}` : ''}</span>
+          ${iconHtml}
+          <span class="train-pick-btn-text">
+            <span class="train-pick-btn-title">${display}</span>
+          </span>
         </button>
       `;
     })
@@ -3548,6 +3632,7 @@ function renderTrainNumberDisambiguationMenu(trainNumber, choices) {
     btn.addEventListener('click', () => {
       const originCode = (btn.getAttribute('data-origin-code') || '').trim();
       const technical = (btn.getAttribute('data-technical') || '').trim();
+      rememberTrainChoice(trainNumber, { originCode, technical });
       cercaStatoTreno(trainNumber, { originCode, technical });
     });
   });
@@ -3559,8 +3644,9 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
   const opts = options && typeof options === 'object' ? options : {};
   const silent = !!opts.silent;
   const isAuto = !!opts.isAuto;
-  const originCode = String(opts.originCode || '').trim();
-  const technical = String(opts.technical || '').trim();
+  const useRememberedChoice = !!opts.useRememberedChoice;
+  let originCode = String(opts.originCode || '').trim();
+  let technical = String(opts.technical || '').trim();
 
   trainError.textContent = '';
   if (!silent) {
@@ -3572,6 +3658,16 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
   if (!num) {
     trainError.textContent = 'Inserisci un numero di treno.';
     return;
+  }
+
+  // Se non ci hanno passato hint, prova a riusare una scelta precedente SOLO se richiesto.
+  // (Esempio: auto-refresh o click da liste/soluzioni). Nella ricerca manuale vogliamo far scegliere.
+  if (!originCode && !technical && (isAuto || useRememberedChoice)) {
+    const remembered = getRememberedTrainChoice(num);
+    if (remembered) {
+      originCode = remembered.originCode;
+      technical = remembered.technical;
+    }
   }
 
   if (!silent) {
@@ -3620,6 +3716,11 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
     if (data.needsSelection && Array.isArray(data.choices) && data.choices.length) {
       // In auto-refresh (silent) non mostriamo menu: serve una scelta esplicita.
       if (!silent) {
+        try {
+          await ensureStationIndexLoaded();
+        } catch {
+          // ignore
+        }
         renderTrainNumberDisambiguationMenu(num, data.choices);
       }
       return;
@@ -3633,6 +3734,11 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
     }
 
     const dd = data.data;
+
+    // Se il backend ci dice quale origin/technical ha risolto, ricordiamocelo.
+    if (data.originCode || data.technical) {
+      rememberTrainChoice(num, { originCode: data.originCode, technical: data.technical });
+    }
     const { departure, arrival } = getPlannedTimes(dd.fermate);
     if (!isAuto) {
       const kindCode = getTrainKindShortCode(dd);
@@ -3742,9 +3848,48 @@ setupTripAutocomplete(tripFromInput, tripFromList, (station) => {
   tripFromId = station.id;
 });
 
+if (tripFromInput) {
+  tripFromInput.addEventListener('input', () => {
+    tripFromId = null;
+  });
+}
+
 setupTripAutocomplete(tripToInput, tripToList, (station) => {
   tripToId = station.id;
 });
+
+if (tripToInput) {
+  tripToInput.addEventListener('input', () => {
+    tripToId = null;
+  });
+}
+
+if (tripSwapBtn) {
+  tripSwapBtn.addEventListener('click', () => {
+    if (!tripFromInput || !tripToInput) return;
+
+    const fromValue = tripFromInput.value;
+    const toValue = tripToInput.value;
+    tripFromInput.value = toValue;
+    tripToInput.value = fromValue;
+
+    const fromId = tripFromId;
+    tripFromId = tripToId;
+    tripToId = fromId;
+
+    if (tripFromList) tripFromList.innerHTML = '';
+    if (tripToList) tripToList.innerHTML = '';
+    setInlineError(tripError, '');
+
+    tripSwapBtn.classList.remove('is-animating');
+    // forziamo reflow per ri-triggerare l'animazione anche su click ravvicinati
+    void tripSwapBtn.offsetWidth;
+    tripSwapBtn.classList.add('is-animating');
+    window.setTimeout(() => {
+      tripSwapBtn.classList.remove('is-animating');
+    }, 220);
+  });
+}
 
 if (tripSearchBtn) {
   tripSearchBtn.addEventListener('click', async () => {
@@ -3989,7 +4134,7 @@ function renderTripResults(solutions, context = {}) {
       const k = normalizeTrainShortCode(kindCode);
       if (['FR', 'FA', 'FB', 'TGV', 'RJ', 'ITA', 'ES', 'ESC'].includes(k)) return 'train-type-fr';
       if (['IC', 'ICN', 'EC', 'EN'].includes(k)) return 'train-type-ic';
-      if (['REG', 'RV', 'REX', 'RE', 'IREG', 'IR', 'LEX', 'SUB', 'MET', 'SFM', 'D', 'DIR', 'DD', 'ACC', 'MXP', 'FL', 'PEXP', 'PE', 'TEXP', 'CEXP', 'BUS', 'BU'].includes(k)) return 'train-type-reg';
+      if (['R', 'REG', 'RV', 'REX', 'RE', 'IREG', 'IR', 'LEX', 'SUB', 'MET', 'SFM', 'D', 'DIR', 'DD', 'ACC', 'MXP', 'FL', 'PEXP', 'PE', 'TEXP', 'CEXP', 'BUS', 'BU'].includes(k)) return 'train-type-reg';
 
       const s = (ident || '').toUpperCase();
       if (s.includes('EUROCITY') || s.includes('EC ') || s.includes('EURONIGHT') || s.includes('EN ')) return 'train-type-ec';
@@ -4035,9 +4180,9 @@ function renderTripResults(solutions, context = {}) {
         const logoHtml = `<span class=\"train-badge-icon\" aria-hidden=\"true\"><img src=\"${badgeIconSrc}\" alt=\"${escapeHtml(badgeIconAlt)}\" /></span>`;
 
         if (num && clickable) {
-          return `<button type="button" class="train-badge train-link ${typeClass}" data-num="${num}" title="Vedi stato treno ${num}">${logoHtml} ${ident}</button>`;
+          return `<button type="button" class="train-badge train-link ${typeClass}" data-num="${num}" data-kind="${escapeHtml(kindCode)}" title="Vedi stato treno ${num}">${logoHtml} ${ident}</button>`;
         }
-        return `<span class="train-badge ${typeClass}">${logoHtml} ${ident}</span>`;
+        return `<span class="train-badge ${typeClass}" data-kind="${escapeHtml(kindCode)}">${logoHtml} ${ident}</span>`;
     };
 
     const solutionIconCodes = Array.from(
@@ -4059,7 +4204,7 @@ function renderTripResults(solutions, context = {}) {
       const renderIcon = (code) => {
         const src = getTrainKindIconSrc(code);
         const alt = escapeHtml(code);
-        return `<span class=\"sol-train-icon\"><img src=\"${src}\" alt=\"${alt}\" /></span>`;
+        return `<span class=\"sol-train-icon\" data-kind=\"${escapeHtml(code)}\"><img src=\"${src}\" alt=\"${alt}\" /></span>`;
       };
 
       const parts = [];
@@ -4214,7 +4359,7 @@ if (tripResults) {
       const num = btn.getAttribute('data-num');
       if (num) {
         if (trainNumberInput) trainNumberInput.value = num;
-        cercaStatoTreno(num);
+        cercaStatoTreno(num, { useRememberedChoice: true });
         scrollToSection(trainSearchSection);
       }
     }

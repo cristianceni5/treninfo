@@ -35,27 +35,35 @@
           </h2>
 
           <div class="trip-search-form">
-            <div class="form-row">
-              <div class="input-root autocomplete-wrapper">
-                <input
-                  id="tripFrom"
-                  type="search"
-                  placeholder="Partenza (es. Milano Centrale)"
-                  autocomplete="off"
-                />
-                <ul id="tripFromList" class="autocomplete"></ul>
+            <div class="trip-fromto">
+              <div class="form-row">
+                <div class="input-root autocomplete-wrapper">
+                  <input
+                    id="tripFrom"
+                    type="search"
+                    placeholder="Partenza (es. Milano Centrale)"
+                    autocomplete="off"
+                  />
+                  <ul id="tripFromList" class="autocomplete"></ul>
+                </div>
               </div>
-            </div>
-            
-            <div class="form-row">
-              <div class="input-root autocomplete-wrapper">
-                <input
-                  id="tripTo"
-                  type="search"
-                  placeholder="Arrivo (es. Roma Termini)"
-                  autocomplete="off"
-                />
-                <ul id="tripToList" class="autocomplete"></ul>
+
+              <div class="form-row">
+                <div class="input-root autocomplete-wrapper">
+                  <input
+                    id="tripTo"
+                    type="search"
+                    placeholder="Arrivo (es. Roma Termini)"
+                    autocomplete="off"
+                  />
+                  <ul id="tripToList" class="autocomplete"></ul>
+                </div>
+              </div>
+
+              <div class="trip-swap-col">
+                <button type="button" id="tripSwapBtn" class="trip-swap-btn" aria-label="Inverti stazione di partenza e arrivo" title="Inverti partenza/arrivo">
+                  ⇄
+                </button>
               </div>
             </div>
 
