@@ -200,7 +200,7 @@ button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 2px solid rgba(15, 23, 42, 0.35);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
@@ -472,9 +472,23 @@ select:focus-visible {
   display: flex;
   align-items: center;
   gap: var(--gap-sm);
+  position: relative;
+  padding-left: 10px;
   margin: 0 0 10px;
   font-size: 0.9rem;
   color: var(--text-main);
+}
+
+.card-title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
 }
 
 @media (max-width: 600px) {
@@ -616,12 +630,12 @@ select:focus-visible {
 .solutions-list {
   display: flex;
   flex-direction: column;
-  gap: 16px; /* Increased gap between cards */
+  gap: var(--gap);
 }
 
 @media (max-width: 600px) {
   .solutions-list {
-    gap: 12px;
+    gap: var(--timeline-gap);
   }
 }
 
@@ -655,7 +669,8 @@ input:focus {
 .form-row button {
   border-radius: var(--radius-pill);
   border: 1px solid var(--border-subtle);
-  background: var(--bg-card);
+  background: var(--state-badge-bg);
+  border-color: var(--border-strong);
   padding: 0 18px;
   font-size: 0.9rem;
   cursor: pointer;
@@ -707,7 +722,8 @@ input:focus {
 button {
   border-radius: var(--radius-pill);
   border: 1px solid var(--border-subtle);
-  background: var(--bg-card);
+  background: var(--state-badge-bg);
+  border-color: var(--border-strong);
   padding: 6px 14px;
   font-size: 0.9rem;
   cursor: pointer;
@@ -718,9 +734,35 @@ button {
   transition: background var(--anim-normal), color var(--anim-normal), box-shadow var(--anim-normal), transform var(--anim-fast);
 }
 
-button:hover { background: var(--surface-hover); box-shadow: var(--shadow-soft); }
-button:active { background: var(--surface-active); transform: translateY(0); }
+button:hover {
+  background: var(--surface-hover);
+  box-shadow: var(--shadow-soft);
+}
+button:active {
+  background: var(--surface-active);
+  transform: translateY(0);
+}
 button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* PRIMARY ACTIONS (più colore) */
+#tripSearchBtn,
+#trainSearchBtn {
+  background: var(--state-badge-bg);
+  border-color: var(--border-strong);
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+#tripSearchBtn:hover,
+#trainSearchBtn:hover {
+  background: var(--surface-hover);
+  box-shadow: var(--shadow-soft);
+}
+
+#tripSearchBtn:active,
+#trainSearchBtn:active {
+  background: var(--surface-active);
+}
 
 /* AUTOCOMPLETE ------------------------------------------------------ */
 /* .autocomplete-wrapper – posiziona il dropdown */
@@ -915,9 +957,9 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 }
 
 .station-board-tab.is-active {
-  background: var(--text-main);
+  background: var(--primary);
   color: var(--bg-card);
-  border-color: var(--text-main);
+  border-color: var(--primary);
   font-weight: 600;
 }
 
@@ -938,8 +980,8 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 
 @media (max-width: 640px) {
   .station-board-list {
-    gap: 14px;
-    padding-top: 12px;
+    gap: var(--timeline-gap);
+    padding-top: var(--gap-sm);
   }
 }
 
@@ -2554,7 +2596,7 @@ a[href^='mailto'] {
 
 /* Train Link in Trip Results */
 button.train-link {
-  border: none;
+  border: 1px solid var(--border-subtle);
   cursor: pointer;
   color: inherit;
   font-family: inherit;
@@ -2562,6 +2604,12 @@ button.train-link {
   transition: transform var(--anim-fast), filter var(--anim-fast);
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+}
+
+@media (hover: hover) {
+  button.train-link:hover {
+    border-color: var(--border-strong);
+  }
 }
 
 @media (max-width: 640px) {
@@ -2610,6 +2658,18 @@ button.train-link:active {
   transition: all var(--anim-normal);
   text-decoration: none !important;
   line-height: 1.2;
+}
+
+/* Treni cliccabili: stessa “sfumaturina” dei bottoni, sempre visibile */
+button.train-badge.train-link {
+  background: var(--state-badge-bg);
+  border-color: var(--border-strong);
+}
+
+@media (hover: hover) {
+  button.train-badge.train-link:hover {
+    border-color: var(--border-strong);
+  }
 }
 
 .train-badge-icon {
@@ -2844,6 +2904,11 @@ button.train-badge:active {
   text-align: left;
   font: inherit;
   color: inherit;
+}
+
+button.sol-segment-row.train-link {
+  background: var(--state-badge-bg);
+  border-color: var(--border-strong);
 }
 
 button.sol-segment-row {
