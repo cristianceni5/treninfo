@@ -66,7 +66,7 @@ const TRAIN_KIND_RULES = [
     className: 'train-title--ic',
   },
   {
-    matches: ['ITALO', 'ITALO AV', 'ITALOAV', 'NTV', 'ITA'],
+    matches: ['ITALO', 'ITALO AV', 'ITALOAV', 'NTV', 'ITA'], // Da impl.
     boardLabel: 'ITA',
     detailLabel: 'ITA AV',
     className: 'train-title--ita',
@@ -404,6 +404,7 @@ const tripError = document.getElementById('tripError');
 
 let tripFromId = null;
 let tripToId = null;
+let tripPaginationState = null;
 
 let selectedStation = null;
 let stationBoardData = { departures: [], arrivals: [] };
@@ -1296,9 +1297,9 @@ function renderStationBoard(view = 'departures') {
     btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
   });
 
-  const dataList = view === 'arrivals'
-    ? (stationBoardData.arrivals || [])
-    : (stationBoardData.departures || []);
+    const dataList = view === 'arrivals'
+      ? (stationBoardData.arrivals || [])
+      : (stationBoardData.departures || []);
 
   if (!Array.isArray(dataList) || dataList.length === 0) {
     stationBoardList.innerHTML = '<p class="station-board-empty">Nessuna corsa disponibile.</p>';
@@ -3941,22 +3942,56 @@ if (tripSearchBtn) {
       if (tripToId) params.append('toId', tripToId);
       else params.append('toName', toName);
 
-      const res = await fetch(`${API_BASE}/api/solutions?${params.toString()}`);
+      // Pagination (offset/limit)
+      const limit = 10;
+      const baseParams = new URLSearchParams(params.toString());
+      baseParams.delete('offset');
+      baseParams.delete('limit');
+
+      tripPaginationState = {
+        baseParams: baseParams.toString(),
+        offset: 0,
+        limit,
+        solutions: [],
+        requestedDate: date,
+        requestedTime: time || '00:00',
+        hasMore: true,
+        loading: true,
+      };
+
+      const firstPageParams = new URLSearchParams(tripPaginationState.baseParams);
+      firstPageParams.set('offset', String(tripPaginationState.offset));
+      firstPageParams.set('limit', String(tripPaginationState.limit));
+
+      const res = await fetch(`${API_BASE}/api/solutions?${firstPageParams.toString()}`);
       const json = await res.json();
 
       if (!json.ok) {
         tripResults.innerHTML = '';
         setInlineError(tripError, `Errore: ${json.error || 'Sconosciuto'}`);
+        tripPaginationState = null;
         return;
       }
 
       setInlineError(tripError, '');
-      renderTripResults(json.solutions, { requestedDate: date, requestedTime: time || '00:00' });
+      const pageSolutions = Array.isArray(json.solutions) ? json.solutions : [];
+      tripPaginationState.solutions = pageSolutions;
+      tripPaginationState.offset += pageSolutions.length;
+      tripPaginationState.hasMore = pageSolutions.length === tripPaginationState.limit;
+      tripPaginationState.loading = false;
+
+      renderTripResults(tripPaginationState.solutions, {
+        requestedDate: tripPaginationState.requestedDate,
+        requestedTime: tripPaginationState.requestedTime,
+        showLoadMoreButton: tripPaginationState.hasMore,
+        loadMoreLoading: false,
+      });
 
     } catch (err) {
       console.error(err);
       tripResults.innerHTML = '';
       setInlineError(tripError, 'Errore di rete.');
+      tripPaginationState = null;
     }
   });
 }
@@ -3977,43 +4012,15 @@ function renderTripResults(solutions, context = {}) {
     return `${y}-${m}-${day}`;
   };
 
-  const formatItDateLong = (dt) => {
+  const formatItDayShort = (dt) => {
     const d = dt instanceof Date ? dt : new Date(dt);
     if (Number.isNaN(d.getTime())) return '';
     const formatted = new Intl.DateTimeFormat('it-IT', {
       weekday: 'long',
       day: '2-digit',
-      month: 'long',
-      year: 'numeric',
     }).format(d);
     return formatted.charAt(0).toUpperCase() + formatted.slice(1);
   };
-
-  const requestedDateObj = requestedDateKey ? new Date(`${requestedDateKey}T00:00:00`) : null;
-  const searchDayHtml = requestedDateObj && !Number.isNaN(requestedDateObj.getTime())
-    ? `<div class="solutions-day-note">Ricerca per <strong>${formatItDateLong(requestedDateObj)}</strong></div>`
-    : '';
-
-  let lastDepartureOnRequestedDay = null;
-  if (requestedDateKey) {
-    for (const item of solutions) {
-      const sol = item?.solution || item;
-      const t = sol?.departureTime;
-      if (!t) continue;
-      const d = new Date(t);
-      if (Number.isNaN(d.getTime())) continue;
-      if (toLocalDateKey(d) !== requestedDateKey) continue;
-      if (!lastDepartureOnRequestedDay || d.getTime() > lastDepartureOnRequestedDay.getTime()) {
-        lastDepartureOnRequestedDay = d;
-      }
-    }
-  }
-
-  const endOfDayHtml = lastDepartureOnRequestedDay
-    ? `<div class="solutions-end-note">Soluzioni di questo giorno fino alle <strong>${lastDepartureOnRequestedDay.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</strong></div>`
-    : (requestedDateKey
-      ? `<div class="solutions-end-note">Nessuna soluzione per questo giorno.</div>`
-      : '');
 
   const solutionsByDay = new Map();
   for (const item of solutions) {
@@ -4029,12 +4036,6 @@ function renderTripResults(solutions, context = {}) {
     if (!isValidDateKey(k)) return null;
     const d = new Date(`${k}T00:00:00`);
     return Number.isNaN(d.getTime()) ? null : d;
-  };
-  const isNextDayOfRequested = (k) => {
-    const a = asMidnightDate(k);
-    const b = asMidnightDate(requestedDateKey);
-    if (!a || !b) return false;
-    return (a.getTime() - b.getTime()) === 24 * 60 * 60 * 1000;
   };
 
   let orderedDayKeys = Array.from(solutionsByDay.keys());
@@ -4053,7 +4054,7 @@ function renderTripResults(solutions, context = {}) {
     return true;
   });
 
-  let html = `${searchDayHtml}${endOfDayHtml}<div class="solutions-list">`;
+  let html = '<div class="solutions-list">';
 
   orderedDayKeys.forEach((dayKey, groupIdx) => {
     const groupItems = solutionsByDay.get(dayKey) || [];
@@ -4064,10 +4065,7 @@ function renderTripResults(solutions, context = {}) {
       groupLabel = 'Data non disponibile';
     } else {
       const d = asMidnightDate(dayKey);
-      groupLabel = d ? formatItDateLong(d) : dayKey;
-      if (requestedDateKey && dayKey !== requestedDateKey && isNextDayOfRequested(dayKey)) {
-        groupLabel = `Giorno dopo — ${groupLabel}`;
-      }
+      groupLabel = d ? formatItDayShort(d) : dayKey;
     }
 
     html += `<div class="solutions-date-sep" data-day="${escapeHtml(String(dayKey))}">${escapeHtml(groupLabel)}</div>`;
@@ -4228,106 +4226,138 @@ function renderTripResults(solutions, context = {}) {
     let trainsHtml = '';
     let segmentsHtml = '';
 
+    const formatItMoney = (amount) => {
+      if (amount === null || amount === undefined || amount === '') return '';
+      const n = typeof amount === 'number'
+        ? amount
+        : Number(String(amount).replace(',', '.'));
+      if (!Number.isFinite(n)) return '';
+
+      const rounded = Math.round(n);
+      const isIntLike = Math.abs(n - rounded) < 1e-9;
+      if (isIntLike) {
+        return new Intl.NumberFormat('it-IT', {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        }).format(rounded);
+      }
+
+      return new Intl.NumberFormat('it-IT', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(n);
+    };
+
+    const extractTrainNumber = (t) => {
+      if (!t) return '';
+      if (t.name && /^\d+$/.test(t.name)) return t.name;
+      if (t.number && /^\d+$/.test(String(t.number))) return String(t.number);
+      const ident = String(
+        t.trainIdentifier ||
+        t.transportMeanIdentifier ||
+        t.trainName ||
+        t.acronym ||
+        t.transportMeanName ||
+        ''
+      );
+      const m = ident.match(/(\d+)/);
+      return m ? m[1] : '';
+    };
+
+    const formatTime = (d) => {
+      if (!d) return '--:--';
+      const date = new Date(d);
+      return Number.isNaN(date.getTime())
+        ? '--:--'
+        : date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    };
+
     if (vehicleList.length > 1) {
-        // Vista dettagliata per cambi
-        trainsHtml = `<span class="train-badge badge-summary">${vehicleList.length - 1} cambi</span>`;
-        
-        let innerSegments = '<div class="sol-segments">';
-        vehicleList.forEach((node, idx) => {
-          const badge = getTrainBadge(node, { clickable: false });
-          const tNode = node?.train || node;
-
-          const extractTrainNumber = (t) => {
-            if (!t) return '';
-            if (t.name && /^\d+$/.test(t.name)) return t.name;
-            if (t.number && /^\d+$/.test(String(t.number))) return String(t.number);
-            const ident = String(
-              t.trainIdentifier ||
-              t.transportMeanIdentifier ||
-              t.trainName ||
-              t.acronym ||
-              t.transportMeanName ||
-              ''
-            );
-            const m = ident.match(/(\d+)/);
-            return m ? m[1] : '';
-          };
-
-          const nodeTrainNum = extractTrainNumber(tNode);
-            
-            // Parsing sicuro delle date
-            const formatTime = (d) => {
-                if (!d) return '--:--';
-                const date = new Date(d);
-                return isNaN(date.getTime()) ? '--:--' : date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-            };
-
-            const dep = formatTime(node.departureTime);
-            const arr = formatTime(node.arrivalTime);
-            const origin = node.origin || node.startLocation || '';
-            const dest = node.destination || node.endLocation || '';
-
-            const safeOrigin = escapeHtml(origin);
-            const safeDest = escapeHtml(dest);
-            
-            const itineraryInnerHtml = `
-                <span class="sol-itinerary-time">${dep}</span>
-                <span class="sol-itinerary-station">${safeOrigin}</span>
-                <span class="sol-itinerary-arrow" aria-hidden="true">→</span>
-                <span class="sol-itinerary-time">${arr}</span>
-                <span class="sol-itinerary-station">${safeDest}</span>
-            `;
-
-            const segmentInnerHtml = `
-                <span class="sol-segment-train">${badge}</span>
-                <span class="sol-segment-itinerary"><span class="sol-itinerary-compact">${itineraryInnerHtml}</span></span>
-            `;
-
-            const segmentRowHtml = nodeTrainNum
-              ? `<button type="button" class="sol-segment-row train-link" data-num="${escapeHtml(nodeTrainNum)}" title="Vedi stato treno ${escapeHtml(nodeTrainNum)}">${segmentInnerHtml}</button>`
-              : `<div class="sol-segment-row">${segmentInnerHtml}</div>`;
-
-            innerSegments += `
-                <div class="sol-segment">
-                    ${segmentRowHtml}
-                </div>
-            `;
-            
-            if (idx < vehicleList.length - 1) {
-                 const nextNode = vehicleList[idx+1];
-                 const arrDate = new Date(node.arrivalTime);
-                 const nextDepDate = new Date(nextNode.departureTime);
-                 
-                 if (!isNaN(arrDate.getTime()) && !isNaN(nextDepDate.getTime())) {
-                     const diffMs = nextDepDate - arrDate;
-                     const diffMins = Math.floor(diffMs / 60000);
-                   innerSegments += `<div class="sol-transfer">&#x21C6; Cambio a ${safeDest} <span class="transfer-time">· ${diffMins} min</span></div>`;
-                 } else {
-                   innerSegments += `<div class="sol-transfer">&#x21C6; Cambio a ${safeDest}</div>`;
-                 }
-            }
-        });
-        innerSegments += '</div>';
-
-        segmentsHtml = `
-            <details class="sol-details">
-                <summary class="sol-summary">
-                    <span class="sol-summary-text">Dettagli viaggio</span>
-                    <span class="sol-summary-icon">▼</span>
-                </summary>
-                ${innerSegments}
-            </details>
-        `;
+      // Vista riassuntiva (con cambi)
+      trainsHtml = `<span class="train-badge badge-summary">${vehicleList.length - 1} cambi</span>`;
     } else {
-        // Vista semplice (diretto)
-        trainsHtml = vehicleList.map(getTrainBadge).join(' ');
+      // Diretto: badge con icona bolt.svg
+      trainsHtml = `<span class="train-badge badge-summary badge-direct"><img src="img/bolt.svg" alt="Diretto" class="badge-bolt" /> diretto</span>`;
+    }
+
+    // Dettagli viaggio: sempre presenti quando abbiamo almeno un mezzo
+    if (vehicleList.length > 0) {
+      let innerSegments = '<div class="sol-segments">';
+      vehicleList.forEach((node, idx) => {
+        const badge = getTrainBadge(node, { clickable: false });
+        const tNode = node?.train || node;
+        const nodeTrainNum = extractTrainNumber(tNode);
+
+        const dep = formatTime(node.departureTime);
+        const arr = formatTime(node.arrivalTime);
+        const origin = node.origin || node.startLocation || '';
+        const dest = node.destination || node.endLocation || '';
+
+        const safeOrigin = escapeHtml(origin);
+        const safeDest = escapeHtml(dest);
+
+        const itineraryInnerHtml = `
+            <span class="sol-itinerary-time">${dep}</span>
+            <span class="sol-itinerary-station">${safeOrigin}</span>
+            <span class="sol-itinerary-arrow" aria-hidden="true">→</span>
+            <span class="sol-itinerary-time">${arr}</span>
+            <span class="sol-itinerary-station">${safeDest}</span>
+        `;
+
+        const trainNumLabel = nodeTrainNum
+          ? `<span class="sol-segment-trainnum">· ${escapeHtml(nodeTrainNum)}</span>`
+          : '';
+
+        const segmentInnerHtml = `
+            <span class="sol-segment-train">${badge}${trainNumLabel}</span>
+            <span class="sol-segment-itinerary"><span class="sol-itinerary-compact">${itineraryInnerHtml}</span></span>
+        `;
+
+        const segmentRowHtml = nodeTrainNum
+          ? `<button type="button" class="sol-segment-row train-link" data-num="${escapeHtml(nodeTrainNum)}" title="Vedi stato treno ${escapeHtml(nodeTrainNum)}">${segmentInnerHtml}</button>`
+          : `<div class="sol-segment-row">${segmentInnerHtml}</div>`;
+
+        innerSegments += `
+            <div class="sol-segment">
+                ${segmentRowHtml}
+            </div>
+        `;
+
+        if (idx < vehicleList.length - 1) {
+          const nextNode = vehicleList[idx + 1];
+          const arrDate = new Date(node.arrivalTime);
+          const nextDepDate = new Date(nextNode.departureTime);
+
+          if (!Number.isNaN(arrDate.getTime()) && !Number.isNaN(nextDepDate.getTime())) {
+            const diffMs = nextDepDate - arrDate;
+            const diffMins = Math.floor(diffMs / 60000);
+            innerSegments += `<div class="sol-transfer">&#x21C6; Cambio a ${safeDest} <span class="transfer-time">· ${diffMins} min</span></div>`;
+          } else {
+            innerSegments += `<div class="sol-transfer">&#x21C6; Cambio a ${safeDest}</div>`;
+          }
+        }
+      });
+      innerSegments += '</div>';
+
+      segmentsHtml = `
+          <details class="sol-details">
+              <summary class="sol-summary">
+                  <span class="sol-summary-text">Dettagli viaggio</span>
+                  <span class="sol-summary-icon">▼</span>
+              </summary>
+              ${innerSegments}
+          </details>
+      `;
     }
 
     // Prezzo
-    let price = 'N/A';
-    if (sol.price && sol.price.amount) price = sol.price.amount + '€';
-    else if (item.price && item.price.amount) price = item.price.amount + '€';
-    else if (sol.minPrice && sol.minPrice.amount) price = sol.minPrice.amount + '€';
+    const rawAmount =
+      (sol.price && sol.price.amount !== undefined ? sol.price.amount : undefined) ??
+      (item.price && item.price.amount !== undefined ? item.price.amount : undefined) ??
+      (sol.minPrice && sol.minPrice.amount !== undefined ? sol.minPrice.amount : undefined);
+
+    const formattedAmount = formatItMoney(rawAmount);
+    const price = formattedAmount ? `${formattedAmount}€` : 'N/A';
 
     html += `
       <div class="solution-card">
@@ -4356,11 +4386,82 @@ function renderTripResults(solutions, context = {}) {
   });
   
   html += '</div>';
+
+  const showLoadMoreButton = Boolean(context.showLoadMoreButton);
+  const loadMoreLoading = Boolean(context.loadMoreLoading);
+  if (showLoadMoreButton) {
+    const label = loadMoreLoading ? 'Caricamento…' : 'Carica altre soluzioni';
+    const disabledAttr = loadMoreLoading ? 'disabled' : '';
+    html += `<div class="solutions-actions"><button type="button" id="tripLoadMoreBtn" ${disabledAttr}>${label}</button></div>`;
+  }
+
   tripResults.innerHTML = html;
 }
 
 if (tripResults) {
   tripResults.addEventListener('click', (e) => {
+    const loadMore = e.target.closest('#tripLoadMoreBtn');
+    if (loadMore) {
+      if (!tripPaginationState || tripPaginationState.loading || !tripPaginationState.hasMore) return;
+
+      (async () => {
+        try {
+          tripPaginationState.loading = true;
+          renderTripResults(tripPaginationState.solutions, {
+            requestedDate: tripPaginationState.requestedDate,
+            requestedTime: tripPaginationState.requestedTime,
+            showLoadMoreButton: true,
+            loadMoreLoading: true,
+          });
+
+          const nextParams = new URLSearchParams(tripPaginationState.baseParams);
+          nextParams.set('offset', String(tripPaginationState.offset));
+          nextParams.set('limit', String(tripPaginationState.limit));
+          const res = await fetch(`${API_BASE}/api/solutions?${nextParams.toString()}`);
+          const json = await res.json();
+
+          if (!json.ok) {
+            setInlineError(tripError, `Errore: ${json.error || 'Sconosciuto'}`);
+            tripPaginationState.loading = false;
+            renderTripResults(tripPaginationState.solutions, {
+              requestedDate: tripPaginationState.requestedDate,
+              requestedTime: tripPaginationState.requestedTime,
+              showLoadMoreButton: tripPaginationState.hasMore,
+              loadMoreLoading: false,
+            });
+            return;
+          }
+
+          const pageSolutions = Array.isArray(json.solutions) ? json.solutions : [];
+          tripPaginationState.solutions = tripPaginationState.solutions.concat(pageSolutions);
+          tripPaginationState.offset += pageSolutions.length;
+          tripPaginationState.hasMore = pageSolutions.length === tripPaginationState.limit;
+          tripPaginationState.loading = false;
+
+          renderTripResults(tripPaginationState.solutions, {
+            requestedDate: tripPaginationState.requestedDate,
+            requestedTime: tripPaginationState.requestedTime,
+            showLoadMoreButton: tripPaginationState.hasMore,
+            loadMoreLoading: false,
+          });
+        } catch (err) {
+          console.error(err);
+          setInlineError(tripError, 'Errore di rete.');
+          if (tripPaginationState) tripPaginationState.loading = false;
+          if (tripPaginationState?.solutions?.length) {
+            renderTripResults(tripPaginationState.solutions, {
+              requestedDate: tripPaginationState.requestedDate,
+              requestedTime: tripPaginationState.requestedTime,
+              showLoadMoreButton: tripPaginationState.hasMore,
+              loadMoreLoading: false,
+            });
+          }
+        }
+      })();
+
+      return;
+    }
+
     const btn = e.target.closest('.train-link');
     if (btn) {
       const num = btn.getAttribute('data-num');
@@ -4383,5 +4484,6 @@ if (tripClearBtn) {
     if (tripResults) tripResults.innerHTML = '';
     tripFromId = null;
     tripToId = null;
+    tripPaginationState = null;
   });
 }
