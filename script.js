@@ -1611,11 +1611,10 @@ function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isF
         </span>
         <div class="storage-chip-actions">
             ${showFav ? `
-              <button type="button" class="storage-chip-btn storage-chip-fav ${isFav ? 'is-active' : ''}" title="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}">
-                  ${isFav ? '★' : '☆'}
+              <button type="button" class="storage-chip-btn storage-chip-fav ${isFav ? 'is-active' : ''}" title="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}" aria-label="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}">
+                  <span class="storage-chip-fav-glyph" aria-hidden="true">${isFav ? '♥' : '♡'}</span>
               </button>
             ` : ''}
-            <button type="button" class="storage-chip-btn storage-chip-remove" title="Rimuovi">×</button>
         </div>
       </div>
     `;
@@ -1624,17 +1623,122 @@ function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isF
   // Add event listeners
   container.querySelectorAll('.storage-chip').forEach((chip, idx) => {
     chip.addEventListener('click', (e) => {
-      const removeBtn = e.target.closest('.storage-chip-remove');
       const favBtn = e.target.closest('.storage-chip-fav');
       
-      if (removeBtn) {
-        e.stopPropagation();
-        onRemove(list[idx]);
-      } else if (favBtn) {
+      if (favBtn) {
         e.stopPropagation();
         if (showFav) onToggleFav(list[idx]);
       } else {
         onSelect(list[idx]);
+      }
+    });
+  });
+}
+
+function renderGroupedChips(container, groups, type, onSelect, onRemove, onToggleFav, isFavCallback) {
+  if (!container) return;
+  const favorites = Array.isArray(groups?.favorites) ? groups.favorites : [];
+  const recents = Array.isArray(groups?.recents) ? groups.recents : [];
+  const sections = [];
+
+  if (favorites.length) sections.push({ title: 'Preferiti', items: favorites });
+  if (recents.length) sections.push({ title: 'Recenti', items: recents });
+
+  if (!sections.length) {
+    container.innerHTML = '';
+    container.classList.add('hidden');
+    return;
+  }
+
+  container.classList.remove('hidden');
+
+  const allItems = [];
+  const showFav = typeof onToggleFav === 'function';
+
+  const renderOne = (item, idx) => {
+    let contentHtml = '';
+    let id = '';
+    let extraClass = '';
+
+    if (type === 'train') {
+      id = item.numero;
+      const route = (item.origine && item.destinazione)
+        ? `${item.origine} → ${item.destinazione}`
+        : `Treno ${item.numero}`;
+
+      const rawKindCode = (item.kindCode || item.kind || item.sigla || '').toString().trim().toUpperCase();
+      const kindCode = /^[A-Z]{1,4}$/.test(rawKindCode) ? rawKindCode : '';
+      const numberLabel = kindCode ? `${kindCode} ${item.numero}` : `Treno ${item.numero}`;
+      const timeInfo = item.partenza ? `<span class="chip-time">${escapeHtml(item.partenza)}</span>` : '';
+
+      contentHtml = `
+        <div class="chip-train-info">
+            <div class="chip-route">${escapeHtml(route)}</div>
+            <div class="chip-meta">
+                <span class="chip-number">${escapeHtml(numberLabel)}</span>
+                ${timeInfo}
+            </div>
+        </div>
+      `;
+      extraClass = 'chip-type-train';
+    } else if (type === 'trip') {
+      id = `${item.from}|${item.to}`;
+      contentHtml = `<span class="storage-chip-label">${escapeHtml(item.from)} → ${escapeHtml(item.to)}</span>`;
+    } else if (type === 'station') {
+      id = item.id;
+      contentHtml = `<span class="storage-chip-label">${escapeHtml(item.name)}</span>`;
+    }
+
+    const isFav = isFavCallback ? isFavCallback(item) : false;
+
+    return `
+      <div class="storage-chip ${isFav ? 'favorite' : ''} ${extraClass}" role="button" tabindex="0" data-idx="${idx}" data-id="${escapeHtml(id)}">
+        <span class="storage-chip-content">${contentHtml}</span>
+        <div class="storage-chip-actions">
+          ${showFav ? `
+            <button type="button" class="storage-chip-btn storage-chip-fav ${isFav ? 'is-active' : ''}" title="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}" aria-label="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}">
+              <span class="storage-chip-fav-glyph" aria-hidden="true">${isFav ? '♥' : '♡'}</span>
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  };
+
+  let nextIdx = 0;
+  const sectionsHtml = sections.map((section) => {
+    const chipsHtml = section.items.map((item) => {
+      const idx = nextIdx;
+      allItems[idx] = item;
+      nextIdx += 1;
+      return renderOne(item, idx);
+    }).join('');
+
+    return `
+      <div class="storage-block">
+        <div class="storage-block-head">
+          <div class="storage-block-title">${escapeHtml(section.title)}</div>
+          <div class="storage-block-count">${section.items.length}</div>
+        </div>
+        <div class="storage-block-list">${chipsHtml}</div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = sectionsHtml;
+
+  container.querySelectorAll('.storage-chip').forEach((chip) => {
+    chip.addEventListener('click', (e) => {
+      const favBtn = e.target.closest('.storage-chip-fav');
+      const idx = Number(chip.getAttribute('data-idx'));
+      const item = allItems[idx];
+      if (!item) return;
+
+      if (favBtn) {
+        e.stopPropagation();
+        if (showFav) onToggleFav(item);
+      } else {
+        onSelect(item);
       }
     });
   });
@@ -1656,6 +1760,12 @@ function normalizeTripList(rawList) {
 
 // --- TRAIN STORAGE ---
 
+function buildFavoriteButtonInnerHtml(isFavorite) {
+  const label = isFavorite ? 'Rimuovi dai preferiti' : 'Salva nei preferiti';
+  const glyph = isFavorite ? '♥' : '♡';
+  return `<span class="favorite-btn-heart" aria-hidden="true">${glyph}</span><span class="favorite-btn-text">${escapeHtml(label)}</span>`;
+}
+
 function updateTrainStorage() {
   const recents = loadStorage(RECENT_KEY);
   const favorites = loadStorage(FAVORITES_KEY);
@@ -1663,9 +1773,8 @@ function updateTrainStorage() {
   // Preferiti prima dei recenti (più naturale). De-duplica per numero.
   const favIds = new Set(favorites.map(i => String(i.numero)));
   const uniqueRecents = recents.filter(i => !favIds.has(String(i.numero)));
-  const displayList = [...favorites, ...uniqueRecents];
 
-  renderChips(trainStorageContainer, displayList, 'train', 
+  renderGroupedChips(trainStorageContainer, { favorites, recents: uniqueRecents }, 'train',
     (item) => {
       trainNumberInput.value = item.numero;
       cercaStatoTreno(String(item.numero || '').trim(), { useRememberedChoice: true });
@@ -1731,7 +1840,7 @@ function updateFavoriteActionButton(btn) {
   const num = btn.getAttribute('data-num');
   const isFav = isFavoriteTrain(num);
   btn.classList.toggle('is-active', isFav);
-  btn.textContent = isFav ? 'Rimuovi dai preferiti' : 'Salva nei preferiti';
+  btn.innerHTML = buildFavoriteButtonInnerHtml(isFav);
 }
 
 // --- TRIP STORAGE ---
@@ -1746,9 +1855,8 @@ function updateTripStorage() {
 
   const favIds = new Set(favorites.map(i => `${i.from}|${i.to}`));
   const uniqueRecents = recents.filter(i => !favIds.has(`${i.from}|${i.to}`));
-  const displayList = [...favorites, ...uniqueRecents];
 
-  renderChips(tripStorageContainer, displayList, 'trip',
+  renderGroupedChips(tripStorageContainer, { favorites, recents: uniqueRecents }, 'trip',
     (item) => {
       tripFromInput.value = item.from;
       tripToInput.value = item.to;
@@ -1794,9 +1902,8 @@ function updateStationStorage() {
   const favorites = loadStorage(STATION_FAVORITES_KEY);
   const favIds = new Set(favorites.map(i => String(i.id)));
   const uniqueRecents = recents.filter(i => !favIds.has(String(i.id)));
-  const displayList = [...favorites, ...uniqueRecents];
 
-  renderChips(stationStorageContainer, displayList, 'station',
+  renderGroupedChips(stationStorageContainer, { favorites, recents: uniqueRecents }, 'station',
     (item) => {
       const input = document.getElementById('stationQuery');
       if (input) {
@@ -2956,7 +3063,7 @@ function renderTrainStatus(payload) {
   const badgeStateLabel = badgeLabelMap[stateKey] || badgeLabelMap.UNKNOWN;
 
   const favoriteBtnHtml = trainMeta.numero
-    ? `<button type="button" class="favorite-current-btn${trainIsFavorite ? ' is-active' : ''}" data-num="${trainMeta.numero}" data-kind="${encodeDatasetValue(trainMeta.kindCode || '')}" data-orig="${encodeDatasetValue(trainMeta.origine)}" data-dest="${encodeDatasetValue(trainMeta.destinazione)}" data-dep="${encodeDatasetValue(trainMeta.partenza || '')}" data-arr="${encodeDatasetValue(trainMeta.arrivo || '')}">${trainIsFavorite ? 'Rimuovi dai preferiti' : 'Salva nei preferiti'}</button>`
+    ? `<button type="button" class="favorite-current-btn${trainIsFavorite ? ' is-active' : ''}" data-num="${trainMeta.numero}" data-kind="${encodeDatasetValue(trainMeta.kindCode || '')}" data-orig="${encodeDatasetValue(trainMeta.origine)}" data-dest="${encodeDatasetValue(trainMeta.destinazione)}" data-dep="${encodeDatasetValue(trainMeta.partenza || '')}" data-arr="${encodeDatasetValue(trainMeta.arrivo || '')}">${buildFavoriteButtonInnerHtml(trainIsFavorite)}</button>`
     : '';
 
   const headerIconSrc = getTrainKindIconSrc(trainMeta.kindCode);
@@ -4012,12 +4119,14 @@ function renderTripResults(solutions, context = {}) {
     return `${y}-${m}-${day}`;
   };
 
-  const formatItDayShort = (dt) => {
+  const formatItDayLong = (dt) => {
     const d = dt instanceof Date ? dt : new Date(dt);
     if (Number.isNaN(d.getTime())) return '';
     const formatted = new Intl.DateTimeFormat('it-IT', {
       weekday: 'long',
       day: '2-digit',
+      month: 'long',
+      year: 'numeric',
     }).format(d);
     return formatted.charAt(0).toUpperCase() + formatted.slice(1);
   };
@@ -4065,10 +4174,10 @@ function renderTripResults(solutions, context = {}) {
       groupLabel = 'Data non disponibile';
     } else {
       const d = asMidnightDate(dayKey);
-      groupLabel = d ? formatItDayShort(d) : dayKey;
+      groupLabel = d ? formatItDayLong(d) : dayKey;
     }
 
-    html += `<div class="solutions-date-sep" data-day="${escapeHtml(String(dayKey))}">${escapeHtml(groupLabel)}</div>`;
+    html += `<div class="solutions-day-label" data-day="${escapeHtml(String(dayKey))}">${escapeHtml(groupLabel)}</div>`;
 
     groupItems.forEach(item => {
     // A volte l'oggetto è { solution: {...}, ... } altre volte è direttamente la soluzione
@@ -4076,12 +4185,17 @@ function renderTripResults(solutions, context = {}) {
 
     const depDateObj = new Date(sol.departureTime);
     const arrDateObj = new Date(sol.arrivalTime);
+    const depDayKey = toLocalDateKey(depDateObj);
+    const arrDayKey = toLocalDateKey(arrDateObj);
     const depTime = depDateObj.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     const arrTime = arrDateObj.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     const duration = sol.duration || '-'; 
 
     const isPast = !Number.isNaN(depDateObj.getTime()) && depDateObj.getTime() < Date.now();
     const whenHtml = isPast ? '<div class="sol-when">Questa soluzione è nel passato</div>' : '';
+    const endDayHtml = (!isPast && depDayKey && arrDayKey && depDayKey !== arrDayKey)
+      ? `<div class="sol-end-day">Termina ${escapeHtml(formatItDayLong(arrDateObj))}</div>`
+      : '';
     
     // Treni: cerchiamo in diverse proprietà possibili.
     // Priorità a 'nodes' o 'solutionSegments' che contengono orari e stazioni per ogni tratta.
@@ -4274,7 +4388,9 @@ function renderTripResults(solutions, context = {}) {
 
     if (vehicleList.length > 1) {
       // Vista riassuntiva (con cambi)
-      trainsHtml = `<span class="train-badge badge-summary">${vehicleList.length - 1} cambi</span>`;
+      const changes = vehicleList.length - 1;
+      const changesLabel = changes === 1 ? 'cambio' : 'cambi';
+      trainsHtml = `<span class="train-badge badge-summary">${changes} ${changesLabel}</span>`;
     } else {
       // Diretto: badge con icona bolt.svg
       trainsHtml = `<span class="train-badge badge-summary badge-direct"><img src="img/bolt.svg" alt="Diretto" class="badge-bolt" /> diretto</span>`;
@@ -4284,9 +4400,22 @@ function renderTripResults(solutions, context = {}) {
     if (vehicleList.length > 0) {
       let innerSegments = '<div class="sol-segments">';
       vehicleList.forEach((node, idx) => {
-        const badge = getTrainBadge(node, { clickable: false });
         const tNode = node?.train || node;
         const nodeTrainNum = extractTrainNumber(tNode);
+        const nodeIdent = buildTrainIdentFromNode(node);
+        const nodeKind = deriveKindCodeFromIdent(nodeIdent, tNode);
+
+        const compactTrainLabel = (() => {
+          const num = String(nodeTrainNum || '').trim();
+          const kind = String(nodeKind || '').trim();
+          if (kind && num) return `${kind} ${num}`;
+          if (num) return `Treno ${num}`;
+          return String(nodeIdent || 'Treno').trim() || 'Treno';
+        })();
+
+        const nodeIconSrc = getTrainKindIconSrc(nodeKind);
+        const nodeIconAlt = nodeKind ? String(nodeKind) : 'Treno';
+        const nodeIconHtml = `<span class="sol-segment-train-icon" aria-hidden="true"><img src="${nodeIconSrc}" alt="${escapeHtml(nodeIconAlt)}" /></span>`;
 
         const dep = formatTime(node.departureTime);
         const arr = formatTime(node.arrivalTime);
@@ -4304,12 +4433,8 @@ function renderTripResults(solutions, context = {}) {
             <span class="sol-itinerary-station">${safeDest}</span>
         `;
 
-        const trainNumLabel = nodeTrainNum
-          ? `<span class="sol-segment-trainnum">· ${escapeHtml(nodeTrainNum)}</span>`
-          : '';
-
         const segmentInnerHtml = `
-            <span class="sol-segment-train">${badge}${trainNumLabel}</span>
+            <span class="sol-segment-train">${nodeIconHtml}${escapeHtml(compactTrainLabel)}</span>
             <span class="sol-segment-itinerary"><span class="sol-itinerary-compact">${itineraryInnerHtml}</span></span>
         `;
 
@@ -4372,6 +4497,7 @@ function renderTripResults(solutions, context = {}) {
                 <div class="sol-meta">
                     <div class="sol-duration">${duration}</div>
                   ${whenHtml}
+                  ${endDayHtml}
                     <div class="sol-trains">${trainsHtml}</div>
                 </div>
             </div>
