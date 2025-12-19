@@ -35,14 +35,7 @@
   /* Accent usato in alcune UI (es. soluzioni viaggio) */
   --primary: var(--state-early);
 
-  /* BRAND (azzurrino) ------------------------------------------------ */
-  /* Fallback neutri: i mix vengono applicati solo se supportati */
-  --brand: var(--primary);
-  --brand-wash: var(--bg-body);
-  --brand-surface: var(--bg-subtle);
-  --brand-surface-strong: var(--surface-hover);
-  --brand-border: var(--border-subtle);
-  --brand-ring: transparent;
+  /* BRAND rimosso temporaneamente */
 
   /* Pannelli/box secondari (match del precedente #f8fafc) */
   --bg-panel: #f8fafc;
@@ -82,11 +75,7 @@
 
 @supports (color: color-mix(in srgb, black, white)) {
   :root {
-    --brand-wash: color-mix(in srgb, var(--brand) 6%, var(--bg-body));
-    --brand-surface: color-mix(in srgb, var(--brand) 9%, var(--bg-card));
-    --brand-surface-strong: color-mix(in srgb, var(--brand) 14%, var(--bg-card));
-    --brand-border: color-mix(in srgb, var(--brand) 30%, var(--border-subtle));
-    --brand-ring: color-mix(in srgb, var(--brand) 32%, transparent);
+    /* brand variables removed */
   }
 }
 
@@ -287,11 +276,9 @@ select:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
   border-radius: var(--radius-card);
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  padding: 10px 12px;
+  padding: 10px 10px;
 }
 
 /* .app-title – coppia logo + testo */
@@ -303,8 +290,8 @@ select:focus-visible {
 
 /* .icon-img – icone vettoriali usate in header e card */
 .icon-img {
-  width: 32px;
-  height: 32px;
+  width: 50px;
+  height: 50px;
   object-fit: contain;
 }
 
@@ -507,22 +494,10 @@ select:focus-visible {
   align-items: center;
   gap: var(--gap-sm);
   position: relative;
-  padding-left: 10px;
+  padding-left: 7.5px;
   margin: 0 0 10px;
   font-size: 0.9rem;
   color: var(--text-main);
-}
-
-.card-title::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 4px;
-  height: 18px;
-  border-radius: var(--radius-pill);
-  background: var(--primary);
 }
 
 @media (max-width: 600px) {
@@ -532,8 +507,8 @@ select:focus-visible {
 }
 
 .card-title .icon-img {
-  width: 24px;
-  height: 24px;
+  width: 25px;
+  height: 25px;
 }
 
 /* SEARCH FORM ------------------------------------------------------- */
