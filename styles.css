@@ -378,7 +378,7 @@ select:focus-visible {
 }
 
 .card-train-search #trainResult {
-  margin-top: var(--timeline-gap); /* Consistent gap */
+  margin-top: 20px;
 }
 
 /* Selezione treno (numero ambiguo) --------------------------------- */
@@ -743,8 +743,8 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 #tripSearchBtn,
 #trainSearchBtn {
   background: var(--brand-surface);
-  border-color: var(--brand-border);
-  color: var(--text-main);
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 #tripSearchBtn:hover,
@@ -888,6 +888,195 @@ ul.autocomplete li .muted { font-size: 0.8rem; }
 .station-maps-btn:focus-visible {
   outline: 2px solid var(--text-main);
   outline-offset: 2px;
+}
+
+/* MINI MAP (SVG) ---------------------------------------------------- */
+.mini-map {
+  margin-top: var(--gap-sm);
+  width: 100%;
+  height: 190px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-subtle);
+  background: linear-gradient(180deg, rgba(148, 163, 184, 0.14), rgba(148, 163, 184, 0.06));
+  overflow: hidden;
+}
+
+/* SVG "nostre" (statiche) come figlio diretto della mini-map.
+   Non applicare a Leaflet (che usa SVG interno per marker/overlay). */
+.mini-map > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Leaflet: pin marker fermate (più riconoscibile) */
+.treninfo-leaflet-stop-icon {
+  background: transparent;
+  border: 0;
+  width: 20px;
+  height: 20px;
+  position: relative;
+}
+
+.treninfo-pin {
+  position: absolute;
+  left: 50%;
+  bottom: 1px;
+  width: 14px;
+  height: 14px;
+  transform: translateX(-50%) rotate(-45deg);
+  border-radius: 50% 50% 50% 0;
+  background: #0f172a;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.35);
+  pointer-events: none;
+}
+
+.treninfo-pin::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffffff;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.treninfo-pin--start { background: #16a34a; }
+.treninfo-pin--end { background: #dc2626; }
+.treninfo-pin--active {
+  background: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.22), 0 2px 10px rgba(15, 23, 42, 0.38);
+}
+
+.station-mini-map {
+  height: 170px;
+}
+
+.train-route-map {
+  margin-bottom: 0;
+}
+
+.train-route-map .map-widget-head {
+  margin-top: var(--gap-xs);
+}
+
+/* Spazio “giusto” tra mappa treno e fermate (evita che si attacchino) */
+.card-train-search #trainResult .train-route-map + .train-stops-collapse {
+  margin-top: var(--gap-sm);
+  padding-top: 0;
+  border-top: 0;
+}
+
+.map-widget-head {
+  margin-top: var(--gap-sm);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap-xs);
+  flex-wrap: wrap;
+}
+
+.map-recenter-btn {
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  padding: 4px 12px 4px 10px; /* match .station-maps-btn */
+  font-size: 0.72rem; /* match .station-maps-btn */
+  text-transform: uppercase;
+  letter-spacing: 0.16em; /* match .station-maps-btn */
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  transition: background var(--anim-normal), color var(--anim-normal), box-shadow var(--anim-normal);
+  flex: 0 0 auto;
+  white-space: nowrap;
+  margin-left: auto;
+  min-height: 0; /* override mobile generic button min-height */
+  height: auto;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  gap: var(--gap-xs);
+}
+
+.train-route-map .map-recenter-btn {
+  margin-left: 0;
+}
+
+.map-recenter-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.map-recenter-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-main);
+  box-shadow: var(--shadow-soft);
+}
+
+.map-recenter-btn:focus-visible {
+  outline: 2px solid var(--text-main);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .map-widget-head > span {
+    min-width: 0;
+  }
+}
+
+.mini-map-tiles {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #eef2f7;
+}
+
+.mini-map-tiles-grid {
+  position: absolute;
+  inset: 0;
+}
+
+.mini-map-tile {
+  position: absolute;
+  width: 256px;
+  height: 256px;
+  image-rendering: auto;
+  transform: translateZ(0);
+}
+
+.mini-map-tiles-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.mini-map-attrib {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(6px);
+}
+
+/* Forza altezza anche se vuoto */
+.mini-map { min-height: 190px; display: block; }
+
+/* Leaflet tweaks (solo estetica) */
+.mini-map .leaflet-control-zoom a {
+  border-radius: 10px;
 }
 
 .station-weather-temp--cold { color: #0369a1; }
@@ -1258,8 +1447,8 @@ a[href^='mailto'] {
   display: flex;
   justify-content: space-between;
   gap: var(--gap-sm);
-  margin-top: var(--gap-sm);
-  margin-bottom: var(--gap-sm);
+  margin-top: var(--gap-xs);
+  margin-bottom: var(--gap-xs);
 }
 
 /* .train-main – colonna info principali */
@@ -1288,7 +1477,7 @@ a[href^='mailto'] {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: var(--gap-sm);
+  gap: var(--gap-xs);
   min-width: 150px;
   font-size: 0.8rem;
 }
@@ -1410,7 +1599,7 @@ a[href^='mailto'] {
   display: flex;
   flex-direction: column;
   gap: var(--gap-xs);
-  margin-bottom: var(--gap-sm);
+  margin-bottom: var(--gap-xs);
 }
 
 .train-primary-main {
@@ -1427,6 +1616,20 @@ a[href^='mailto'] {
   align-items: center;
 }
 
+.train-last-inline {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  margin: 0;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.train-last-stale-note {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--state-very-late);
+}
+
 .train-primary-meta {
   margin: 0;
   font-size: 0.78rem;
@@ -1438,12 +1641,17 @@ a[href^='mailto'] {
   padding-top: 0;
 }
 
+.card .train-stops-collapse {
+  margin-top: 0;
+  padding-top: 0;
+}
+
 .train-stops-summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--gap-sm);
-  padding: 14px 16px;
+  padding: 10px 12px;
   cursor: pointer;
   font-size: 0.92rem;
   font-weight: 600;
@@ -2271,7 +2479,7 @@ a[href^='mailto'] {
   padding: 6px 16px;
   min-height: 40px;
   border-radius: var(--radius-pill);
-  border: 1px solid rgba(225, 29, 72, 0.28);
+  border: 1px solid var(--color-favorite);
   background: rgba(225, 29, 72, 0.08);
   color: var(--color-favorite);
   display: inline-flex;
@@ -2299,7 +2507,7 @@ a[href^='mailto'] {
 
 .favorite-current-btn.is-active {
   background: rgba(225, 29, 72, 0.12);
-  border-color: rgba(225, 29, 72, 0.38);
+  border-color: var(--color-favorite);
   color: var(--color-favorite);
 }
 
@@ -2314,7 +2522,10 @@ a[href^='mailto'] {
 
 .favorite-current-btn:active { transform: translateY(0); }
 
-.favorite-current-wrapper { margin-top: 0; }
+.favorite-current-wrapper { 
+  margin-top: var(--gap-sm); 
+  margin-bottom: var(--gap-sm);
+}
 
 .sr-only {
   position: absolute;
@@ -2465,16 +2676,21 @@ a[href^='mailto'] {
   .app-inner { padding: var(--card-padding-compact); }
   .app-header { flex-direction: column; align-items: flex-start; }
   .train-header { flex-direction: column; align-items: stretch; }
-  .train-header { margin-top: var(--gap-sm); margin-bottom: var(--gap-xs); }
+  .train-header { margin-top: var(--gap-xs); margin-bottom: var(--gap-xs); }
   .train-meta { align-items: flex-start; min-width: 0; }
 
-  .card .station-info-card,
-  .card .station-board,
-  .card .train-stops-collapse,
-  .card .trip-results {
-    margin-top: var(--gap-sm);
-    padding-top: var(--gap-sm);
-  }
+	  .card .station-info-card,
+	  .card .station-board,
+	  .card .train-stops-collapse,
+	  .card .trip-results {
+	    margin-top: var(--gap-sm);
+	    padding-top: var(--gap-sm);
+	  }
+	
+	  .card .train-stops-collapse {
+	    margin-top: 0;
+	    padding-top: 0;
+	  }
 
   input[type='text'],
   input[type='search'],
@@ -3447,6 +3663,7 @@ button.train-badge:active {
 .storage-chip.favorite {
   border-color: var(--color-favorite);
   background: rgba(225, 29, 72, 0.06);
+  color: var(--color-favorite);
 }
 
 .storage-chip-icon {
@@ -3526,7 +3743,7 @@ button.train-badge:active {
 
 .storage-chip-fav.is-active {
   background: rgba(225, 29, 72, 0.10);
-  border-color: rgba(225, 29, 72, 0.28);
+  border-color: var(--color-favorite);
   color: var(--color-favorite);
 }
 

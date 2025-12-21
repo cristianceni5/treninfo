@@ -31,7 +31,7 @@ Prossimamente anche con Italo di NTV.
 - `index.html`: UI (ricerca treno, cerca viaggio, cerca stazione).
 - `styles.css`: stile dell’app.
 - `script.js`: logica (fetch API, render UI, auto-refresh “onesto” e disambiguazione treni con stesso numero).
-- `stazioni_regioni.tsv`: indice locale per autocomplete stazioni (lato UI).
+- `stazioni_coord_coerenti.tsv`: indice locale stazioni (nome/codice/regione + coordinate).
 
 ### Backend
 
@@ -368,5 +368,3 @@ Sceglie lo snapshot che risulta più coerente (es. treno ancora in corso), altri
 ### Developed by Cristian Ceni 2025
 
 Tante madonne.
-
-

@@ -417,21 +417,36 @@ let stationIndex = [];
 let stationIndexByCode = new Map();
 let stationIndexLoadPromise = null;
 
+// --- CANONICALIZZAZIONE + COORDINATE STAZIONI (TSV/GEO) -----------------
+// File aggiunti:
+// - stazioni_coord_coerenti.tsv (name + id_staz + id_reg + lat/lon)
+// Obiettivo: coerenza nomi/codici + coordinate per mappe/tratte senza dipendere da VT.
+
+let stationCanonicalByCode = new Map();
+let stationCanonicalByKey = new Map();
+let stationCanonicalLoadPromise = null;
+
 function normalizeStationSearchKey(value) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
-async function ensureStationIndexLoaded() {
-  if (stationIndexLoadPromise) return stationIndexLoadPromise;
+async function ensureStationCanonicalLoaded() {
+  if (stationCanonicalLoadPromise) return stationCanonicalLoadPromise;
 
-  stationIndexLoadPromise = (async () => {
+  stationCanonicalLoadPromise = (async () => {
     try {
-      // Preferiamo il root (più semplice da servire in produzione), ma teniamo un fallback.
-      const paths = ['/stazioni_regioni.tsv', '/src/stazioni_regioni.tsv'];
+      const paths = [
+        '/stazioni_coord_coerenti.tsv',
+        '/stazioni_coord_canon.tsv',
+        '/src/stazioni_coord_coerenti.tsv',
+        '/src/stazioni_coord_canon.tsv',
+      ];
       let text = null;
 
       for (const path of paths) {
@@ -442,39 +457,1011 @@ async function ensureStationIndexLoaded() {
         }
       }
 
-      if (!text) throw new Error('TSV non trovato in /stazioni_regioni.tsv (fallback /src)');
+      if (!text) throw new Error('TSV stazioni non trovato (prova /stazioni_coord_coerenti.tsv)');
 
       const lines = text.split(/\r?\n/).filter(Boolean);
       if (lines.length <= 1) {
-        stationIndex = [];
-        stationIndexByCode = new Map();
+        stationCanonicalByCode = new Map();
+        stationCanonicalByKey = new Map();
         return;
       }
 
-      const parsed = [];
+      const header = (lines[0] || '').split('\t').map((h) => h.trim().toLowerCase());
+      const findIndex = (predicates) => {
+        for (let i = 0; i < header.length; i += 1) {
+          const h = header[i] || '';
+          if (predicates.some((p) => p(h))) return i;
+        }
+        return -1;
+      };
+
+      const codeIdx = findIndex([
+        (h) => h === 'id_staz' || h === 'idstaz' || h === 'codice' || h === 'code' || h === 'stationcode',
+        (h) => h.includes('id_staz') || h.includes('idstaz') || h.includes('stationcode'),
+      ]);
+
+      const regionIdx = findIndex([
+        (h) => h === 'id_reg' || h === 'idreg' || h === 'region' || h === 'regionid',
+        (h) => h.includes('id_reg') || h.includes('idreg'),
+      ]);
+
+      const latIdx = findIndex([(h) => h === 'lat' || h === 'latitude' || h.includes('lat')]);
+      const lonIdx = findIndex([
+        (h) => h === 'lon' || h === 'lng' || h === 'long' || h === 'longitude' || h.includes('lon'),
+      ]);
+
+      const nameCandidateIdxs = header
+        .map((h, idx) => ({ h, idx }))
+        .filter(({ h }) => /name|nome|stazione/.test(h))
+        .map(({ idx }) => idx);
+
+      const primaryNameIdx = nameCandidateIdxs.length ? nameCandidateIdxs[0] : 0;
+
       const byCode = new Map();
+      const byKey = new Map();
 
       for (let i = 1; i < lines.length; i += 1) {
         const line = lines[i];
         if (!line) continue;
         const parts = line.split('\t');
-        const name = (parts[0] || '').trim();
-        const code = (parts[1] || '').trim();
-        const regionId = (parts[2] || '').trim();
-        if (!name || !code) continue;
+        const code = normalizeStationCode(codeIdx >= 0 ? parts[codeIdx] : parts[1] || '');
+        if (!code) continue;
+
+        const primaryName = (parts[primaryNameIdx] || '').trim();
+        const regionId = (regionIdx >= 0 ? (parts[regionIdx] || '') : (parts[2] || '')).trim();
+        const latRaw = (latIdx >= 0 ? (parts[latIdx] || '') : (parts[3] || '')).trim();
+        const lonRaw = (lonIdx >= 0 ? (parts[lonIdx] || '') : (parts[4] || '')).trim();
+
+        const lat = latRaw ? Number(String(latRaw).replace(',', '.')) : null;
+        const lon = lonRaw ? Number(String(lonRaw).replace(',', '.')) : null;
+
         const item = {
-          name,
+          name: primaryName || code,
           code,
           regionId,
-          key: normalizeStationSearchKey(name),
+          lat: Number.isFinite(lat) ? lat : null,
+          lon: Number.isFinite(lon) ? lon : null,
+          key: normalizeStationSearchKey(primaryName || code),
         };
-        parsed.push(item);
-        byCode.set(code.toUpperCase(), item);
+
+        byCode.set(code, item);
+
+        const allNames = new Set();
+        if (primaryName) allNames.add(primaryName);
+        for (const idx of nameCandidateIdxs) {
+          const v = (parts[idx] || '').trim();
+          if (v) allNames.add(v);
+        }
+
+        for (const nm of allNames) {
+          const k = normalizeStationSearchKey(nm);
+          if (k && !byKey.has(k)) byKey.set(k, item);
+        }
       }
+
+      stationCanonicalByCode = byCode;
+      stationCanonicalByKey = byKey;
+    } catch (err) {
+      console.error('Errore caricamento TSV canonico stazioni:', err);
+      stationCanonicalByCode = new Map();
+      stationCanonicalByKey = new Map();
+    }
+  })();
+
+  return stationCanonicalLoadPromise;
+}
+
+function getCanonicalStationRecord(code, fallbackName = '') {
+  const normalized = normalizeStationCode(code);
+  if (normalized) {
+    const hit = stationCanonicalByCode.get(normalized);
+    if (hit) return hit;
+  }
+  const key = normalizeStationSearchKey(fallbackName);
+  if (key) {
+    const hit = stationCanonicalByKey.get(key);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function resolveStationDisplayName(code, fallbackName = '') {
+  const rec = getCanonicalStationRecord(code, fallbackName);
+  if (rec?.name) return rec.name;
+  return (fallbackName || '').toString().trim();
+}
+
+function parseCoordNumber(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  const s = String(raw).trim().replace(',', '.');
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function resolveStationCoords(code, fallbackName = '', stationDetails = null) {
+  const rec =
+    getCanonicalStationRecord(code, fallbackName) ||
+    stationIndexByCode.get(normalizeStationCode(code));
+
+  const lat =
+    (rec && rec.lat != null ? rec.lat : null) ??
+    parseCoordNumber(stationDetails?.latitudine ?? stationDetails?.lat ?? stationDetails?.latitude);
+  const lon =
+    (rec && rec.lon != null ? rec.lon : null) ??
+    parseCoordNumber(stationDetails?.longitudine ?? stationDetails?.lon ?? stationDetails?.longitude);
+
+  if (lat == null || lon == null) return null;
+  return { lat, lon };
+}
+
+function renderMiniMapSvg(container, points, options = {}) {
+  if (!container) return;
+
+  const opts = options && typeof options === 'object' ? options : {};
+  const mode = opts.mode === 'point' ? 'point' : 'route';
+  const titleRaw = (opts.title || '').toString().trim();
+
+  const cleaned = (Array.isArray(points) ? points : [])
+    .map((p) => ({
+      lat: Number(p?.lat),
+      lon: Number(p?.lon),
+      label: (p?.label || p?.name || '').toString(),
+      code: (p?.code || '').toString(),
+      stopIdx: Number.isFinite(p?.stopIdx) ? Number(p.stopIdx) : null,
+    }))
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+
+  if (!cleaned.length) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const W = 360;
+  const H = 190;
+  const M = 14;
+
+  let minLon = cleaned[0].lon;
+  let maxLon = cleaned[0].lon;
+  let minLat = cleaned[0].lat;
+  let maxLat = cleaned[0].lat;
+
+  for (const p of cleaned) {
+    if (p.lon < minLon) minLon = p.lon;
+    if (p.lon > maxLon) maxLon = p.lon;
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+  }
+
+  const lonSpanRaw = maxLon - minLon;
+  const latSpanRaw = maxLat - minLat;
+
+  const lonPad = lonSpanRaw > 0 ? lonSpanRaw * 0.12 : 0.02;
+  const latPad = latSpanRaw > 0 ? latSpanRaw * 0.12 : 0.02;
+
+  minLon -= lonPad;
+  maxLon += lonPad;
+  minLat -= latPad;
+  maxLat += latPad;
+
+  const lonSpan = maxLon - minLon || 0.04;
+  const latSpan = maxLat - minLat || 0.04;
+
+  const proj = (p) => {
+    const x = M + ((p.lon - minLon) / lonSpan) * (W - M * 2);
+    const y = M + ((maxLat - p.lat) / latSpan) * (H - M * 2);
+    return { x, y };
+  };
+
+  const projectedStops = cleaned.map((p) => {
+    const pt = proj(p);
+    return { ...p, ...pt };
+  });
+
+  const lineStops = cleaned;
+  const lineSource = mode === 'route' ? smoothLatLonPath(lineStops, { targetPoints: 520 }) : lineStops;
+  const routePos = mode === 'route' ? computeRoutePosition(lineStops, opts, -1) : null;
+  const split = mode === 'route' && routePos ? splitPathByPosition(lineSource, routePos) : null;
+  const pastLine = split ? split.past : lineSource;
+  const futureLine = split ? split.future : [];
+  const projectedLine = lineSource.map((p) => {
+    const pt = proj(p);
+    return { ...p, ...pt };
+  });
+
+  const projectLine = (line) =>
+    (Array.isArray(line) ? line : []).map((p) => {
+      const pt = proj(p);
+      return { ...p, ...pt };
+    });
+
+  const mkPolyline = (line, color, opacity) => {
+    const pr = projectLine(line);
+    if (pr.length < 2) return '';
+    const attr = pr.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    return `<polyline points="${attr}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}" pointer-events="none" />`;
+  };
+
+  const lineHtml =
+    mode === 'route'
+      ? (split
+        ? (mkPolyline(pastLine, '#16a34a', 0.95) + mkPolyline(futureLine, '#94a3b8', 0.75))
+        : mkPolyline(lineSource, '#2d7ff9', 0.9))
+      : '';
+
+  const circlesHtml = projectedStops
+    .map((p, idx) => {
+      const isEndpoint = idx === 0 || idx === projectedStops.length - 1;
+      const r = isEndpoint ? 5.2 : 3.6;
+      const fill = isEndpoint ? '#0f172a' : '#334155';
+      const stroke = '#ffffff';
+      return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="2" />`;
+    })
+    .join('');
+
+  const labelHtml = (() => {
+    if (!projectedStops.length) return '';
+    const first = projectedStops[0];
+    const last = projectedStops[projectedStops.length - 1];
+
+    const mk = (p, anchor) => {
+      const text = escapeHtml(p.label || '');
+      if (!text) return '';
+      const x = Math.min(Math.max(p.x, M), W - M);
+      const y = Math.min(Math.max(p.y - 8, M + 10), H - M);
+      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" font-size="12" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" fill="#0f172a" opacity="0.92">${text}</text>`;
+    };
+
+    const anchorFirst = first.x < W / 2 ? 'start' : 'end';
+    const anchorLast = last.x < W / 2 ? 'start' : 'end';
+
+    const onlyOne = projectedStops.length === 1;
+    if (onlyOne) return mk(first, 'middle');
+    return mk(first, anchorFirst) + mk(last, anchorLast);
+  })();
+
+  const title = escapeHtml(titleRaw);
+  const titleTag = title ? `<title>${title}</title>` : '';
+
+  container.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" role="img" aria-label="${title || 'Mappa'}" preserveAspectRatio="xMidYMid meet">
+      ${titleTag}
+      <rect x="0" y="0" width="${W}" height="${H}" fill="transparent" />
+      ${lineHtml}
+      ${circlesHtml}
+      ${labelHtml}
+    </svg>
+  `;
+}
+
+function clampLatMercator(lat) {
+  const v = Number(lat);
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(-85.05112878, Math.min(85.05112878, v));
+}
+
+function lonLatToWorldPixels(lon, lat, zoom, tileSize = 256) {
+  const z = Number(zoom);
+  const n = 2 ** z;
+  const x = ((Number(lon) + 180) / 360) * n * tileSize;
+  const latClamped = clampLatMercator(lat);
+  const rad = (latClamped * Math.PI) / 180;
+  const y =
+    ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) *
+    n *
+    tileSize;
+  return { x, y };
+}
+
+function worldPixelsToLonLat(x, y, zoom, tileSize = 256) {
+  const z = Number(zoom);
+  const n = 2 ** z;
+  const lon = (Number(x) / (n * tileSize)) * 360 - 180;
+  const yNorm = 1 - (2 * Number(y)) / (n * tileSize);
+  const lat = (Math.atan(Math.sinh(Math.PI * yNorm)) * 180) / Math.PI;
+  return { lon, lat };
+}
+
+function isLeafletAvailable() {
+  try {
+    return typeof window !== 'undefined' && !!window.L && typeof window.L.map === 'function';
+  } catch {
+    return false;
+  }
+}
+
+function smoothLatLonPath(points, options = {}) {
+  const pts = (Array.isArray(points) ? points : [])
+    .map((p) => ({ lat: Number(p?.lat), lon: Number(p?.lon) }))
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+
+  if (pts.length < 3) return pts.slice();
+
+  const opts = options && typeof options === 'object' ? options : {};
+  const segments = pts.length - 1;
+  const targetPoints = Number.isFinite(opts.targetPoints) ? Math.max(20, Number(opts.targetPoints)) : 520;
+  const samplesPerSegment = Math.max(2, Math.min(10, Math.floor(targetPoints / Math.max(1, segments))));
+  const maxOut = Number.isFinite(opts.maxPoints) ? Math.max(50, Number(opts.maxPoints)) : 900;
+
+  const out = [];
+
+  const catmullRom = (p0, p1, p2, p3, t) => {
+    const t2 = t * t;
+    const t3 = t2 * t;
+    const lat = 0.5 * (
+      (2 * p1.lat) +
+      (-p0.lat + p2.lat) * t +
+      (2 * p0.lat - 5 * p1.lat + 4 * p2.lat - p3.lat) * t2 +
+      (-p0.lat + 3 * p1.lat - 3 * p2.lat + p3.lat) * t3
+    );
+    const lon = 0.5 * (
+      (2 * p1.lon) +
+      (-p0.lon + p2.lon) * t +
+      (2 * p0.lon - 5 * p1.lon + 4 * p2.lon - p3.lon) * t2 +
+      (-p0.lon + 3 * p1.lon - 3 * p2.lon + p3.lon) * t3
+    );
+    return { lat, lon };
+  };
+
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    const p0 = pts[Math.max(0, i - 1)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(pts.length - 1, i + 2)];
+
+    for (let j = 0; j <= samplesPerSegment; j += 1) {
+      if (i > 0 && j === 0) continue; // evita duplicati
+      const t = j / samplesPerSegment;
+      const p = catmullRom(p0, p1, p2, p3, t);
+      out.push(p);
+      if (out.length >= maxOut) return out;
+    }
+  }
+
+  return out;
+}
+
+function renderMiniMapLeaflet(container, points, options = {}) {
+  if (!container || !isLeafletAvailable()) return null;
+
+  // Cleanup eventuale (se riusiamo lo stesso nodo).
+  const existing = container.__treninfoLeafletMap;
+  if (existing && typeof existing.remove === 'function') {
+    try {
+      existing.remove();
+    } catch {
+      // ignore
+    }
+    container.__treninfoLeafletMap = null;
+  }
+
+  const opts = options && typeof options === 'object' ? options : {};
+  const mode = opts.mode === 'point' ? 'point' : 'route';
+
+  const cleaned = (Array.isArray(points) ? points : [])
+    .map((p) => ({
+      lat: Number(p?.lat),
+      lon: Number(p?.lon),
+      label: (p?.label || p?.name || '').toString(),
+      code: (p?.code || '').toString(),
+      stopIdx: Number.isFinite(p?.stopIdx) ? Number(p.stopIdx) : null,
+    }))
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+
+  if (!cleaned.length) {
+    container.innerHTML = '';
+    return null;
+  }
+
+  container.innerHTML = '';
+
+  const L = window.L;
+  const map = L.map(container, {
+    zoomControl: true,
+    attributionControl: true,
+    scrollWheelZoom: true,
+  });
+  container.__treninfoLeafletMap = map;
+
+  const tiles = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    }
+  ).addTo(map);
+
+  const latLngs = cleaned.map((p) => L.latLng(p.lat, p.lon));
+  const overlayGroup = L.layerGroup().addTo(map);
+  let fitLatLngs = latLngs;
+
+  if (mode === 'route' && latLngs.length >= 2) {
+    const routePos = computeRoutePosition(cleaned, opts, -1);
+    const smooth = smoothLatLonPath(cleaned, { targetPoints: 650 });
+    fitLatLngs = smooth.map((p) => [p.lat, p.lon]);
+
+    if (routePos) {
+      const split = splitPathByPosition(smooth, routePos);
+      const pastLine = split.past.map((p) => [p.lat, p.lon]);
+      const futureLine = split.future.map((p) => [p.lat, p.lon]);
+
+      if (pastLine.length >= 2) {
+        L.polyline(pastLine, {
+          color: '#16a34a',
+          weight: 4,
+          opacity: 0.95,
+          lineCap: 'round',
+          lineJoin: 'round',
+          interactive: false,
+        }).addTo(overlayGroup);
+      }
+      if (futureLine.length >= 2) {
+        L.polyline(futureLine, {
+          color: '#94a3b8',
+          weight: 4,
+          opacity: 0.75,
+          lineCap: 'round',
+          lineJoin: 'round',
+          interactive: false,
+        }).addTo(overlayGroup);
+      }
+      L.circleMarker([routePos.lat, routePos.lon], {
+        radius: 5,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: '#2563eb',
+        fillOpacity: 0.95,
+        interactive: false,
+      }).addTo(overlayGroup);
+    } else {
+      L.polyline(fitLatLngs, {
+        color: '#2d7ff9',
+        weight: 4,
+        opacity: 0.9,
+        lineCap: 'round',
+        lineJoin: 'round',
+        interactive: false,
+      }).addTo(overlayGroup);
+    }
+  }
+
+  const activeCodeRaw = (opts.activeCode || '').toString().trim();
+  const activeCodeKey = activeCodeRaw ? normalizeStationCode(activeCodeRaw) : '';
+  const activeLabelKey = normalizeStationSearchKey((opts.activeLabel || '').toString());
+  const activeIdx = (() => {
+    if (activeCodeKey) {
+      const idx = cleaned.findIndex((p) => normalizeStationCode(p.code) === activeCodeKey);
+      if (idx >= 0) return idx;
+    }
+    if (activeLabelKey) {
+      const idx = cleaned.findIndex((p) => normalizeStationSearchKey(p.label) === activeLabelKey);
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  })();
+
+  const iconCache = new Map();
+  const getPinIcon = (kind) => {
+    const k = String(kind || 'mid');
+    if (iconCache.has(k)) return iconCache.get(k);
+    const icon = L.divIcon({
+      className: 'treninfo-leaflet-stop-icon',
+      html: `<div class="treninfo-pin treninfo-pin--${k}"></div>`,
+      iconSize: [20, 20],
+      iconAnchor: [10, 20],
+      tooltipAnchor: [0, -18],
+    });
+    iconCache.set(k, icon);
+    return icon;
+  };
+
+  const addPinMarker = (p, kind = 'mid') => {
+    const ll = L.latLng(p.lat, p.lon);
+    const marker = L.marker(ll, { icon: getPinIcon(kind), keyboard: false }).addTo(overlayGroup);
+    if (p.label) marker.bindTooltip(p.label, { direction: 'top', offset: [0, -12], opacity: 0.9 });
+  };
+
+  const markerIndices = new Set();
+  if (cleaned.length === 1) {
+    markerIndices.add(0);
+  } else {
+    const last = cleaned.length - 1;
+    markerIndices.add(0);
+    markerIndices.add(last);
+
+    const maxMarkers = Number.isFinite(opts.maxMarkers) ? Math.max(2, Number(opts.maxMarkers)) : 60;
+    const maxIntermediate = Math.max(0, maxMarkers - 2);
+    if (cleaned.length > 2 && maxIntermediate > 0) {
+      const step = Math.ceil((cleaned.length - 2) / maxIntermediate);
+      for (let i = 1; i < last; i += Math.max(1, step)) markerIndices.add(i);
+    }
+  }
+  if (activeIdx >= 0) markerIndices.add(activeIdx);
+
+  for (const idx of Array.from(markerIndices).sort((a, b) => a - b)) {
+    const p = cleaned[idx];
+    if (!p) continue;
+    const last = cleaned.length - 1;
+    const kind =
+      idx === activeIdx
+        ? 'active'
+        : (idx === 0 ? 'start' : (idx === last ? 'end' : 'mid'));
+    addPinMarker(p, kind);
+  }
+
+  const fit = () => {
+    if (latLngs.length === 1) {
+      map.setView(latLngs[0], Number.isFinite(opts.stationZoom) ? opts.stationZoom : 15);
+      return;
+    }
+    const bounds = L.latLngBounds(fitLatLngs);
+    map.fitBounds(bounds, { padding: [18, 18], maxZoom: Number.isFinite(opts.maxFitZoom) ? opts.maxFitZoom : 12 });
+  };
+
+  // Invalida dimensioni dopo render/layout, poi fit.
+  setTimeout(() => {
+    try {
+      map.invalidateSize();
+      fit();
+    } catch {
+      // ignore
+    }
+  }, 50);
+
+  fit();
+
+  return { map, fit, tiles };
+}
+
+function pickTileZoomForBounds(bounds, sizePx, options = {}) {
+  const opts = options && typeof options === 'object' ? options : {};
+  const tileSize = Number.isFinite(opts.tileSize) ? opts.tileSize : 256;
+  const minZoom = Number.isFinite(opts.minZoom) ? opts.minZoom : 5;
+  const maxZoom = Number.isFinite(opts.maxZoom) ? opts.maxZoom : 16;
+  const pad = Number.isFinite(opts.pad) ? opts.pad : 18;
+
+  for (let z = maxZoom; z >= minZoom; z -= 1) {
+    const p1 = lonLatToWorldPixels(bounds.minLon, bounds.maxLat, z, tileSize);
+    const p2 = lonLatToWorldPixels(bounds.maxLon, bounds.minLat, z, tileSize);
+    const spanX = Math.abs(p2.x - p1.x);
+    const spanY = Math.abs(p2.y - p1.y);
+    if (spanX <= sizePx.w - pad * 2 && spanY <= sizePx.h - pad * 2) {
+      return z;
+    }
+  }
+  return minZoom;
+}
+
+function renderMiniMapTilesOSM(container, points, options = {}) {
+  if (!container) return;
+
+  const opts = options && typeof options === 'object' ? options : {};
+  const mode = opts.mode === 'point' ? 'point' : 'route';
+  const titleRaw = (opts.title || '').toString().trim();
+  const activeIndexOverride = Number.isFinite(opts.activeIndex) ? Number(opts.activeIndex) : null;
+
+  const cleaned = (Array.isArray(points) ? points : [])
+    .map((p) => ({
+      lat: Number(p?.lat),
+      lon: Number(p?.lon),
+      label: (p?.label || p?.name || '').toString(),
+      code: (p?.code || '').toString(),
+      stopIdx: Number.isFinite(p?.stopIdx) ? Number(p.stopIdx) : null,
+    }))
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+
+  if (!cleaned.length) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const rect = container.getBoundingClientRect ? container.getBoundingClientRect() : null;
+  const W = rect && rect.width ? Math.max(1, Math.round(rect.width)) : 360;
+  const H = rect && rect.height ? Math.max(1, Math.round(rect.height)) : 190;
+  const tileSize = 256;
+
+  let minLon = cleaned[0].lon;
+  let maxLon = cleaned[0].lon;
+  let minLat = cleaned[0].lat;
+  let maxLat = cleaned[0].lat;
+
+  for (const p of cleaned) {
+    if (p.lon < minLon) minLon = p.lon;
+    if (p.lon > maxLon) maxLon = p.lon;
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+  }
+
+  const lonSpanRaw = maxLon - minLon;
+  const latSpanRaw = maxLat - minLat;
+  const lonPad = lonSpanRaw > 0 ? lonSpanRaw * 0.12 : 0.02;
+  const latPad = latSpanRaw > 0 ? latSpanRaw * 0.12 : 0.02;
+
+  minLon -= lonPad;
+  maxLon += lonPad;
+  minLat -= latPad;
+  maxLat += latPad;
+
+  const bounds = { minLon, maxLon, minLat, maxLat };
+  const zoomBias = Number.isFinite(opts.zoomBias) ? opts.zoomBias : 1;
+
+  const hasOverrideCenter = opts.center && Number.isFinite(opts.center.lat) && Number.isFinite(opts.center.lon);
+  const centerLat = hasOverrideCenter ? Number(opts.center.lat) : (minLat + maxLat) / 2;
+  const centerLon = hasOverrideCenter ? Number(opts.center.lon) : (minLon + maxLon) / 2;
+
+  const hasOverrideZoom = Number.isFinite(opts.zoom);
+  const baseZoomFit = pickTileZoomForBounds(bounds, { w: W, h: H }, { minZoom: 5, maxZoom: 16, tileSize, pad: 18 });
+  const baseZoom = hasOverrideZoom
+    ? Math.min(16, Math.max(5, Math.round(Number(opts.zoom))))
+    : Math.min(16, Math.max(5, baseZoomFit + zoomBias));
+
+  let zFinal = baseZoom;
+  let oFX = 0;
+  let oFY = 0;
+  let sX = 0;
+  let sY = 0;
+  let eX = 0;
+  let eY = 0;
+  let nFinal = 0;
+
+  const MAX_TILES_TOTAL = 56; // abbastanza per desktop, ma evita richieste eccessive
+  const computeView = (z) => {
+    const n = 2 ** z;
+    const c = lonLatToWorldPixels(centerLon, centerLat, z, tileSize);
+    const oX = c.x - W / 2;
+    const oY = c.y - H / 2;
+    const startX = Math.floor(oX / tileSize);
+    const startY = Math.floor(oY / tileSize);
+    const endX = Math.floor((oX + W) / tileSize);
+    const endY = Math.floor((oY + H) / tileSize);
+    const tilesX = endX - startX + 1;
+    const tilesY = endY - startY + 1;
+    return { n, oX, oY, startX, startY, endX, endY, tilesTotal: tilesX * tilesY };
+  };
+
+  let found = false;
+  for (let z = baseZoom; z >= 5; z -= 1) {
+    const view = computeView(z);
+    if (view.tilesTotal <= MAX_TILES_TOTAL) {
+      zFinal = z;
+      nFinal = view.n;
+      oFX = view.oX;
+      oFY = view.oY;
+      sX = view.startX;
+      sY = view.startY;
+      eX = view.endX;
+      eY = view.endY;
+      found = true;
+      break;
+    }
+  }
+
+  // Se anche al minZoom il numero di tile è troppo grande, fallback SVG.
+  if (!found) {
+    renderMiniMapSvg(container, cleaned, opts);
+    return;
+  }
+
+  const subdomains = ['a', 'b', 'c'];
+  const tiles = [];
+  for (let ty = sY; ty <= eY; ty += 1) {
+    if (ty < 0 || ty >= nFinal) continue;
+    for (let tx = sX; tx <= eX; tx += 1) {
+      const normX = ((tx % nFinal) + nFinal) % nFinal;
+      const left = tx * tileSize - oFX;
+      const top = ty * tileSize - oFY;
+      const s = subdomains[(Math.abs(tx) + Math.abs(ty)) % subdomains.length];
+      const src = `https://${s}.tile.openstreetmap.org/${zFinal}/${normX}/${ty}.png`;
+      tiles.push({ left, top, src });
+    }
+  }
+
+  const projectToLocal = (p) => {
+    const w = lonLatToWorldPixels(p.lon, p.lat, zFinal, tileSize);
+    return { x: w.x - oFX, y: w.y - oFY };
+  };
+
+  const projectedStops = cleaned.map((p) => ({ ...p, ...projectToLocal(p) }));
+  const routePos = mode === 'route' ? computeRoutePosition(cleaned, opts, activeIndex) : null;
+  const lineSource = mode === 'route' ? smoothLatLonPath(cleaned, { targetPoints: 520 }) : cleaned;
+  const split = mode === 'route' && routePos ? splitPathByPosition(lineSource, routePos) : null;
+
+  const projectLine = (line) =>
+    (Array.isArray(line) ? line : []).map((p) => ({ ...p, ...projectToLocal(p) }));
+
+  const mkPolyline = (line, color, opacity) => {
+    const pr = projectLine(line);
+    if (pr.length < 2) return '';
+    const attr = pr.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    return `<polyline points="${attr}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}" />`;
+  };
+
+  const lineHtml =
+    mode === 'route'
+      ? (split
+        ? (mkPolyline(split.past, '#16a34a', 0.95) + mkPolyline(split.future, '#94a3b8', 0.75))
+        : mkPolyline(lineSource, '#2d7ff9', 0.9))
+      : '';
+
+  const positionDotHtml = (() => {
+    if (!routePos) return '';
+    const p = { ...routePos, ...projectToLocal(routePos) };
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return '';
+    return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="5.2" fill="#2563eb" stroke="#ffffff" stroke-width="2" opacity="0.95" />`;
+  })();
+
+  const circlesHtml = projectedStops
+    .map((p, idx) => {
+      const isEndpoint = idx === 0 || idx === projectedStops.length - 1;
+      const isActive = activeIndex != null && idx === activeIndex;
+      const r = isActive ? 6.6 : (isEndpoint ? 5.2 : 3.6);
+      const fill = isActive ? '#2563eb' : (isEndpoint ? '#0f172a' : '#334155');
+      const stroke = '#ffffff';
+      const label = escapeHtml(p.label || '');
+      return `<circle class="mini-map-marker${isActive ? ' is-active' : ''}" data-idx="${idx}" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="2" tabindex="0" role="button" aria-label="${label}" />`;
+    })
+    .join('');
+
+  const title = escapeHtml(titleRaw);
+  const titleTag = title ? `<title>${title}</title>` : '';
+
+  const tilesHtml = tiles
+    .map((t) => `<img class="mini-map-tile" src="${t.src}" alt="" loading="lazy" style="left:${t.left.toFixed(1)}px; top:${t.top.toFixed(1)}px" />`)
+    .join('');
+
+  container.innerHTML = `
+    <div class="mini-map-tiles" role="img" aria-label="${title || 'Mappa'}" data-zoom="${zFinal}">
+      <div class="mini-map-tiles-grid" aria-hidden="true">${tilesHtml}</div>
+      <svg class="mini-map-tiles-overlay" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+        ${titleTag}
+        ${lineHtml}
+        ${positionDotHtml}
+        ${circlesHtml}
+      </svg>
+      <div class="mini-map-attrib">&copy; OpenStreetMap contributors</div>
+    </div>
+  `;
+}
+
+function attachMapWidget(root, points, options = {}) {
+  if (!root) return;
+  const body = root.querySelector('.map-widget-body');
+  if (!body) return;
+  const recenterBtn = root.querySelector('[data-map-action="recenter"]');
+  const gotoActiveBtn = root.querySelector('[data-map-action="goto-active"]');
+
+  const cleaned = (Array.isArray(points) ? points : [])
+    .map((p) => ({
+      lat: Number(p?.lat),
+      lon: Number(p?.lon),
+      label: (p?.label || p?.name || '').toString(),
+      code: (p?.code || '').toString(),
+      stopIdx: Number.isFinite(p?.stopIdx) ? Number(p.stopIdx) : null,
+    }))
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+  if (!cleaned.length) return;
+
+  const opts = options && typeof options === 'object' ? options : {};
+  // Default: Leaflet (pan/zoom naturale). Fallback: tiles statiche.
+  const bindAction = (btn, fn) => {
+    if (!btn) return;
+    if (btn.__treninfoBound) return;
+    btn.__treninfoBound = true;
+    btn.addEventListener('click', () => {
+      try {
+        fn();
+      } catch {
+        // ignore
+      }
+    });
+  };
+
+  const getActiveLatLon = () => {
+    const activeCodeRaw = (opts.activeCode || '').toString().trim();
+    const activeCodeKey = activeCodeRaw ? normalizeStationCode(activeCodeRaw) : '';
+    if (activeCodeKey) {
+      const hit = cleaned.find((p) => normalizeStationCode(p.code) === activeCodeKey);
+      if (hit) return { lat: hit.lat, lon: hit.lon };
+    }
+    const activeLabelKey = normalizeStationSearchKey((opts.activeLabel || '').toString());
+    if (activeLabelKey) {
+      const hit = cleaned.find((p) => normalizeStationSearchKey(p.label) === activeLabelKey);
+      if (hit) return { lat: hit.lat, lon: hit.lon };
+    }
+    return null;
+  };
+
+  const scrollToCurrentStop = () => {
+    try {
+      const scope = root.closest('#trainResult') || document;
+      const el =
+        scope.querySelector('.stop-card.stop-current') ||
+        scope.querySelector('tr.stop-current');
+      if (!el || typeof el.scrollIntoView !== 'function') return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch {
+      // ignore
+    }
+  };
+
+  try {
+    const leaflet = renderMiniMapLeaflet(body, cleaned, opts);
+    if (leaflet) {
+      bindAction(recenterBtn, () => leaflet.fit());
+      bindAction(gotoActiveBtn, () => {
+        const pos = getActiveLatLon();
+        if (!pos) return;
+        const z = Number.isFinite(opts.activeZoom) ? Number(opts.activeZoom) : 15;
+        leaflet.map.setView([pos.lat, pos.lon], z, { animate: true });
+        scrollToCurrentStop();
+      });
+      return;
+    }
+  } catch (err) {
+    console.error('Errore Leaflet, fallback:', err);
+  }
+
+  try {
+    const renderBase = () => renderMiniMapTilesOSM(body, cleaned, opts);
+    renderBase();
+    bindAction(recenterBtn, renderBase);
+    bindAction(gotoActiveBtn, () => {
+      const pos = getActiveLatLon();
+      if (!pos) return;
+      const z = Number.isFinite(opts.activeZoom) ? Math.round(Number(opts.activeZoom)) : 14;
+      renderMiniMapTilesOSM(body, cleaned, { ...opts, center: { lat: pos.lat, lon: pos.lon }, zoom: z });
+      scrollToCurrentStop();
+    });
+  } catch (err) {
+    console.error('Errore mappa tiles, fallback SVG:', err);
+    renderMiniMapSvg(body, cleaned, opts);
+    bindAction(recenterBtn, () => renderMiniMapSvg(body, cleaned, opts));
+    bindAction(gotoActiveBtn, () => {
+      const pos = getActiveLatLon();
+      if (!pos) return;
+      // SVG non è zoomabile: ridisegna comunque (best-effort).
+      renderMiniMapSvg(body, cleaned, opts);
+      scrollToCurrentStop();
+    });
+  }
+}
+
+function findClosestPointIndex(points, target) {
+  const pts = Array.isArray(points) ? points : [];
+  if (!pts.length) return -1;
+  const tLat = Number(target?.lat);
+  const tLon = Number(target?.lon);
+  if (!Number.isFinite(tLat) || !Number.isFinite(tLon)) return -1;
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < pts.length; i += 1) {
+    const p = pts[i];
+    const dLat = Number(p.lat) - tLat;
+    const dLon = Number(p.lon) - tLon;
+    const d = dLat * dLat + dLon * dLon;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+function findClosestPointByStopIdx(points, stopIdx) {
+  const pts = Array.isArray(points) ? points : [];
+  const s = Number(stopIdx);
+  if (!Number.isFinite(s) || !pts.length) return null;
+  let best = null;
+  let bestD = Infinity;
+  for (const p of pts) {
+    if (!p || !Number.isFinite(p.stopIdx)) continue;
+    const d = Math.abs(p.stopIdx - s);
+    if (d < bestD) {
+      bestD = d;
+      best = p;
+    }
+  }
+  return best;
+}
+
+function computeRoutePosition(points, options = {}, fallbackIndex = -1) {
+  const pts = Array.isArray(points) ? points : [];
+  if (!pts.length) return null;
+  const opts = options && typeof options === 'object' ? options : {};
+
+  const hasSegment =
+    opts.segment &&
+    Number.isFinite(opts.segment.fromIdx) &&
+    Number.isFinite(opts.segment.toIdx) &&
+    typeof opts.segment.progress === 'number' &&
+    opts.segment.progress != null;
+
+  if (hasSegment) {
+    const from = findClosestPointByStopIdx(pts, Number(opts.segment.fromIdx));
+    const to = findClosestPointByStopIdx(pts, Number(opts.segment.toIdx));
+    const prog = Math.max(0, Math.min(1, Number(opts.segment.progress)));
+    if (from && to) {
+      return {
+        lat: from.lat + (to.lat - from.lat) * prog,
+        lon: from.lon + (to.lon - from.lon) * prog,
+      };
+    }
+  }
+
+  const activeCodeRaw = (opts.activeCode || '').toString().trim();
+  const activeCodeKey = activeCodeRaw ? normalizeStationCode(activeCodeRaw) : '';
+  if (activeCodeKey) {
+    const hit = pts.find((p) => normalizeStationCode(p.code) === activeCodeKey);
+    if (hit) return { lat: hit.lat, lon: hit.lon };
+  }
+
+  const activeLabelKey = normalizeStationSearchKey((opts.activeLabel || '').toString());
+  if (activeLabelKey) {
+    const hit = pts.find((p) => normalizeStationSearchKey(p.label) === activeLabelKey);
+    if (hit) return { lat: hit.lat, lon: hit.lon };
+  }
+
+  if (Number.isFinite(fallbackIndex) && pts[fallbackIndex]) {
+    const p = pts[fallbackIndex];
+    return { lat: p.lat, lon: p.lon };
+  }
+
+  return null;
+}
+
+function splitPathByPosition(path, position) {
+  const pts = Array.isArray(path) ? path : [];
+  if (pts.length < 2) return { past: pts.slice(), future: [] };
+  const idx = findClosestPointIndex(pts, position);
+  if (idx < 0) return { past: [], future: pts.slice() };
+  const past = pts.slice(0, idx + 1);
+  const future = pts.slice(idx);
+  return { past, future };
+}
+
+function buildTrainRoutePoints(stops, limit = 80) {
+  const fermate = Array.isArray(stops) ? stops : [];
+  const out = [];
+  let lastKey = '';
+
+  for (let idx = 0; idx < fermate.length; idx += 1) {
+    const f = fermate[idx];
+    if (!f || typeof f !== 'object') continue;
+    const code = getStopStationCode(f);
+    const nameRaw = f.stazione || f.stazioneNome || '';
+    const label = resolveStationDisplayName(code, nameRaw) || nameRaw || '';
+    const coords = resolveStationCoords(code, label, null);
+    if (!coords) continue;
+
+    const key = code ? normalizeStationCode(code) : normalizeStationSearchKey(label);
+    if (!key) continue;
+    if (key === lastKey) continue;
+
+    out.push({ ...coords, label, code: code || '', stopIdx: idx });
+    lastKey = key;
+    if (out.length >= limit) break;
+  }
+
+  return out;
+}
+
+async function ensureStationIndexLoaded() {
+  if (stationIndexLoadPromise) return stationIndexLoadPromise;
+
+  stationIndexLoadPromise = (async () => {
+    try {
+      await ensureStationCanonicalLoaded();
+
+      // L'indice per l'autocomplete è direttamente quello "coerente".
+      const parsed = Array.from(stationCanonicalByCode.values())
+        .filter((item) => item && item.name && item.code);
 
       parsed.sort((a, b) => a.key.localeCompare(b.key, 'it'));
       stationIndex = parsed;
-      stationIndexByCode = byCode;
+      stationIndexByCode = new Map(
+        parsed.map((item) => [normalizeStationCode(item.code), item])
+      );
     } catch (err) {
       console.error('Errore caricamento indice stazioni TSV:', err);
       stationIndex = [];
@@ -1090,13 +2077,18 @@ function setStationLoadingDisplay() {
 }
 
 async function loadStationByCode(name, code) {
+  try {
+    await ensureStationCanonicalLoaded();
+  } catch {
+    // ignore
+  }
   const normalizedCode = normalizeStationCode(code);
   if (!normalizedCode) {
     console.warn('Codice stazione non valido per la selezione rapida:', code);
     return;
   }
 
-  const displayName = name || normalizedCode;
+  const displayName = resolveStationDisplayName(normalizedCode, name) || normalizedCode;
   
   if (typeof addRecentStation === 'function') {
     addRecentStation({ id: normalizedCode, name: displayName });
@@ -1152,45 +2144,42 @@ async function loadStationByCode(name, code) {
 function renderStationInfoContent(selection, infoPayload) {
   if (!stationInfoContainer) return;
   const stationDetails = infoPayload?.station || {};
-  const regionLabel = resolveRegionLabel(stationDetails, infoPayload);
-  const lat = stationDetails.latitudine ?? stationDetails.lat ?? stationDetails.latitude;
-  const lon = stationDetails.longitudine ?? stationDetails.lon ?? stationDetails.longitude;
-  const hasCoords = lat != null && lon != null && lat !== '' && lon !== '';
-  const mapsLink = hasCoords ? `https://www.google.com/maps?q=${lat},${lon}` : null;
+  const coords = resolveStationCoords(selection?.code, selection?.name, stationDetails);
+  const hasCoords = !!coords;
+  const mapsLink = hasCoords ? `https://www.google.com/maps?q=${coords.lat},${coords.lon}` : null;
   const stationCodes = getStationCodeCandidates(selection, stationDetails, infoPayload);
-  const weatherDetails = buildWeatherDetails(infoPayload?.meteo, stationCodes);
-
-  const regionLabelText = typeof regionLabel === 'string' ? regionLabel.trim() : '';
-  const temperatureText = typeof weatherDetails?.temperature === 'string' ? weatherDetails.temperature : '';
-  const rawTempClass = temperatureText && typeof weatherDetails?.temperatureClass === 'string'
-    ? weatherDetails.temperatureClass
-    : '';
-  const safeTempClass = rawTempClass ? ` ${escapeHtml(rawTempClass)}` : '';
-  const regionSegments = [];
-  if (regionLabelText) {
-    regionSegments.push(`<span class="station-info-region-label">${escapeHtml(regionLabelText)}</span>`);
-  }
-  if (temperatureText) {
-    regionSegments.push(`<span class="station-info-temp${safeTempClass}">${escapeHtml(temperatureText)}</span>`);
-  }
-  const regionLine = regionSegments.length
-    ? `<p class="station-info-region-text">${regionSegments.join(' · ')}</p>`
-    : '';
+  void stationCodes;
 
   stationInfoContainer.classList.remove('hidden');
   stationInfoContainer.innerHTML = `
-    <div class="station-info-header">
-      <div>
-        ${regionLine}
+    ${hasCoords ? `
+      <div class="map-widget" id="stationMapWidget">
+        <div class="map-widget-head">
+          ${mapsLink
+            ? `<a href="${mapsLink}" target="_blank" rel="noopener noreferrer" class="station-maps-btn">
+                <img src="/img/maps.png" alt="" class="station-maps-icon" aria-hidden="true" />
+                Maps
+              </a>`
+            : ''}
+          <button type="button" class="map-recenter-btn" data-map-action="recenter">
+            <img src="/img/gps.svg" alt="" class="map-recenter-icon" aria-hidden="true" />
+            Ricentra
+          </button>
+        </div>
+        <div class="mini-map station-mini-map map-widget-body" id="stationMiniMap"></div>
       </div>
-      ${mapsLink
-        ? `<a href="${mapsLink}" target="_blank" rel="noopener noreferrer" class="station-maps-btn">
-            <img src="/img/maps.png" alt="" class="station-maps-icon" aria-hidden="true" />
-            Maps
-          </a>`
-        : ''}
-    </div>
+    ` : `<p class="small muted">Coordinate non disponibili.</p>`}
   `;
+
+  if (hasCoords) {
+    const displayName = resolveStationDisplayName(selection?.code, selection?.name) || 'Stazione';
+    const root = stationInfoContainer.querySelector('#stationMapWidget');
+    attachMapWidget(
+      root,
+      [{ ...coords, label: displayName }],
+      { mode: 'point', title: `Stazione: ${displayName}`, stationZoom: 15 }
+    );
+  }
 }
 
 function buildBoardDelayBadge(delay, isCancelled) {
@@ -1239,9 +2228,10 @@ function buildStationBoardRow(entry, type) {
     ? entry.compOrarioPartenzaZero || entry.orarioPartenza || entry.origineZero
     : entry.compOrarioArrivoZero || entry.orarioArrivo || entry.destinazioneZero;
   const timeLabel = formatBoardClock(rawTime);
-  const routeLabel = isDeparture
+  const routeLabelRaw = isDeparture
     ? (entry.destinazione || entry.destinazioneBreve || entry.compDestinazione || '-')
     : (entry.provenienza || entry.origine || entry.compOrigine || '-');
+  const routeLabel = resolveStationDisplayName('', routeLabelRaw) || routeLabelRaw || '-';
   const category = entry.categoria || entry.compTipologiaTreno || entry.tipoTreno || 'Treno';
   const compTrainCode = entry.compNumeroTreno || entry.siglaTreno || '';
   const numericTrainCode = entry.numeroTreno || (compTrainCode.match(/\d+/)?.[0] ?? '');
@@ -3008,6 +3998,14 @@ function renderTrainStatus(payload) {
     journeyState: journey.state,
     globalDelay,
   });
+  const mapSegment = (timelineState?.activeSegment === true &&
+    Number.isFinite(timelineState?.fromIdx) &&
+    Number.isFinite(timelineState?.toIdx) &&
+    typeof timelineState?.progress === 'number' &&
+    timelineState?.progress != null)
+    ? { fromIdx: timelineState.fromIdx, toIdx: timelineState.toIdx, progress: timelineState.progress }
+    : null;
+  const mapPastIdx = Number.isFinite(timelineState?.linePastIdx) ? Number(timelineState.linePastIdx) : null;
 
   const isConcludedAtLastStop = (() => {
     if (journey.state === 'CANCELLED' || journey.state === 'PARTIAL') return false;
@@ -3047,6 +4045,22 @@ function renderTrainStatus(payload) {
   const lastDetectionIsStale = lastDetectionAgeMinutes != null && lastDetectionAgeMinutes > 10;
   const lastDetectionTitle = lastDetectionIsStale
     ? 'Ultimo rilevamento più vecchio di 10 minuti'
+    : '';
+  const lastDetectionTrailText = (() => {
+    if (isConcludedAtLastStop) return '';
+    if (!d.oraUltimoRilevamento) return '';
+
+    const time0 = formatTimeFlexible(d.oraUltimoRilevamento);
+    const station0 = d.stazioneUltimoRilevamento ? String(d.stazioneUltimoRilevamento).trim() : '';
+    const base0 = `${time0}${station0 ? ` - ${station0}` : ''}`.trim();
+    if (!base0 || base0 === '-') return '';
+    return base0;
+  })();
+  const lastDetectionInlineHtml = lastDetectionTrailText
+    ? `<p class="train-last-inline"${lastDetectionTitle ? ` title='${escapeHtml(lastDetectionTitle)}'` : ''}>${escapeHtml(lastDetectionTrailText)}</p>`
+    : '';
+  const lastDetectionStaleHtml = lastDetectionIsStale
+    ? `<div class="train-last-stale-note">Dati non aggiornati da oltre 10 min</div>`
     : '';
 
   const badgeLabelMap = {
@@ -3089,18 +4103,6 @@ function renderTrainStatus(payload) {
           <span>Arrivo <strong>${plannedArrival}</strong></span>
         </div>
       </div>
-      <div class='train-meta'>
-        ${!isConcludedAtLastStop && d.oraUltimoRilevamento
-      ? `<div class='train-last${lastDetectionIsStale ? ' train-last--stale' : ''}'${lastDetectionTitle ? ` title='${lastDetectionTitle}'` : ''}>
-                Ultimo rilevamento ${formatTimeFlexible(d.oraUltimoRilevamento)}
-                ${d.stazioneUltimoRilevamento ? ` – ${d.stazioneUltimoRilevamento}` : ''}
-                ${lastDetectionIsStale
-                  ? ` · ultimo rilevamento risale a oltre 10 min fa <img src="/img/ah.png" alt="Info" class="train-info-icon" title="Il dato potrebbe non essere aggiornato in tempo reale" />`
-                  : ''}
-              </div>`
-      : ''
-    }
-      </div>
     </div>
   `;
 
@@ -3118,6 +4120,8 @@ function renderTrainStatus(payload) {
       ? `<p class="train-primary-sub">${primary.delayLine}</p>`
       : ''
     }
+      ${lastDetectionInlineHtml || ''}
+      ${lastDetectionStaleHtml}
       ${primary.delaySubLine
       ? `<p class="train-primary-subtitle">
         <img src="/img/ah.png" alt="Info" class="icon-inline" />
@@ -3132,6 +4136,33 @@ function renderTrainStatus(payload) {
       ${favoriteBtnHtml ? `<div class='favorite-current-wrapper'>${favoriteBtnHtml}</div>` : ''}
     </div>
   `;
+
+  const routePoints = buildTrainRoutePoints(fermate, 220);
+  const showRouteMap = routePoints.length >= 1;
+  const originLabel = resolveStationDisplayName('', trainMeta.origine) || trainMeta.origine || '';
+  const destLabel = resolveStationDisplayName('', trainMeta.destinazione) || trainMeta.destinazione || '';
+  const routeMapAriaTitle = originLabel && destLabel ? `Percorso treno: ${originLabel} → ${destLabel}` : 'Percorso treno';
+  const activeStop = timelineState.currentIdx >= 0 ? fermate[timelineState.currentIdx] : null;
+  const activeStopCode = activeStop ? getStopStationCode(activeStop) : '';
+  const activeStopName = activeStop ? (activeStop.stazione || activeStop.stazioneNome || '') : '';
+  const routeMapHtml = showRouteMap
+    ? `
+      <div class="train-route-map">
+        <div class="map-widget" id="trainMapWidget">
+          <div class="map-widget-head">
+            <button type="button" class="map-recenter-btn" data-map-action="goto-active">
+              Vedi fermata
+            </button>
+            <button type="button" class="map-recenter-btn" data-map-action="recenter">
+              <img src="/img/gps.svg" alt="" class="map-recenter-icon" aria-hidden="true" />
+              Ricentra
+            </button>
+          </div>
+          <div class="mini-map train-mini-map map-widget-body" id="trainMiniMap"></div>
+        </div>
+      </div>
+    `
+    : '';
 
   // Tabella fermate ---------------------------------------------------
 
@@ -3334,11 +4365,12 @@ function renderTrainStatus(payload) {
       const arrivalScheduledDisplay = showArrival ? arrProg : '--';
       const departureScheduledDisplay = showDeparture ? depProg : '--';
       const stationNameRaw = f.stazione || f.stazioneNome || '-';
-      const safeStationName = escapeHtml(stationNameRaw || '-');
       const stationCode = getStopStationCode(f);
-      const encodedStationName = encodeDatasetValue(stationNameRaw || '');
+      const stationName = resolveStationDisplayName(stationCode, stationNameRaw) || stationNameRaw || '-';
+      const safeStationName = escapeHtml(stationName || '-');
+      const encodedStationName = encodeDatasetValue(stationName || '');
       const encodedStationCode = stationCode ? encodeDatasetValue(stationCode) : '';
-      const stationAriaLabel = escapeHtml(`Apri dettagli stazione ${stationNameRaw || ''}`.trim());
+      const stationAriaLabel = escapeHtml(`Apri dettagli stazione ${stationName || ''}`.trim());
       const stationDataAttrs = `data-station-name="${encodedStationName}"${encodedStationCode ? ` data-station-code="${encodedStationCode}"` : ''} aria-label="${stationAriaLabel || 'Apri stazione'}"`;
 
       return `
@@ -3551,9 +4583,10 @@ function renderTrainStatus(payload) {
       const arrivalPlannedDisplay = showArrival ? arrProg : '--';
       const departurePlannedDisplay = showDeparture ? depProg : '--';
 
-      const stazioneName = f.stazione || f.stazioneNome || '-';
-      const safeStationName = escapeHtml(stazioneName || '-');
       const stationCode = getStopStationCode(f);
+      const stazioneNameRaw = f.stazione || f.stazioneNome || '-';
+      const stazioneName = resolveStationDisplayName(stationCode, stazioneNameRaw) || stazioneNameRaw || '-';
+      const safeStationName = escapeHtml(stazioneName || '-');
       const encodedStationName = encodeDatasetValue(stazioneName || '');
       const encodedStationCode = stationCode ? encodeDatasetValue(stationCode) : '';
       const stationAriaLabel = escapeHtml(`Apri dettagli stazione ${stazioneName || ''}`.trim());
@@ -3619,16 +4652,42 @@ function renderTrainStatus(payload) {
     `;
   }
 
-  const jsonDebugHtml = `
-    <details class='json-debug'>
-      <summary>Dettagli raw (JSON ViaggiaTreno)</summary>
-      <pre>${escapeHtml(JSON.stringify(d, null, 2))}</pre>
-    </details>
-  `;
+  const jsonDebugHtml = isDebugUiEnabled()
+    ? `
+      <details class='json-debug'>
+        <summary>Dettagli raw (JSON ViaggiaTreno)</summary>
+        <pre>${escapeHtml(JSON.stringify(d, null, 2))}</pre>
+      </details>
+    `
+    : '';
 
-  trainResult.innerHTML = headerHtml + primaryHtml + tableHtml + jsonDebugHtml;
+  trainResult.innerHTML = headerHtml + primaryHtml + routeMapHtml + tableHtml + jsonDebugHtml;
+
+  if (showRouteMap) {
+    const root = trainResult.querySelector('#trainMapWidget');
+    attachMapWidget(root, routePoints, {
+      mode: 'route',
+      title: routeMapAriaTitle,
+      maxFitZoom: 12,
+      activeCode: activeStopCode,
+      activeLabel: activeStopName,
+      activeZoom: 15,
+      segment: mapSegment,
+      pastStopIdx: mapPastIdx,
+    });
+  }
 
   return { concluded: isConcludedAtLastStop };
+}
+
+function isDebugUiEnabled() {
+  try {
+    if (typeof window === 'undefined') return false;
+    const p = new URLSearchParams(window.location.search || '');
+    return p.has('debug');
+  } catch {
+    return false;
+  }
 }
 
 function escapeHtml(str) {
@@ -3866,6 +4925,11 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
       });
     }
 
+    try {
+      await ensureStationIndexLoaded();
+    } catch {
+      // ignore
+    }
     const renderResult = renderTrainStatus(data);
 
     trainAutoRefreshLastSuccessAt = Date.now();
@@ -4613,3 +5677,18 @@ if (tripClearBtn) {
     tripPaginationState = null;
   });
 }
+  const activeIndex = (() => {
+    if (activeIndexOverride != null) return activeIndexOverride;
+    const activeCodeRaw = (opts.activeCode || '').toString().trim();
+    const activeCodeKey = activeCodeRaw ? normalizeStationCode(activeCodeRaw) : '';
+    if (activeCodeKey) {
+      const idx = cleaned.findIndex((p) => normalizeStationCode(p.code) === activeCodeKey);
+      if (idx >= 0) return idx;
+    }
+    const activeLabelKey = normalizeStationSearchKey((opts.activeLabel || '').toString());
+    if (activeLabelKey) {
+      const idx = cleaned.findIndex((p) => normalizeStationSearchKey(p.label) === activeLabelKey);
+      if (idx >= 0) return idx;
+    }
+    return null;
+  })();
