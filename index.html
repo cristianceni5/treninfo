@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="format-detection" content="telephone=no,date=no,address=no,email=no">
-    <meta name="color-scheme" content="light">
+    <meta name="color-scheme" content="light dark">
     <title>Treninfo</title>
     <link rel="shortcut icon" type="image/png" href="img/iconDef.png" />
     <link rel="stylesheet" href="styles.css">
@@ -17,9 +17,12 @@
     <div class="app-inner">
       <header class="app-header">
         <div class="app-title">
-          <img src="/img/iconDef.png" alt="" class="icon-img" />
+          <picture>
+            <source srcset="/img/iconDark.png" media="(prefers-color-scheme: dark)" />
+            <img src="/img/iconDef.png" alt="" class="icon-img" />
+          </picture>
           <div>
-            <h1>Treninfo - versione web</h1>
+            <h1>Treninfo</h1>
             <p class="small muted">
               Dati in tempo reale sullo stato dei treni RFI.
             </p>

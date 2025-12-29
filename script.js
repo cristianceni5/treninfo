@@ -9,6 +9,7 @@ const TRAIN_AUTO_REFRESH_INTERVAL_MS = 60_000;
 let trainAutoRefreshTimer = null;
 let trainAutoRefreshTrainNumber = null;
 let trainAutoRefreshOriginCode = null;
+let trainAutoRefreshEpochMs = null;
 let trainAutoRefreshAbortController = null;
 let trainAutoRefreshInFlight = false;
 let trainAutoRefreshLastSuccessAt = 0;
@@ -232,15 +233,15 @@ const TRAIN_KIND_RULES = [
 ];
 
 const TRAIN_KIND_ICON_SRC = {
-  FR: '/img/FR.svg',
-  FA: '/img/FA.svg',
-  FB: '/img/FB.svg',
+  FR: '/img/FR_black.svg',
+  FA: '/img/FA_black.svg',
+  FB: '/img/FB_black.svg',
   IC: '/img/IC.svg',
   ICN: '/img/NI.svg',
   ITA: '/img/ITA.svg',
-  BU: '/img/BU.svg',
-  BUS: '/img/BU.svg',
-  EC: '/img/EC.svg',
+  BU: '/img/BU_black.svg',
+  BUS: '/img/BU_black.svg',
+  EC: '/img/EC_black.svg',
   R: '/img/RV.svg',
   REG: '/img/RV.svg',
   RV: '/img/RV.svg',
@@ -263,8 +264,26 @@ function getTrainKindIconSrc(kindCode) {
   // Tutte le sigle che iniziano per R (es. RXP) sono regionali (escluso RJ).
   if (code && code.startsWith('R') && code !== 'RJ') return '/img/RV.svg';
   if (TRAIN_KIND_ICON_SRC[code]) return TRAIN_KIND_ICON_SRC[code];
-  if (REGIONAL_ICON_CODES.has(code)) return '/img/REG.svg';
+  if (REGIONAL_ICON_CODES.has(code)) return '/img/RV.svg';
   return '/img/trenitalia.png';
+}
+
+const THEMED_TRAIN_ICON_CODES = new Set(['FR', 'FA', 'FB', 'BU', 'BUS', 'EC']);
+
+function getTrainKindIconMarkup(kindCode, options = {}) {
+  const { alt = '', imgClass = '', ariaHidden = false } = options;
+  const code = (kindCode || '').toString().trim().toUpperCase();
+  const ariaHiddenAttr = ariaHidden ? ' aria-hidden="true"' : '';
+  const classAttr = imgClass ? ` class="${imgClass}"` : '';
+  const safeAlt = escapeHtml(alt);
+
+  if (THEMED_TRAIN_ICON_CODES.has(code)) {
+    const base = code === 'BUS' ? 'BU' : code;
+    return `<picture${ariaHiddenAttr}><source srcset="/img/${base}_white.svg" media="(prefers-color-scheme: dark)" /><img src="/img/${base}_black.svg" alt="${safeAlt}"${classAttr}${ariaHiddenAttr} /></picture>`;
+  }
+
+  const src = getTrainKindIconSrc(code);
+  return `<img src="${src}" alt="${safeAlt}"${classAttr}${ariaHiddenAttr} />`;
 }
 
 function normalizeTrainShortCode(raw) {
@@ -1985,6 +2004,7 @@ function stopTrainAutoRefresh() {
   }
   trainAutoRefreshTrainNumber = null;
   trainAutoRefreshOriginCode = null;
+  trainAutoRefreshEpochMs = null;
   trainAutoRefreshInFlight = false;
   trainAutoRefreshLastSuccessAt = 0;
   if (trainAutoRefreshAbortController) {
@@ -1997,17 +2017,19 @@ function stopTrainAutoRefresh() {
   }
 }
 
-function startTrainAutoRefresh(trainNumber, originCode = '') {
+function startTrainAutoRefresh(trainNumber, originCode = '', epochMs = null) {
   const num = String(trainNumber || '').trim();
   const origin = String(originCode || '').trim();
+  const epoch = Number.isFinite(Number(epochMs)) ? Number(epochMs) : null;
   if (!num) return;
 
   // Se stiamo già monitorando lo stesso treno, non ricreiamo il timer.
-  if (trainAutoRefreshTrainNumber === num && trainAutoRefreshOriginCode === origin && trainAutoRefreshTimer) return;
+  if (trainAutoRefreshTrainNumber === num && trainAutoRefreshOriginCode === origin && trainAutoRefreshEpochMs === epoch && trainAutoRefreshTimer) return;
 
   stopTrainAutoRefresh();
   trainAutoRefreshTrainNumber = num;
   trainAutoRefreshOriginCode = origin;
+  trainAutoRefreshEpochMs = epoch;
 
   trainAutoRefreshTimer = setInterval(() => {
     if (!trainAutoRefreshTrainNumber) return;
@@ -2017,6 +2039,7 @@ function startTrainAutoRefresh(trainNumber, originCode = '') {
       silent: true,
       isAuto: true,
       originCode: trainAutoRefreshOriginCode,
+      epochMs: trainAutoRefreshEpochMs,
     });
   }, TRAIN_AUTO_REFRESH_INTERVAL_MS);
 }
@@ -2045,6 +2068,7 @@ document.addEventListener('visibilitychange', () => {
         silent: true,
         isAuto: true,
         originCode: trainAutoRefreshOriginCode,
+        epochMs: trainAutoRefreshEpochMs,
       });
     }
   }
@@ -2157,12 +2181,18 @@ function renderStationInfoContent(selection, infoPayload) {
         <div class="map-widget-head">
           ${mapsLink
             ? `<a href="${mapsLink}" target="_blank" rel="noopener noreferrer" class="station-maps-btn">
-                <img src="/img/maps.png" alt="" class="station-maps-icon" aria-hidden="true" />
+                <picture aria-hidden="true">
+                  <source srcset="/img/maps_white.svg" media="(prefers-color-scheme: dark)" />
+                  <img src="/img/maps_black.svg" alt="" class="station-maps-icon" aria-hidden="true" />
+                </picture>
                 Maps
               </a>`
             : ''}
           <button type="button" class="map-recenter-btn" data-map-action="recenter">
-            <img src="/img/gps.svg" alt="" class="map-recenter-icon" aria-hidden="true" />
+            <picture aria-hidden="true">
+              <source srcset="/img/gps_white.svg" media="(prefers-color-scheme: dark)" />
+              <img src="/img/gps_black.svg" alt="" class="map-recenter-icon" aria-hidden="true" />
+            </picture>
             Ricentra
           </button>
         </div>
@@ -2228,6 +2258,8 @@ function buildStationBoardRow(entry, type) {
     ? entry.compOrarioPartenzaZero || entry.orarioPartenza || entry.origineZero
     : entry.compOrarioArrivoZero || entry.orarioArrivo || entry.destinazioneZero;
   const timeLabel = formatBoardClock(rawTime);
+  const epochMs = parseToMillis(rawTime);
+  const datasetEpoch = epochMs != null ? escapeHtml(String(epochMs)) : '';
   const routeLabelRaw = isDeparture
     ? (entry.destinazione || entry.destinazioneBreve || entry.compDestinazione || '-')
     : (entry.provenienza || entry.origine || entry.compOrigine || '-');
@@ -2257,7 +2289,7 @@ function buildStationBoardRow(entry, type) {
 
   // New Layout mimicking solution-card
   return `
-    <div class="station-board-card" role="button" tabindex="0" data-train-number="${datasetNumber}" aria-label="${escapeHtml(ariaLabel)}">
+    <div class="station-board-card" role="button" tabindex="0" data-train-number="${datasetNumber}" data-epoch-ms="${datasetEpoch}" aria-label="${escapeHtml(ariaLabel)}">
       <div class="sb-row-main">
         <div class="sb-time-col">
             <div class="sb-time">${escapeHtml(timeLabel)}</div>
@@ -2409,10 +2441,12 @@ if (stationBoardList) {
     if (!row) return;
     const trainNum = row.getAttribute('data-train-number') || '';
     if (!trainNum) return;
+    const epochMsRaw = (row.getAttribute('data-epoch-ms') || '').trim();
+    const epochMs = Number.isFinite(Number(epochMsRaw)) ? Number(epochMsRaw) : null;
     if (trainNumberInput) {
       trainNumberInput.value = trainNum;
     }
-    cercaStatoTreno(trainNum, { useRememberedChoice: true });
+    cercaStatoTreno(trainNum, { useRememberedChoice: true, epochMs });
     scrollToSection(trainSearchSection);
   };
 
@@ -2464,6 +2498,57 @@ document.addEventListener('click', (e) => {
   stationList.innerHTML = '';
   stationList.hidden = true;
 });
+
+// UX: evita che i bottoni restino "selezionati" (focus) dopo click/tap.
+// Quando un elemento viene rimosso dal DOM (es. chip preferiti), il focus può
+// spostarsi sul successivo e dare l'impressione di selezione persistente.
+// Applichiamo blur solo per interazioni pointer (mouse/touch), non da tastiera.
+let lastInteractionWasPointer = false;
+
+document.addEventListener(
+  'pointerdown',
+  () => {
+    lastInteractionWasPointer = true;
+  },
+  true
+);
+
+document.addEventListener(
+  'keydown',
+  (e) => {
+    // Se l'utente naviga con tastiera, non forziamo blur.
+    if (e.key === 'Tab' || e.key === 'Enter' || e.key === ' ') {
+      lastInteractionWasPointer = false;
+    }
+  },
+  true
+);
+
+document.addEventListener(
+  'click',
+  (e) => {
+    if (!lastInteractionWasPointer) return;
+
+    // Non togliere focus ai campi di input (serve per scrivere/navigare).
+    if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+
+    // Se l'utente ha cliccato/tappato un controllo interattivo, dopo l'azione
+    // rimuovi il focus per evitare "selezioni" che restano dopo re-render/rimozioni.
+    const clickedInteractive = e.target.closest(
+      'button, a[href], summary, [role="button"], [tabindex]:not([tabindex="-1"])'
+    );
+    if (!clickedInteractive) return;
+
+    const active = document.activeElement;
+    if (!active || active === document.body) return;
+
+    // Evita di "buttare fuori" il focus da input, se per qualche ragione fosse finito lì.
+    if (active.closest && active.closest('input, textarea, select, [contenteditable="true"]')) return;
+
+    if (typeof active.blur === 'function') active.blur();
+  },
+  true
+);
 
 // --- AUTOCOMPLETE SOLUZIONI (FROM / TO) ---------------------------------
 // (Logica rimossa in favore di setupTripAutocomplete)
@@ -2612,7 +2697,21 @@ function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isF
   
   // Add event listeners
   container.querySelectorAll('.storage-chip').forEach((chip, idx) => {
+    const item = list[idx];
+    const isFavNow = isFavCallback ? isFavCallback(item) : false;
+
+    // Swipe SOLO sui recenti (non preferiti): verso sinistra per eliminare.
+    if (!isFavNow && typeof onRemove === 'function') {
+      attachSwipeToStorageChip(chip, {
+        onDelete: () => onRemove(item),
+      });
+    }
+
     chip.addEventListener('click', (e) => {
+      if (chip.__swipeSkipClick) {
+        chip.__swipeSkipClick = false;
+        return;
+      }
       const favBtn = e.target.closest('.storage-chip-fav');
       
       if (favBtn) {
@@ -2623,6 +2722,137 @@ function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isF
       }
     });
   });
+}
+
+function attachSwipeToStorageChip(chip, { onDelete }) {
+  if (!chip) return;
+
+  let startX = 0;
+  let startY = 0;
+  let lastX = 0;
+  let lastT = 0;
+  let pointerId = null;
+  let lockedAxis = null; // 'x' | 'y' | null
+  let dragging = false;
+  let dx = 0;
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const resetVisual = () => {
+    chip.classList.remove('is-swiping', 'swipe-ready-delete', 'swipe-ready-fav');
+    chip.style.transition = '';
+    chip.style.transform = '';
+    chip.style.removeProperty('--swipe-pct');
+  };
+
+  const setDx = (nextDx) => {
+    dx = nextDx;
+    chip.style.transform = `translateX(${dx}px)`;
+    chip.classList.toggle('swipe-ready-delete', dx < -72);
+    // Feedback progressivo (0..1) per indicator "Elimina".
+    const pct = Math.max(0, Math.min(1, Math.abs(dx) / 72));
+    chip.style.setProperty('--swipe-pct', String(pct));
+  };
+
+  // Indicator "Elimina" (visual feedback)
+  if (!chip.querySelector('.swipe-delete-indicator')) {
+    const el = document.createElement('span');
+    el.className = 'swipe-delete-indicator';
+    el.setAttribute('aria-hidden', 'true');
+    el.textContent = 'Elimina';
+    chip.appendChild(el);
+  }
+
+  const onPointerDown = (e) => {
+    if (e.button != null && e.button !== 0) return;
+    // Evita conflitti con click sul cuore
+    if (e.target && e.target.closest && e.target.closest('.storage-chip-btn')) return;
+    if (!e.isPrimary) return;
+
+    pointerId = e.pointerId;
+    startX = e.clientX;
+    startY = e.clientY;
+    lastX = e.clientX;
+    lastT = performance.now();
+    lockedAxis = null;
+    dragging = false;
+    dx = 0;
+
+    try {
+      chip.setPointerCapture(pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
+  const onPointerMove = (e) => {
+    if (pointerId == null || e.pointerId !== pointerId) return;
+
+    const now = performance.now();
+    const moveX = e.clientX - startX;
+    const moveY = e.clientY - startY;
+
+    if (!lockedAxis) {
+      const ax = Math.abs(moveX);
+      const ay = Math.abs(moveY);
+      if (ax < 6 && ay < 6) return;
+      lockedAxis = ax > ay ? 'x' : 'y';
+    }
+
+    if (lockedAxis !== 'x') return;
+
+    // Ora stiamo swipando: blocca il click successivo
+    dragging = true;
+    chip.__swipeSkipClick = true;
+    chip.classList.add('is-swiping');
+
+    // Evita scroll orizzontale/ghost click
+    e.preventDefault();
+
+    // Swipe solo a sinistra.
+    const capped = clamp(moveX, -120, 0);
+    setDx(capped);
+
+    lastX = e.clientX;
+    lastT = now;
+  };
+
+  const finish = (e) => {
+    if (pointerId == null || (e && e.pointerId !== pointerId)) return;
+
+    try {
+      chip.releasePointerCapture(pointerId);
+    } catch {
+      // ignore
+    }
+
+    const shouldDelete = dx < -72 && typeof onDelete === 'function';
+
+    chip.style.transition = 'transform 0.18s ease';
+
+    if (dragging && shouldDelete) {
+      const out = -window.innerWidth;
+      chip.style.transform = `translateX(${out}px)`;
+      window.setTimeout(() => {
+        onDelete();
+      }, 140);
+    } else {
+      // torna in posizione
+      chip.style.transform = 'translateX(0px)';
+      window.setTimeout(() => {
+        resetVisual();
+      }, 190);
+    }
+
+    pointerId = null;
+    lockedAxis = null;
+    dragging = false;
+    dx = 0;
+  };
+
+  chip.addEventListener('pointerdown', onPointerDown, { passive: true });
+  chip.addEventListener('pointermove', onPointerMove, { passive: false });
+  chip.addEventListener('pointerup', finish, { passive: true });
+  chip.addEventListener('pointercancel', finish, { passive: true });
 }
 
 function renderGroupedChips(container, groups, type, onSelect, onRemove, onToggleFav, isFavCallback) {
@@ -2719,6 +2949,10 @@ function renderGroupedChips(container, groups, type, onSelect, onRemove, onToggl
 
   container.querySelectorAll('.storage-chip').forEach((chip) => {
     chip.addEventListener('click', (e) => {
+      if (chip.__swipeSkipClick) {
+        chip.__swipeSkipClick = false;
+        return;
+      }
       const favBtn = e.target.closest('.storage-chip-fav');
       const idx = Number(chip.getAttribute('data-idx'));
       const item = allItems[idx];
@@ -2731,6 +2965,17 @@ function renderGroupedChips(container, groups, type, onSelect, onRemove, onToggl
         onSelect(item);
       }
     });
+
+    // Swipe SOLO sui recenti (non preferiti): verso sinistra per eliminare.
+    const idx = Number(chip.getAttribute('data-idx'));
+    const item = allItems[idx];
+    if (!item) return;
+    const isFavNow = isFavCallback ? isFavCallback(item) : false;
+    if (!isFavNow && typeof onRemove === 'function') {
+      attachSwipeToStorageChip(chip, {
+        onDelete: () => onRemove(item),
+      });
+    }
   });
 }
 
@@ -4080,15 +4325,15 @@ function renderTrainStatus(payload) {
     ? `<button type="button" class="favorite-current-btn${trainIsFavorite ? ' is-active' : ''}" data-num="${trainMeta.numero}" data-kind="${encodeDatasetValue(trainMeta.kindCode || '')}" data-orig="${encodeDatasetValue(trainMeta.origine)}" data-dest="${encodeDatasetValue(trainMeta.destinazione)}" data-dep="${encodeDatasetValue(trainMeta.partenza || '')}" data-arr="${encodeDatasetValue(trainMeta.arrivo || '')}">${buildFavoriteButtonInnerHtml(trainIsFavorite)}</button>`
     : '';
 
-  const headerIconSrc = getTrainKindIconSrc(trainMeta.kindCode);
   const headerIconAlt = normalizeTrainShortCode(trainMeta.kindCode) || 'Treno';
+  const headerIconHtml = getTrainKindIconMarkup(trainMeta.kindCode, { alt: headerIconAlt, imgClass: 'train-logo-img', ariaHidden: true });
 
   const headerHtml = `
     <div class='train-header'>
       <div class='train-main'>
         <div class='train-title-row'>
           <span class='train-logo' aria-hidden='true' data-kind='${escapeHtml(normalizeTrainShortCode(trainMeta.kindCode))}'>
-            <img src='${headerIconSrc}' alt='${escapeHtml(headerIconAlt)}' class='train-logo-img' />
+            ${headerIconHtml}
           </span>
           <h2 class='train-title'>${primary.title || 'Dettagli treno'}</h2>
           <span class='badge-status ${badgeStateClass}'>
@@ -4124,7 +4369,10 @@ function renderTrainStatus(payload) {
       ${lastDetectionStaleHtml}
       ${primary.delaySubLine
       ? `<p class="train-primary-subtitle">
-        <img src="/img/ah.png" alt="Info" class="icon-inline" />
+        <picture>
+          <source srcset="/img/info_white.svg" media="(prefers-color-scheme: dark)" />
+          <img src="/img/info_black.svg" alt="Info" class="icon-inline" />
+        </picture>
         ${primary.delaySubLine}
       </p>`
       : ''
@@ -4151,10 +4399,17 @@ function renderTrainStatus(payload) {
         <div class="map-widget" id="trainMapWidget">
           <div class="map-widget-head">
             <button type="button" class="map-recenter-btn" data-map-action="goto-active">
+              <picture aria-hidden="true">
+                <source srcset="/img/stop_white.svg" media="(prefers-color-scheme: dark)" />
+                <img src="/img/stop_black.svg" alt="" class="map-recenter-icon" aria-hidden="true" />
+              </picture>
               Vedi fermata
             </button>
             <button type="button" class="map-recenter-btn" data-map-action="recenter">
-              <img src="/img/gps.svg" alt="" class="map-recenter-icon" aria-hidden="true" />
+              <picture aria-hidden="true">
+                <source srcset="/img/gps_white.svg" media="(prefers-color-scheme: dark)" />
+                <img src="/img/gps_black.svg" alt="" class="map-recenter-icon" aria-hidden="true" />
+              </picture>
               Ricentra
             </button>
           </div>
@@ -4723,12 +4978,14 @@ function rememberTrainChoice(trainNumber, choice) {
   if (!num) return;
   const originCode = String(choice?.originCode || '').trim();
   const technical = String(choice?.technical || '').trim();
+  const epochMs = Number.isFinite(Number(choice?.epochMs)) ? Number(choice.epochMs) : null;
   if (!originCode && !technical) return;
 
   const map = loadTrainChoiceByNumber();
   map[num] = {
     originCode,
     technical,
+    epochMs,
     updatedAt: Date.now(),
   };
 
@@ -4751,7 +5008,8 @@ function getRememberedTrainChoice(trainNumber) {
   const originCode = String(v.originCode || '').trim();
   const technical = String(v.technical || '').trim();
   if (!originCode && !technical) return null;
-  return { originCode, technical };
+  const epochMs = Number.isFinite(Number(v.epochMs)) ? Number(v.epochMs) : null;
+  return { originCode, technical, epochMs };
 }
 
 function renderTrainNumberDisambiguationMenu(trainNumber, choices) {
@@ -4763,15 +5021,15 @@ function renderTrainNumberDisambiguationMenu(trainNumber, choices) {
       const originCodeRaw = String(choice?.originCode || '').trim().toUpperCase();
       const originCode = escapeHtml(originCodeRaw);
       const technical = escapeHtml(choice?.technical || '');
+      const epochMs = Number.isFinite(Number(choice?.epochMs)) ? String(Number(choice.epochMs)) : '';
 
       const kindMeta = resolveTrainKindFromCode(displayRaw);
       const kindCode = normalizeTrainShortCode(kindMeta?.shortCode);
       // Se non riconosciamo il tipo (o non abbiamo un logo dedicato), NON mostriamo un logo generico (crea confusione).
       const showIcon = !!kindCode && (Boolean(TRAIN_KIND_ICON_SRC[kindCode]) || REGIONAL_ICON_CODES.has(kindCode));
-      const iconSrc = showIcon ? getTrainKindIconSrc(kindCode) : '';
-      const iconAlt = escapeHtml(kindCode || '');
+      const iconAlt = kindCode || '';
       const iconHtml = showIcon
-        ? `<span class="train-pick-icon" aria-hidden="true"><img src="${iconSrc}" alt="${iconAlt}" /></span>`
+        ? `<span class="train-pick-icon" aria-hidden="true">${getTrainKindIconMarkup(kindCode, { alt: iconAlt })}</span>`
         : '';
       const btnClass = showIcon ? 'train-pick-btn' : 'train-pick-btn train-pick-btn--no-icon';
       return `
@@ -4780,6 +5038,7 @@ function renderTrainNumberDisambiguationMenu(trainNumber, choices) {
           class="${btnClass}"
           data-origin-code="${originCode}"
           data-technical="${technical}"
+          data-epoch-ms="${escapeHtml(epochMs)}"
           data-kind="${escapeHtml(kindCode)}"
         >
           ${iconHtml}
@@ -4805,8 +5064,10 @@ function renderTrainNumberDisambiguationMenu(trainNumber, choices) {
     btn.addEventListener('click', () => {
       const originCode = (btn.getAttribute('data-origin-code') || '').trim();
       const technical = (btn.getAttribute('data-technical') || '').trim();
-      rememberTrainChoice(trainNumber, { originCode, technical });
-      cercaStatoTreno(trainNumber, { originCode, technical });
+      const epochMsRaw = (btn.getAttribute('data-epoch-ms') || '').trim();
+      const epochMs = Number.isFinite(Number(epochMsRaw)) ? Number(epochMsRaw) : null;
+      rememberTrainChoice(trainNumber, { originCode, technical, epochMs });
+      cercaStatoTreno(trainNumber, { originCode, technical, epochMs });
     });
   });
 }
@@ -4820,6 +5081,8 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
   const useRememberedChoice = !!opts.useRememberedChoice;
   let originCode = String(opts.originCode || '').trim();
   let technical = String(opts.technical || '').trim();
+  const epochMsOpt = Number.isFinite(Number(opts.epochMs)) ? Number(opts.epochMs) : null;
+  let epochMs = epochMsOpt;
 
   trainError.textContent = '';
   if (!silent) {
@@ -4840,6 +5103,9 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
     if (remembered) {
       originCode = remembered.originCode;
       technical = remembered.technical;
+      if (epochMs == null && Number.isFinite(Number(remembered.epochMs))) {
+        epochMs = Number(remembered.epochMs);
+      }
     }
   }
 
@@ -4867,6 +5133,7 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
     const params = new URLSearchParams({ trainNumber: num });
     if (originCode) params.set('originCode', originCode);
     if (technical) params.set('technical', technical);
+    if (epochMs != null) params.set('epochMs', String(epochMs));
 
     const res = await fetch(`${API_BASE}/api/trains/status?${params.toString()}`, {
       signal: trainAutoRefreshAbortController.signal,
@@ -4909,8 +5176,12 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
     const dd = data.data;
 
     // Se il backend ci dice quale origin/technical ha risolto, ricordiamocelo.
-    if (data.originCode || data.technical) {
-      rememberTrainChoice(num, { originCode: data.originCode, technical: data.technical });
+    if (data.originCode || data.technical || data.referenceTimestamp) {
+      rememberTrainChoice(num, {
+        originCode: data.originCode,
+        technical: data.technical,
+        epochMs: data.referenceTimestamp,
+      });
     }
     const { departure, arrival } = getPlannedTimes(dd.fermate);
     if (!isAuto) {
@@ -4936,7 +5207,7 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
     if (renderResult?.concluded) {
       stopTrainAutoRefresh();
     } else {
-      startTrainAutoRefresh(dd.numeroTreno || num, data.originCode || originCode);
+      startTrainAutoRefresh(dd.numeroTreno || num, data.originCode || originCode, data.referenceTimestamp);
     }
   } catch (err) {
     // Abort è normale quando cambiamo treno o la tab va in background.
@@ -5357,9 +5628,8 @@ function renderTripResults(solutions, context = {}) {
 
         const kindCode = deriveKindCodeFromIdent(ident, t);
         const typeClass = getTrainTypeClass(kindCode, ident);
-        const badgeIconSrc = getTrainKindIconSrc(kindCode);
         const badgeIconAlt = kindCode || 'Treno';
-        const logoHtml = `<span class=\"train-badge-icon\" aria-hidden=\"true\"><img src=\"${badgeIconSrc}\" alt=\"${escapeHtml(badgeIconAlt)}\" /></span>`;
+        const logoHtml = `<span class=\"train-badge-icon\" aria-hidden=\"true\">${getTrainKindIconMarkup(kindCode, { alt: badgeIconAlt })}</span>`;
 
         if (num && clickable) {
           return `<button type="button" class="train-badge train-link ${typeClass}" data-num="${num}" data-kind="${escapeHtml(kindCode)}" title="Vedi stato treno ${num}">${logoHtml} ${ident}</button>`;
@@ -5385,9 +5655,8 @@ function renderTripResults(solutions, context = {}) {
       if (!codes || codes.length === 0) return '';
 
       const renderIcon = (code) => {
-        const src = getTrainKindIconSrc(code);
-        const alt = escapeHtml(code);
-        return `<span class=\"sol-train-icon\" data-kind=\"${escapeHtml(code)}\"><img src=\"${src}\" alt=\"${alt}\" /></span>`;
+        const alt = code;
+        return `<span class=\"sol-train-icon\" data-kind=\"${escapeHtml(code)}\">${getTrainKindIconMarkup(code, { alt })}</span>`;
       };
 
       const parts = [];
@@ -5457,7 +5726,7 @@ function renderTripResults(solutions, context = {}) {
       trainsHtml = `<span class="train-badge badge-summary">${changes} ${changesLabel}</span>`;
     } else {
       // Diretto: badge con icona bolt.svg
-      trainsHtml = `<span class="train-badge badge-summary badge-direct"><img src="img/bolt.svg" alt="Diretto" class="badge-bolt" /> diretto</span>`;
+      trainsHtml = `<span class="train-badge badge-summary badge-direct"><picture aria-hidden="true"><source srcset="img/bolt_white.svg" media="(prefers-color-scheme: dark)" /><img src="img/bolt_black.svg" alt="" class="badge-bolt" /></picture> diretto</span>`;
     }
 
     // Dettagli viaggio: sempre presenti quando abbiamo almeno un mezzo
@@ -5477,9 +5746,8 @@ function renderTripResults(solutions, context = {}) {
           return String(nodeIdent || 'Treno').trim() || 'Treno';
         })();
 
-        const nodeIconSrc = getTrainKindIconSrc(nodeKind);
         const nodeIconAlt = nodeKind ? String(nodeKind) : 'Treno';
-        const nodeIconHtml = `<span class="sol-segment-train-icon" aria-hidden="true"><img src="${nodeIconSrc}" alt="${escapeHtml(nodeIconAlt)}" /></span>`;
+        const nodeIconHtml = `<span class="sol-segment-train-icon" aria-hidden="true">${getTrainKindIconMarkup(nodeKind, { alt: nodeIconAlt })}</span>`;
 
         const dep = formatTime(node.departureTime);
         const arr = formatTime(node.arrivalTime);

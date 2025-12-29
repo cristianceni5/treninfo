@@ -676,6 +676,7 @@ app.get('/api/trains/status', async (req, res) => {
   const trainNumber = (req.query.trainNumber || '').trim();
   const originCodeHint = (req.query.originCode || '').trim();
   const technicalHint = (req.query.technical || '').trim();
+  const epochMsHint = parseToMillis(req.query.epochMs);
 
   if (!trainNumber) {
     return res
@@ -684,6 +685,30 @@ app.get('/api/trains/status', async (req, res) => {
   }
 
   try {
+    function parseEpochFromDisplay(displayStr) {
+      const s = String(displayStr || '').trim();
+      if (!s) return null;
+
+      // Cerca data italiana: dd/mm[/yyyy] (a volte senza anno)
+      const dm = s.match(/\b(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?\b/);
+      if (!dm) return null;
+
+      const day = Number(dm[1]);
+      const month = Number(dm[2]);
+      let year = dm[3] ? Number(dm[3]) : new Date().getFullYear();
+      if (year < 100) year += 2000;
+      if (!day || !month || !year) return null;
+
+      // Ora HH:mm se presente; altrimenti mezzogiorno (più robusto di 00:00)
+      const tm = s.match(/\b(\d{1,2}):(\d{2})\b/);
+      const hour = tm ? Number(tm[1]) : 12;
+      const minute = tm ? Number(tm[2]) : 0;
+
+      const d = new Date(year, month - 1, day, hour, minute, 0, 0);
+      const ms = d.getTime();
+      return Number.isNaN(ms) ? null : ms;
+    }
+
     const urlSearch = `${BASE_URL}/cercaNumeroTrenoTrenoAutocomplete/${encodeURIComponent(
       trainNumber
     )}`;
@@ -707,12 +732,14 @@ app.get('/api/trains/status', async (req, res) => {
         const display = (parts[0] || '').trim();
         const technical = (parts[1] || '').trim(); // es. "666-S06000"
         const [numFromTechnical, originCode] = technical.split('-');
+        const epochMs = parseEpochFromDisplay(display);
         return {
           rawLine,
           display,
           technical,
           trainNumber: (numFromTechnical || trainNumber).trim(),
           originCode: (originCode || '').trim(),
+          epochMs,
         };
       })
       .filter((c) => c.originCode);
@@ -734,6 +761,19 @@ app.get('/api/trains/status', async (req, res) => {
       selected = candidates.find((c) => c.originCode === originCodeHint) || null;
     }
 
+    // Se ci arriva un epoch (es. da tabellone o scelta esplicita), prova a selezionare
+    // la corsa più vicina temporalmente (utile quando lo stesso numero esiste su giorni diversi).
+    if (!selected && epochMsHint != null) {
+      const withEpoch = candidates.filter((c) => c.epochMs != null);
+      if (withEpoch.length) {
+        withEpoch.sort((a, b) => Math.abs(a.epochMs - epochMsHint) - Math.abs(b.epochMs - epochMsHint));
+        // accetta match “ragionevoli” entro 36h
+        if (Math.abs(withEpoch[0].epochMs - epochMsHint) <= 36 * 60 * 60 * 1000) {
+          selected = withEpoch[0];
+        }
+      }
+    }
+
     if (!selected) {
       if (candidates.length === 1) {
         selected = candidates[0];
@@ -747,6 +787,7 @@ app.get('/api/trains/status', async (req, res) => {
             display: c.display,
             technical: c.technical,
             originCode: c.originCode,
+            epochMs: c.epochMs,
             rawLine: c.rawLine,
           })),
         });
@@ -756,38 +797,57 @@ app.get('/api/trains/status', async (req, res) => {
     const originCode = selected.originCode;
 
     const nowMs = Date.now();
-    const hourOffsets = [0, -6, -12, -18, -24];
-    let primarySnapshot = null;
-    let selectedSnapshot = null;
-    let backupSnapshot = null;
+    let finalSnapshot = null;
 
-    for (const offset of hourOffsets) {
-      const ts = nowMs + offset * 60 * 60 * 1000;
-      if (ts <= 0) continue;
-      const snapshot = await fetchTrainStatusSnapshot(originCode, trainNumber, ts);
-      if (!snapshot) continue;
-
-      const descriptor = { data: snapshot, referenceTimestamp: ts, offset };
-
-      if (offset === 0) {
-        primarySnapshot = descriptor;
-        backupSnapshot = backupSnapshot || descriptor;
-        if (!runLooksFuture(snapshot, nowMs)) {
-          selectedSnapshot = descriptor;
-          break;
-        }
-        continue;
-      }
-
-      backupSnapshot = backupSnapshot || descriptor;
-
-      if (trainStillRunning(snapshot, nowMs)) {
-        selectedSnapshot = descriptor;
+    if (epochMsHint != null) {
+      // Quando ci chiedono esplicitamente una data/ora, non facciamo euristiche su "now".
+      // Proviamo prima l'epoch richiesto, poi piccoli offset per robustezza.
+      const offsetsHours = [0, -6, 6, -12, 12, -24, 24];
+      for (const h of offsetsHours) {
+        const ts = epochMsHint + h * 60 * 60 * 1000;
+        if (ts <= 0) continue;
+        const snapshot = await fetchTrainStatusSnapshot(originCode, trainNumber, ts);
+        if (!snapshot) continue;
+        finalSnapshot = { data: snapshot, referenceTimestamp: ts, offset: h };
         break;
       }
     }
 
-    const finalSnapshot = selectedSnapshot || primarySnapshot || backupSnapshot;
+    if (!finalSnapshot) {
+      // Fallback: comportamento precedente (scegli la corsa “più sensata” rispetto a now).
+      const hourOffsets = [0, -6, -12, -18, -24];
+      let primarySnapshot = null;
+      let selectedSnapshot = null;
+      let backupSnapshot = null;
+
+      for (const offset of hourOffsets) {
+        const ts = nowMs + offset * 60 * 60 * 1000;
+        if (ts <= 0) continue;
+        const snapshot = await fetchTrainStatusSnapshot(originCode, trainNumber, ts);
+        if (!snapshot) continue;
+
+        const descriptor = { data: snapshot, referenceTimestamp: ts, offset };
+
+        if (offset === 0) {
+          primarySnapshot = descriptor;
+          backupSnapshot = backupSnapshot || descriptor;
+          if (!runLooksFuture(snapshot, nowMs)) {
+            selectedSnapshot = descriptor;
+            break;
+          }
+          continue;
+        }
+
+        backupSnapshot = backupSnapshot || descriptor;
+
+        if (trainStillRunning(snapshot, nowMs)) {
+          selectedSnapshot = descriptor;
+          break;
+        }
+      }
+
+      finalSnapshot = selectedSnapshot || primarySnapshot || backupSnapshot;
+    }
 
     if (!finalSnapshot) {
       return res.json({
