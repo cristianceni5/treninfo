@@ -2564,6 +2564,43 @@ a[href^='mailto'] {
 .favorite-current-wrapper { 
   margin-top: var(--gap-sm); 
   margin-bottom: var(--gap-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-xs);
+}
+
+.notification-current-btn {
+  margin-top: 0;
+  font-size: 0.82rem;
+  padding: 6px 16px;
+  min-height: 40px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--brand-border);
+  background: var(--bg-card);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--anim-normal), box-shadow var(--anim-normal), transform var(--anim-fast);
+}
+
+.notification-current-btn:hover {
+  box-shadow: var(--shadow-soft);
+  background: var(--bg-subtle);
+}
+
+.notification-current-btn:active { transform: translateY(0); }
+
+.notification-current-btn.is-active {
+  background: var(--bg-subtle);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.notification-current-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .sr-only {
@@ -3673,7 +3710,8 @@ button.train-badge:active {
   display: inline-flex;
   align-items: center;
   gap: var(--gap-sm);
-  padding: 6px 8px 6px 14px; /* More padding left for text, less right for buttons */
+  /* Azioni (cuore) a sinistra: più spazio a destra per il testo */
+  padding: 6px 14px 6px 8px;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-pill);
@@ -3729,11 +3767,12 @@ button.train-badge:active {
 
 /* Feedback swipe (usa solo token esistenti) */
 .storage-chip.swipe-ready-delete {
-  border-color: rgba(185, 28, 28, 0.65);
+  /* Bordo opaco: evita “compenetrazione” con altri chip durante la sovrapposizione */
+  border-color: rgb(185, 28, 28);
 }
 
 .storage-chip.is-swiping {
-  border-color: rgba(185, 28, 28, calc((var(--swipe-pct, 0) * 0.55) + 0.15));
+  border-color: rgb(185, 28, 28);
 }
 
 .storage-chip.is-swiping .storage-chip-content {
@@ -3759,7 +3798,8 @@ button.train-badge:active {
 
 @media (hover: hover) {
   .storage-chip:hover {
-    background: var(--surface-hover);
+    /* Usa una superficie opaca: evita trasparenze che “si compenetrano” quando due chip si sovrappongono */
+    background: var(--bg-subtle);
     border-color: var(--border-strong);
     box-shadow: var(--shadow-soft);
   }
@@ -3771,7 +3811,8 @@ button.train-badge:active {
 
 .storage-chip.favorite {
   border-color: var(--color-favorite);
-  background: rgba(225, 29, 72, 0.06);
+  /* Sfondo opaco: niente alpha (altrimenti si vede sotto quando si sovrappongono) */
+  background: var(--bg-card);
   color: var(--color-favorite);
 }
 
@@ -3836,19 +3877,21 @@ button.train-badge:active {
 
 @media (hover: hover) {
   .storage-chip-btn:hover {
-    background: var(--surface-active);
+    /* In dark mode --surface-active è rgba (semi-trasparente): usa una superficie opaca */
+    background: var(--bg-subtle);
     color: var(--text-main);
   }
 }
 
 @media (max-width: 640px) {
   .storage-chip {
-    justify-content: space-between;
+    justify-content: flex-start;
   }
 
   .storage-chip-actions {
     gap: var(--gap-xs);
-    padding-left: var(--gap-sm);
+    padding-right: var(--gap-sm);
+    padding-left: 0;
   }
 
   .storage-chip-btn {
@@ -3860,19 +3903,20 @@ button.train-badge:active {
 }
 
 .storage-chip-fav.is-active {
-  background: rgba(225, 29, 72, 0.10);
+  /* Mantieni feedback ma con sfondo opaco */
+  background: var(--bg-subtle);
   border-color: var(--color-favorite);
   color: var(--color-favorite);
 }
 
 .storage-chip-fav:hover {
   color: var(--color-favorite);
-  background: rgba(225, 29, 72, 0.10);
+  background: var(--bg-subtle);
 }
 
 /* Train Chip Specific Styles */
 .chip-type-train {
-  padding-left: 14px;
+  padding-left: 8px;
 }
 
 .chip-train-info {

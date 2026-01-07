@@ -205,6 +205,373 @@ async function fetchTrainStatusSnapshot(originCode, trainNumber, epochMs) {
   }
 }
 
+// ----------------- HELPER FUNZIONI COMPUTATE -----------------
+
+/**
+ * Regole per determinare il tipo treno.
+ * Ogni regola ha un array di pattern da cercare nei campi JSON RFI,
+ * più le etichette da mostrare in UI e la categoria semantica.
+ */
+const TRAIN_KIND_RULES = [
+  // Alta velocità (ordinati per specificity)
+  {
+    matches: ['FRECCIAROSSA', 'FRECCIAROSSA AV', 'FRECCIAROSSAAV', 'FR', 'FR AV', 'FRAV', 'FR EC', 'FRECCIAROSSA EC'],
+    boardLabel: 'FR',
+    detailLabel: 'FR',
+    category: 'high-speed',
+  },
+  {
+    matches: ['FRECCIARGENTO', 'FRECCIARGENTO AV', 'FRECCIARGENTOAV', 'FA', 'FA AV'],
+    boardLabel: 'FA',
+    detailLabel: 'FA',
+    category: 'high-speed',
+  },
+  {
+    matches: ['FRECCIABIANCA', 'FB'],
+    boardLabel: 'FB',
+    detailLabel: 'FB',
+    category: 'intercity',
+  },
+  {
+    matches: ['ITALO', 'ITALO AV', 'ITALOAV', 'NTV', 'ITA'],
+    boardLabel: 'ITA',
+    detailLabel: 'ITA',
+    category: 'high-speed',
+  },
+  {
+    matches: ['TGV'],
+    boardLabel: 'TGV',
+    detailLabel: 'TGV',
+    category: 'high-speed',
+  },
+  {
+    matches: ['EUROSTAR', 'EUROSTAR CITY', 'EUROSTARCITY', 'ES', 'ESC', 'ES CITY', 'ES AV', 'ESAV', 'ES FAST'],
+    boardLabel: 'ES',
+    detailLabel: 'ES',
+    category: 'high-speed',
+  },
+  // Intercity (ordinati per specificity)
+  {
+    matches: ['INTERCITY NOTTE', 'INTERCITYNOTTE', 'ICN'],
+    boardLabel: 'ICN',
+    detailLabel: 'ICN',
+    category: 'intercity',
+  },
+  {
+    matches: ['INTERCITY', 'IC'],
+    boardLabel: 'IC',
+    detailLabel: 'IC',
+    category: 'intercity',
+  },
+  {
+    matches: ['EUROCITY', 'EC'],
+    boardLabel: 'EC',
+    detailLabel: 'EC',
+    category: 'intercity',
+  },
+  {
+    matches: ['EURONIGHT', 'EN'],
+    boardLabel: 'EN',
+    detailLabel: 'EN',
+    category: 'intercity',
+  },
+  {
+    matches: ['RAILJET', 'RJ'],
+    boardLabel: 'RJ',
+    detailLabel: 'RJ',
+    category: 'intercity',
+  },
+  {
+    matches: ['ESPRESSO', 'EXP'],
+    boardLabel: 'EXP',
+    detailLabel: 'EXP',
+    category: 'intercity',
+  },
+  // Regionali (ordinati per specificity - prima i più specifici)
+  {
+    matches: ['REGIONALE VELOCE', 'REGIONALEVELOCE', 'RV', 'RGV'],
+    boardLabel: 'RV',
+    detailLabel: 'RV',
+    category: 'regional',
+  },
+  {
+    matches: ['REGIONALE', 'REG'],
+    boardLabel: 'REG',
+    detailLabel: 'REG',
+    category: 'regional',
+  },
+  {
+    matches: ['INTERREGIONALE', 'IR'],
+    boardLabel: 'IREG',
+    detailLabel: 'IREG',
+    category: 'regional',
+  },
+  {
+    matches: ['REGIOEXPRESS', 'REGIO EXPRESS', 'RE'],
+    boardLabel: 'REX',
+    detailLabel: 'REX',
+    category: 'regional',
+  },
+  {
+    matches: ['LEONARDO EXPRESS', 'LEONARDOEXPRESS', 'LEONARDO', 'LEX'],
+    boardLabel: 'LEX',
+    detailLabel: 'LEX',
+    category: 'regional',
+  },
+  {
+    matches: ['MALPENSA EXPRESS', 'MALPENSAEXPRESS', 'MXP'],
+    boardLabel: 'MXP',
+    detailLabel: 'MXP',
+    category: 'regional',
+  },
+  {
+    matches: ['TROPEA EXPRESS', 'TROPEAEXPRESS', 'TROPEA', 'TEXP'],
+    boardLabel: 'TEXP',
+    detailLabel: 'TEXP',
+    category: 'regional',
+  },
+  {
+    matches: ['CIVITAVECCHIA EXPRESS', 'CIVITAVECCHIAEXPRESS', 'CIVITAVECCHIA', 'CEXP'],
+    boardLabel: 'CEXP',
+    detailLabel: 'CEXP',
+    category: 'regional',
+  },
+  {
+    matches: ['PANORAMA EXPRESS', 'PANORAMAEXPRESS', 'PE'],
+    boardLabel: 'PEXP',
+    detailLabel: 'PEXP',
+    category: 'regional',
+  },
+  {
+    matches: ['DIRETTISSIMO', 'DD'],
+    boardLabel: 'DD',
+    detailLabel: 'DD',
+    category: 'regional',
+  },
+  {
+    matches: ['DIRETTO', 'DIR'],
+    boardLabel: 'DIR',
+    detailLabel: 'DIR',
+    category: 'regional',
+  },
+  {
+    matches: ['ACCELERATO', 'ACC'],
+    boardLabel: 'ACC',
+    detailLabel: 'ACC',
+    category: 'regional',
+  },
+  {
+    matches: ['SUBURBANO', 'SERVIZIO SUBURBANO', 'SUB'],
+    boardLabel: 'SUB',
+    detailLabel: 'SUB',
+    category: 'regional',
+  },
+  {
+    matches: ['METROPOLITANO', 'MET', 'METROPOLITANA', 'SFM'],
+    boardLabel: 'MET',
+    detailLabel: 'MET',
+    category: 'regional',
+  },
+  {
+    matches: ['FERROVIE LAZIALI', 'FL'],
+    boardLabel: 'FL',
+    detailLabel: 'FL',
+    category: 'regional',
+  },
+  {
+    matches: ['AIRLINK'],
+    boardLabel: 'Airlink',
+    detailLabel: 'Airlink',
+    category: 'regional',
+  },
+  // Pattern generici (DEVONO stare alla fine per non matchare troppo presto)
+  {
+    matches: ['R'],
+    boardLabel: 'R',
+    detailLabel: 'R',
+    category: 'regional',
+  },
+  // Bus
+  {
+    matches: ['BUS', 'BU', 'FI'],
+    boardLabel: 'BUS',
+    detailLabel: 'BUS',
+    category: 'bus',
+  },
+];
+
+/**
+ * Risolve il tipo di treno analizzando i campi categoriaDescrizione, categoria, tipoTreno, compNumeroTreno.
+ * Restituisce { code, label, category } dove:
+ * - code: codice breve (es. "FR", "IC", "REG")
+ * - label: etichetta estesa (es. "FR AV", "Intercity")
+ * - category: categoria semantica (high-speed, intercity, regional, bus, unknown)
+ */
+function resolveTrainKind(...rawValues) {
+  for (const raw of rawValues) {
+    if (!raw) continue;
+    const normalized = String(raw)
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, ' ');
+
+    // Prima estrai la sigla iniziale se presente (es. "FR 9544" → "FR", "REG 12345" → "REG")
+    const prefixMatch = normalized.match(/^([A-Z]{1,4})\b/);
+    const prefix = prefixMatch ? prefixMatch[1] : '';
+    
+    // Cerca prima usando la sigla estratta (più preciso)
+    if (prefix) {
+      for (const rule of TRAIN_KIND_RULES) {
+        if (rule.matches.includes(prefix)) {
+          return {
+            code: rule.boardLabel,
+            label: rule.detailLabel,
+            category: rule.category,
+          };
+        }
+      }
+    }
+
+    // Altrimenti cerca nella stringa completa (match esatto, non substring)
+    for (const rule of TRAIN_KIND_RULES) {
+      if (rule.matches.includes(normalized)) {
+        return {
+          code: rule.boardLabel,
+          label: rule.detailLabel,
+          category: rule.category,
+        };
+      }
+    }
+  }
+  return { code: 'UNK', label: 'Sconosciuto', category: 'unknown' };
+}
+
+/**
+ * Calcola il ritardo globale in minuti.
+ * Priorità: campo ritardo (number), poi parsing da compRitardo[0].
+ * Ritorna number (può essere negativo = anticipo) o null se non disponibile.
+ */
+function computeGlobalDelay(data) {
+  // Priorità: campo ritardo diretto, poi parsing da compRitardo
+  if (data.ritardo != null && !Number.isNaN(Number(data.ritardo))) {
+    return Number(data.ritardo);
+  }
+  if (Array.isArray(data.compRitardo) && data.compRitardo.length > 0) {
+    const txt = data.compRitardo[0] || '';
+    const match = txt.match(/(-?\d+)\s*min/);
+    if (match) {
+      const parsed = Number(match[1]);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
+/**
+ * Determina lo stato della corsa (PLANNED, RUNNING, COMPLETED, CANCELLED, PARTIAL, UNKNOWN).
+ * Analizza:
+ * - trenoSoppresso: true → CANCELLED
+ * - fermateSoppresse non vuoto → PARTIAL
+ * - presenza orari reali → RUNNING o COMPLETED
+ * - assenza orari reali → PLANNED
+ */
+function computeJourneyState(data) {
+  const fermate = Array.isArray(data.fermate) ? data.fermate : [];
+  const hasSuppressed = Array.isArray(data.fermateSoppresse) && data.fermateSoppresse.length > 0;
+  const isCancelled = data.trenoSoppresso === true;
+
+  if (isCancelled) {
+    return { state: 'CANCELLED', label: 'Soppresso' };
+  }
+  if (hasSuppressed) {
+    return { state: 'PARTIAL', label: 'Parziale' };
+  }
+
+  const hasAnyReal = fermate.some((f) => f.partenzaReale != null || f.arrivoReale != null);
+  if (!hasAnyReal) {
+    return { state: 'PLANNED', label: 'Pianificato' };
+  }
+
+  const lastStop = fermate[fermate.length - 1];
+  const hasLastArrival = lastStop && (lastStop.arrivoReale != null || lastStop.partenzaReale != null);
+  if (hasLastArrival) {
+    return { state: 'COMPLETED', label: 'Concluso' };
+  }
+
+  return { state: 'RUNNING', label: 'In viaggio' };
+}
+
+/**
+ * Identifica la fermata attuale del treno.
+ * Priorità:
+ * 1. Campo stazioneUltimoRilevamento
+ * 2. Ultima fermata con orario reale (partenzaReale o arrivoReale)
+ * Restituisce { stationName, stationCode, index, timestamp } o null.
+ */
+function computeCurrentStop(data) {
+  const fermate = Array.isArray(data.fermate) ? data.fermate : [];
+  if (!fermate.length) return null;
+
+  const lastKnownStation = data.stazioneUltimoRilevamento || '';
+  if (lastKnownStation) {
+    const idx = fermate.findIndex((f) =>
+      (f.stazione || '').toUpperCase() === lastKnownStation.toUpperCase()
+    );
+    if (idx >= 0) {
+      return {
+        stationName: fermate[idx].stazione,
+        stationCode: fermate[idx].id,
+        index: idx,
+        timestamp: data.oraUltimoRilevamento || null,
+      };
+    }
+  }
+
+  // Fallback: ultima fermata con orario reale
+  for (let i = fermate.length - 1; i >= 0; i--) {
+    if (fermate[i].partenzaReale != null || fermate[i].arrivoReale != null) {
+      return {
+        stationName: fermate[i].stazione,
+        stationCode: fermate[i].id,
+        index: i,
+        timestamp: fermate[i].partenzaReale || fermate[i].arrivoReale,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Arricchisce i dati RFI con campi computati.
+ * Restituisce un oggetto con:
+ * - trainKind: tipo treno { code, label, category }
+ * - globalDelay: ritardo globale in minuti (number o null)
+ * - journeyState: stato corsa { state, label }
+ * - currentStop: fermata attuale { stationName, stationCode, index, timestamp } o null
+ */
+function enrichTrainData(data) {
+  if (!data) return null;
+
+  const trainKind = resolveTrainKind(
+    data.categoriaDescrizione,
+    data.categoria,
+    data.tipoTreno,
+    data.compNumeroTreno
+  );
+
+  const globalDelay = computeGlobalDelay(data);
+  const journeyState = computeJourneyState(data);
+  const currentStop = computeCurrentStop(data);
+
+  return {
+    trainKind,
+    globalDelay,
+    journeyState,
+    currentStop,
+  };
+}
+
 // ----------------- ROUTE API -----------------
 
 // Autocomplete stazioni (ViaggiaTreno) - Per "Cerca Stazione"
@@ -606,11 +973,31 @@ app.get('/api/stations/departures', async (req, res) => {
 
     const data = await vtResp.json();
 
+    // Arricchisci ogni elemento con dati computati
+    const enrichedData = Array.isArray(data)
+      ? data.map((entry) => {
+          const trainKind = resolveTrainKind(
+            entry.categoriaDescrizione,
+            entry.categoria,
+            entry.tipoTreno,
+            entry.compNumeroTreno
+          );
+          const delay = entry.ritardo != null && !Number.isNaN(Number(entry.ritardo)) ? Number(entry.ritardo) : null;
+          return {
+            ...entry,
+            _computed: {
+              trainKind,
+              delay,
+            },
+          };
+        })
+      : data;
+
     return res.json({
       ok: true,
       stationCode,
       date: dateStr,
-      data,
+      data: enrichedData,
     });
   } catch (err) {
     console.error('Errore /api/stations/departures:', err);
@@ -653,11 +1040,31 @@ app.get('/api/stations/arrivals', async (req, res) => {
 
     const data = await vtResp.json();
 
+    // Arricchisci ogni elemento con dati computati
+    const enrichedData = Array.isArray(data)
+      ? data.map((entry) => {
+          const trainKind = resolveTrainKind(
+            entry.categoriaDescrizione,
+            entry.categoria,
+            entry.tipoTreno,
+            entry.compNumeroTreno
+          );
+          const delay = entry.ritardo != null && !Number.isNaN(Number(entry.ritardo)) ? Number(entry.ritardo) : null;
+          return {
+            ...entry,
+            _computed: {
+              trainKind,
+              delay,
+            },
+          };
+        })
+      : data;
+
     return res.json({
       ok: true,
       stationCode,
       date: dateStr,
-      data,
+      data: enrichedData,
     });
   } catch (err) {
     console.error('Errore /api/stations/arrivals:', err);
@@ -857,6 +1264,9 @@ app.get('/api/trains/status', async (req, res) => {
       });
     }
 
+    // Arricchisci la risposta con dati computati
+    const enriched = enrichTrainData(finalSnapshot.data);
+
     res.json({
       ok: true,
       originCode,
@@ -864,6 +1274,13 @@ app.get('/api/trains/status', async (req, res) => {
       technical: selected.technical,
       referenceTimestamp: finalSnapshot.referenceTimestamp,
       data: finalSnapshot.data,
+      // Dati arricchiti/computati dal backend
+      computed: {
+        trainKind: enriched.trainKind,
+        globalDelay: enriched.globalDelay,
+        journeyState: enriched.journeyState,
+        currentStop: enriched.currentStop,
+      },
     });
   } catch (err) {
     console.error('Errore trains/status backend:', err);

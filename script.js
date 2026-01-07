@@ -13,13 +13,218 @@ let trainAutoRefreshEpochMs = null;
 let trainAutoRefreshAbortController = null;
 let trainAutoRefreshInFlight = false;
 let trainAutoRefreshLastSuccessAt = 0;
+let lastRenderedTrainStatusPayload = null;
 
+// I dati computati (tipo treno, ritardo, stato viaggio) vengono calcolati dal backend.
+// Il frontend li usa direttamente dai campi "computed" o "_computed" nelle risposte API.
 
 const RECENT_KEY = 'monitor_treno_recent';
 const FAVORITES_KEY = 'monitor_treno_favorites';
 const TRAIN_CHOICE_BY_NUMBER_KEY = 'train_choice_by_number';
+const TRAIN_NOTIFICATIONS_KEY = 'treninfo_train_notifications';
 const MAX_RECENT = 5;
 const MAX_FAVORITES = 8;
+
+function loadTrainNotificationsSettings() {
+  try {
+    const raw = localStorage.getItem(TRAIN_NOTIFICATIONS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== 'object') {
+      return { enabled: false, target: null, lastDigest: '', lastNotifiedAt: 0 };
+    }
+    return {
+      enabled: !!parsed.enabled,
+      target: parsed.target && typeof parsed.target === 'object' ? parsed.target : null,
+      lastDigest: typeof parsed.lastDigest === 'string' ? parsed.lastDigest : '',
+      lastNotifiedAt: Number.isFinite(Number(parsed.lastNotifiedAt)) ? Number(parsed.lastNotifiedAt) : 0,
+    };
+  } catch {
+    return { enabled: false, target: null, lastDigest: '', lastNotifiedAt: 0 };
+  }
+}
+
+function saveTrainNotificationsSettings(next) {
+  try {
+    localStorage.setItem(TRAIN_NOTIFICATIONS_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+function buildTrainNotificationTarget({ trainNumber, originCode = '', technical = '', epochMs = null } = {}) {
+  const num = String(trainNumber || '').trim();
+  if (!num) return null;
+  return {
+    trainNumber: num,
+    originCode: String(originCode || '').trim(),
+    technical: String(technical || '').trim(),
+    epochMs: Number.isFinite(Number(epochMs)) ? Number(epochMs) : null,
+  };
+}
+
+function trainNotificationTargetKey(target) {
+  if (!target || typeof target !== 'object') return '';
+  const num = String(target.trainNumber || '').trim();
+  if (!num) return '';
+  const origin = String(target.originCode || '').trim();
+  const technical = String(target.technical || '').trim();
+  const epoch = Number.isFinite(Number(target.epochMs)) ? String(Number(target.epochMs)) : '';
+  return [num, origin, technical, epoch].join('|');
+}
+
+function getCurrentTrainNotificationState(payload) {
+  const settings = loadTrainNotificationsSettings();
+  if (!settings.enabled) return { enabled: false, matches: false, targetKey: '' };
+
+  const d = payload && payload.data;
+  const num = String((d && (d.numeroTreno || d.numeroTrenoEsteso)) || '').trim();
+  const target = buildTrainNotificationTarget({
+    trainNumber: num,
+    originCode: payload?.originCode || '',
+    technical: payload?.technical || '',
+    epochMs: payload?.referenceTimestamp ?? null,
+  });
+
+  const currentKey = trainNotificationTargetKey(target);
+  const savedKey = trainNotificationTargetKey(settings.target);
+  return { enabled: true, matches: !!currentKey && currentKey === savedKey, targetKey: currentKey };
+}
+
+async function ensureBrowserNotificationPermission() {
+  if (typeof window === 'undefined') return 'unsupported';
+  if (!('Notification' in window)) return 'unsupported';
+  if (Notification.permission === 'granted') return 'granted';
+  if (Notification.permission === 'denied') return 'denied';
+  try {
+    const p = await Notification.requestPermission();
+    return p;
+  } catch {
+    return 'denied';
+  }
+}
+
+function computeTrainNotificationDigest(payload) {
+  const d = payload && payload.data;
+  if (!d) return '';
+  
+  // Usa dati computed dal backend quando disponibili
+  const computed = payload.computed || {};
+  const journey = computed.journeyState 
+    ? { state: computed.journeyState.state } 
+    : computeJourneyState(d);
+  const globalDelay = computed.globalDelay != null 
+    ? computed.globalDelay 
+    : getGlobalDelayMinutes(d);
+  
+  const lastStation = String(d.stazioneUltimoRilevamento || '').trim();
+  const lastTime = String(d.oraUltimoRilevamento || '').trim();
+  const fermate = Array.isArray(d.fermate) ? d.fermate : [];
+  const timelineState = deriveTimelineFromTimes(fermate, { journeyState: journey.state, globalDelay });
+  const currentIdx = Number.isFinite(timelineState?.currentIdx) ? String(timelineState.currentIdx) : '';
+  return [
+    String(journey.state || ''),
+    String(globalDelay ?? ''),
+    lastStation,
+    lastTime,
+    currentIdx,
+  ].join('|');
+}
+
+function buildTrainNotificationMessage(payload) {
+  const d = payload && payload.data;
+  if (!d) return null;
+
+  // Usa dati computed dal backend quando disponibili
+  const computed = payload.computed || {};
+  const journey = computed.journeyState 
+    ? { state: computed.journeyState.state } 
+    : computeJourneyState(d);
+  const globalDelay = computed.globalDelay != null 
+    ? computed.globalDelay 
+    : getGlobalDelayMinutes(d);
+  
+  const num = String(d.numeroTreno || d.numeroTrenoEsteso || '').trim();
+  const route = [String(d.origine || '').trim(), String(d.destinazione || '').trim()].filter(Boolean).join(' → ');
+
+  const stateLabelMap = {
+    PLANNED: 'Pianificato',
+    RUNNING: 'In viaggio',
+    COMPLETED: 'Concluso',
+    CANCELLED: 'Soppresso',
+    PARTIAL: 'Cancellato parz.',
+    UNKNOWN: 'Sconosciuto',
+  };
+  const stateLabel = stateLabelMap[journey.state] || stateLabelMap.UNKNOWN;
+
+  const lastDetectionMillis = parseToMillis(d.oraUltimoRilevamento);
+  const lastTime = d.oraUltimoRilevamento ? formatTimeFlexible(d.oraUltimoRilevamento) : '';
+  const lastStation = String(d.stazioneUltimoRilevamento || '').trim();
+  const last = [lastTime, lastStation].filter(Boolean).join(' - ');
+
+  const delayPart = Number.isFinite(Number(globalDelay))
+    ? (globalDelay > 0 ? `${globalDelay} min ritardo` : (globalDelay < 0 ? `${Math.abs(globalDelay)} min anticipo` : 'In orario'))
+    : '';
+
+  const bodyParts = [
+    `Stato: ${stateLabel}`,
+    delayPart ? `• ${delayPart}` : '',
+    last ? `• Ultimo: ${last}` : '',
+  ].filter(Boolean);
+
+  return {
+    title: num ? `Treno ${num}` : 'Aggiornamento treno',
+    body: `${route ? `${route}\n` : ''}${bodyParts.join(' ')}`.trim(),
+    tag: num ? `train-update-${num}` : 'train-update',
+    timestamp: lastDetectionMillis != null ? lastDetectionMillis : Date.now(),
+  };
+}
+
+function maybeSendTrainNotification(payload) {
+  const settings = loadTrainNotificationsSettings();
+  if (!settings.enabled || !settings.target) return;
+
+  const d = payload && payload.data;
+  if (!d) return;
+
+  const target = buildTrainNotificationTarget({
+    trainNumber: String(d.numeroTreno || d.numeroTrenoEsteso || '').trim(),
+    originCode: payload?.originCode || '',
+    technical: payload?.technical || '',
+    epochMs: payload?.referenceTimestamp ?? null,
+  });
+
+  const currentKey = trainNotificationTargetKey(target);
+  const savedKey = trainNotificationTargetKey(settings.target);
+  if (!currentKey || currentKey !== savedKey) return;
+
+  // Notifica solo quando la pagina non è in primo piano, per evitare spam mentre stai guardando.
+  if (typeof document !== 'undefined' && document.visibilityState === 'visible') return;
+
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+  const digest = computeTrainNotificationDigest(payload);
+  if (!digest) return;
+
+  const now = Date.now();
+  const MIN_GAP_MS = 30_000;
+  if (settings.lastDigest === digest) return;
+  if (settings.lastNotifiedAt && now - settings.lastNotifiedAt < MIN_GAP_MS) return;
+
+  const msg = buildTrainNotificationMessage(payload);
+  if (!msg) return;
+
+  try {
+    // `tag` evita che si accumulino notifiche duplicate (dipende dal browser).
+    new Notification(msg.title, { body: msg.body, tag: msg.tag });
+    saveTrainNotificationsSettings({
+      ...settings,
+      lastDigest: digest,
+      lastNotifiedAt: now,
+    });
+  } catch {
+    // ignore
+  }
+}
 
 const REGION_LABELS = {
   '1': 'Lombardia',
@@ -45,193 +250,7 @@ const REGION_LABELS = {
   '22': 'Trentino-Alto Adige',
 };
 
-const TRAIN_KIND_RULES = [
-  //matches: icche cerca nel JSON | boardLabel: etichetta stazioni | detailLabel: etichetta stato treno
-  // Alta velocità e servizi internazionali (fonte: classificazioni Trenitalia/Wikipedia)
-  {
-    matches: ['FRECCIAROSSA', 'FRECCIAROSSA AV', 'FRECCIAROSSAAV', 'FR', 'FR AV', 'FRAV', 'FR EC', 'FRECCIAROSSA EC'],
-    boardLabel: 'FR',
-    detailLabel: 'FR AV',
-    className: 'train-title--fr',
-  },
-  {
-    matches: ['FRECCIARGENTO', 'FRECCIARGENTO AV', 'FRECCIARGENTOAV', 'FA', 'FA AV'],
-    boardLabel: 'FA',
-    detailLabel: 'FA AV',
-    className: 'train-title--fr',
-  },
-  {
-    matches: ['FRECCIABIANCA', 'FB'],
-    boardLabel: 'Frecciabianca',
-    detailLabel: 'FB',
-    className: 'train-title--ic',
-  },
-  {
-    matches: ['ITALO', 'ITALO AV', 'ITALOAV', 'NTV', 'ITA'], // Da impl.
-    boardLabel: 'ITA',
-    detailLabel: 'ITA AV',
-    className: 'train-title--ita',
-  },
-  {
-    matches: ['EUROCITY', 'EC'],
-    boardLabel: 'EC',
-    detailLabel: 'EC',
-    className: 'train-title--ic',
-  },
-  {
-    matches: ['EURONIGHT', 'EN'],
-    boardLabel: 'EN',
-    detailLabel: 'EN',
-    className: 'train-title--ic',
-  },
-  {
-    matches: ['TGV'],
-    boardLabel: 'TGV',
-    detailLabel: 'TGV',
-    className: 'train-title--fr',
-  },
-  {
-    matches: ['RAILJET', 'RJ'],
-    boardLabel: 'RJ',
-    detailLabel: 'RJ',
-    className: 'train-title--ic',
-  },
-  // Lunga percorrenza tradizionale
-  {
-    matches: ['INTERCITY NOTTE', 'INTERCITYNOTTE', 'ICN'],
-    boardLabel: 'ICN',
-    detailLabel: 'ICN',
-    className: 'train-title--ic',
-  },
-  {
-    matches: ['INTERCITY', 'IC'],
-    boardLabel: 'IC',
-    detailLabel: 'IC',
-    className: 'train-title--ic',
-  },
-  { //Deprecato quasi sicuramente ma io ce lo metto
-  matches: ['ESPRESSO', 'EXP', 'E'],
-    boardLabel: 'EXP',
-    detailLabel: 'EXP',
-    className: 'train-title--ic',
-  },
-  { //Deprecato quasi sicuramente ma io ce lo metto
-    matches: ['EUROSTAR', 'EUROSTAR CITY', 'EUROSTARCITY', 'ES', 'ESC', 'ES CITY', 'ES AV', 'ESAV', 'ES FAST'],
-    boardLabel: 'ES',
-    detailLabel: 'ES',
-    className: 'train-title--fr',
-  },
-  // Regionali e suburbani
-  {
-    matches: ['REGIONALE VELOCE', 'REGIONALEVELOCE', 'RV', 'RGV'],
-    boardLabel: 'RV',
-    detailLabel: 'RV',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['REGIOEXPRESS', 'REGIO EXPRESS', 'RE'],
-    boardLabel: 'REX',
-    detailLabel: 'REX',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['SUBURBANO', 'SERVIZIO SUBURBANO', 'SUB', 'S'],
-    boardLabel: 'SUB',
-    detailLabel: 'SUB',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['METROPOLITANO', 'MET', 'METROPOLITANA', 'M', 'SFM'],
-    boardLabel: 'MET',
-    detailLabel: 'MET',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['MALPENSA EXPRESS', 'MALPENSAEXPRESS', 'MXP'],
-    boardLabel: 'MXP',
-    detailLabel: 'MXP',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['LEONARDO EXPRESS', 'LEONARDOEXPRESS', 'LEONARDO'],
-    boardLabel: 'LEX',
-    detailLabel: 'LEX',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['FERROVIE LAZIALI', 'FL'],
-    boardLabel: 'FL',
-    detailLabel: 'FL',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['AIRLINK'],
-    boardLabel: 'Airlink',
-    detailLabel: 'Airlink',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['TROPEA EXPRESS', 'TROPEAEXPRESS', 'TROPEA'],
-    boardLabel: 'TEXP',
-    detailLabel: 'TEXP',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['CIVITAVECCHIA EXPRESS', 'CIVITAVECCHIAEXPRESS', 'CIVITAVECCHIA'],
-    boardLabel: 'CEXP',
-    detailLabel: 'CEXP',
-    className: 'train-title--reg',
-  },
-  { // Mai sentiti giuro
-    matches: ['PANORAMA EXPRESS', 'PANORAMAEXPRESS', 'PE'],
-    boardLabel: 'Panorama PEXP',
-    detailLabel: 'PEXP',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['R'],
-    boardLabel: 'R',
-    detailLabel: 'R',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['REGIONALE', 'REG'],
-    boardLabel: 'REG',
-    detailLabel: 'REG',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['INTERREGIONALE', 'IR'],
-    boardLabel: 'IREG',
-    detailLabel: 'IREG',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['DIRETTISSIMO', 'DD'],
-    boardLabel: 'DD',
-    detailLabel: 'DD',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['DIRETTO', 'DIR', 'D'],
-    boardLabel: 'D',
-    detailLabel: 'D',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['ACCELERATO', 'ACC', 'A'],
-    boardLabel: 'ACC',
-    detailLabel: 'ACC',
-    className: 'train-title--reg',
-  },
-  {
-    matches: ['BUS', 'BU', 'FI'],
-    boardLabel: 'BUS',
-    detailLabel: 'BUS',
-    className: 'train-title--reg',
-  },
-];
-
+// Icone per tipo treno (mantenute per UI)
 const TRAIN_KIND_ICON_SRC = {
   FR: '/img/FR_black.svg',
   FA: '/img/FA_black.svg',
@@ -250,7 +269,6 @@ const TRAIN_KIND_ICON_SRC = {
 const REGIONAL_ICON_CODES = new Set([
   'R',
   'REG', 'RV', 'IR', 'IREG',
-  'RE', 'REX',
   'LEX',
   'SUB', 'MET', 'SFM',
   'MXP', 'FL',
@@ -351,35 +369,39 @@ function deriveShortCodeFromRule(rule) {
   return '';
 }
 
+// Fallback semplice per estrarre il tipo treno quando backend non fornisce computed
+// Estrae la sigla iniziale (es. "FR 9544" → "FR")
 function resolveTrainKindFromCode(...rawValues) {
   for (const raw of rawValues) {
     if (raw == null) continue;
     const normalized = String(raw)
       .toUpperCase()
-      .replace(/[-_/]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
     if (!normalized) continue;
-    const alphaOnly = normalized.replace(/[^A-Z]/g, '');
-    const alphaPrefixMatch = normalized.match(/^[A-Z]+/);
-    const alphaPrefix = alphaPrefixMatch ? alphaPrefixMatch[0] : '';
-    const firstToken = normalized.split(' ')[0] || '';
-    const candidates = new Set([normalized]);
-    if (alphaOnly) candidates.add(alphaOnly);
-    if (alphaPrefix) candidates.add(alphaPrefix);
-    if (firstToken) candidates.add(firstToken);
-    for (const rule of TRAIN_KIND_RULES) {
-      const matched = rule.matches.some((token) => candidates.has(token));
-      if (matched) {
-        const numberMatch = normalized.match(/(\d{2,5})/);
-        return {
-          boardLabel: rule.boardLabel,
-          detailLabel: rule.detailLabel,
-          className: rule.className,
-          shortCode: deriveShortCodeFromRule(rule),
-          number: numberMatch ? numberMatch[1] : '',
-        };
-      }
+    
+    // Estrai sigla iniziale (es. "FR 9544" → "FR", "REG 12345" → "REG")
+    const prefixMatch = normalized.match(/^([A-Z]{1,4})\b/);
+    const numberMatch = normalized.match(/(\d{2,5})/);
+    
+    if (prefixMatch) {
+      const code = prefixMatch[1];
+      const number = numberMatch ? numberMatch[1] : '';
+      
+      // Mappa classi CSS base
+      let className = '';
+      if (['FR', 'FA', 'TGV', 'ES', 'ITA'].includes(code)) className = 'train-title--fr';
+      else if (code === 'ITA') className = 'train-title--ita';
+      else if (['IC', 'ICN', 'EC', 'EN', 'FB', 'RJ'].includes(code)) className = 'train-title--ic';
+      else if (['REG', 'RV', 'R', 'SUB', 'MET', 'LEX', 'MXP', 'FL'].includes(code)) className = 'train-title--reg';
+      
+      return {
+        boardLabel: code,
+        detailLabel: code,
+        className,
+        shortCode: code,
+        number,
+      };
     }
   }
   return null;
@@ -461,8 +483,8 @@ async function ensureStationCanonicalLoaded() {
   stationCanonicalLoadPromise = (async () => {
     try {
       const paths = [
-        '/stazioni_coord_coerenti.tsv',
         '/stazioni_coord_canon.tsv',
+        '/stazioni_coord_coerenti.tsv',
         '/src/stazioni_coord_coerenti.tsv',
         '/src/stazioni_coord_canon.tsv',
       ];
@@ -2264,19 +2286,37 @@ function buildStationBoardRow(entry, type) {
     ? (entry.destinazione || entry.destinazioneBreve || entry.compDestinazione || '-')
     : (entry.provenienza || entry.origine || entry.compOrigine || '-');
   const routeLabel = resolveStationDisplayName('', routeLabelRaw) || routeLabelRaw || '-';
+  
+  // Usa dati computed dal backend quando disponibili
+  const computed = entry._computed || {};
   const category = entry.categoria || entry.compTipologiaTreno || entry.tipoTreno || 'Treno';
   const compTrainCode = entry.compNumeroTreno || entry.siglaTreno || '';
   const numericTrainCode = entry.numeroTreno || (compTrainCode.match(/\d+/)?.[0] ?? '');
-  const trainKindMeta = resolveTrainKindFromCode(
-    compTrainCode,
-    entry.compTipologiaTreno,
-    entry.categoriaDescrizione,
-    category
-  );
+  
+  // Se backend ha calcolato trainKind, usa quello, altrimenti fallback a calcolo locale
+  const trainKindMeta = (computed && computed.trainKind)
+    ? {
+        boardLabel: computed.trainKind.code || computed.trainKind.label,
+        number: numericTrainCode,
+        className: computed.trainKind.category === 'high-speed' ? 'train-title--fr' :
+                   computed.trainKind.category === 'intercity' ? 'train-title--ic' :
+                   computed.trainKind.category === 'regional' ? 'train-title--reg' :
+                   computed.trainKind.code === 'ITA' ? 'train-title--ita' : '',
+      }
+    : resolveTrainKindFromCode(
+        compTrainCode,
+        entry.compTipologiaTreno,
+        entry.categoriaDescrizione,
+        category
+      );
+  
   const displayTrainName = trainKindMeta?.boardLabel || category || 'Treno';
   const displayTrainNumber = trainKindMeta?.number || numericTrainCode || compTrainCode || '';
   const trainLabel = `${displayTrainName} ${displayTrainNumber}`.trim();
-  const delay = resolveDelay(entry.ritardo, entry.compRitardo);
+  
+  // Usa delay computed se disponibile
+  const delay = computed.delay != null ? computed.delay : resolveDelay(entry.ritardo, entry.compRitardo);
+  
   const isCancelled = entry.cancellato === true || entry.cancellata === true || entry.soppresso === true;
   const trackInfo = getBoardTrack(entry, type);
   const delayBadge = buildBoardDelayBadge(delay, isCancelled);
@@ -2681,9 +2721,6 @@ function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isF
     
     return `
       <div class="storage-chip ${isFav ? 'favorite' : ''} ${extraClass}" role="button" tabindex="0" data-id="${escapeHtml(id)}">
-        <span class="storage-chip-content">
-            ${contentHtml}
-        </span>
         <div class="storage-chip-actions">
             ${showFav ? `
               <button type="button" class="storage-chip-btn storage-chip-fav ${isFav ? 'is-active' : ''}" title="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}" aria-label="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}">
@@ -2691,6 +2728,9 @@ function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isF
               </button>
             ` : ''}
         </div>
+        <span class="storage-chip-content">
+            ${contentHtml}
+        </span>
       </div>
     `;
   }).join('');
@@ -2913,7 +2953,6 @@ function renderGroupedChips(container, groups, type, onSelect, onRemove, onToggl
 
     return `
       <div class="storage-chip ${isFav ? 'favorite' : ''} ${extraClass}" role="button" tabindex="0" data-idx="${idx}" data-id="${escapeHtml(id)}">
-        <span class="storage-chip-content">${contentHtml}</span>
         <div class="storage-chip-actions">
           ${showFav ? `
             <button type="button" class="storage-chip-btn storage-chip-fav ${isFav ? 'is-active' : ''}" title="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}" aria-label="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}">
@@ -2921,6 +2960,7 @@ function renderGroupedChips(container, groups, type, onSelect, onRemove, onToggl
             </button>
           ` : ''}
         </div>
+        <span class="storage-chip-content">${contentHtml}</span>
       </div>
     `;
   };
@@ -3189,6 +3229,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
 if (trainResult) {
   trainResult.addEventListener('click', (e) => {
+    const notifBtn = e.target.closest('.notification-current-btn');
+    if (notifBtn) {
+      e.preventDefault();
+      if (notifBtn.disabled) return;
+
+      const num = (notifBtn.getAttribute('data-num') || '').trim();
+      const originCode = decodeDatasetValue(notifBtn.getAttribute('data-origin-code') || '');
+      const technical = decodeDatasetValue(notifBtn.getAttribute('data-technical') || '');
+      const epochRaw = decodeDatasetValue(notifBtn.getAttribute('data-epoch-ms') || '');
+      const epochMs = Number.isFinite(Number(epochRaw)) ? Number(epochRaw) : null;
+
+      (async () => {
+        const permission = await ensureBrowserNotificationPermission();
+        if (permission !== 'granted') {
+          notifBtn.textContent = permission === 'denied' ? 'Notifiche bloccate' : 'Attiva notifiche';
+          return;
+        }
+
+        const target = buildTrainNotificationTarget({ trainNumber: num, originCode, technical, epochMs });
+        if (!target) return;
+
+        const settings = loadTrainNotificationsSettings();
+        const savedKey = trainNotificationTargetKey(settings.target);
+        const currentKey = trainNotificationTargetKey(target);
+        const isActiveForThis = settings.enabled && savedKey && currentKey === savedKey;
+
+        if (isActiveForThis) {
+          saveTrainNotificationsSettings({ enabled: false, target: null, lastDigest: '', lastNotifiedAt: 0 });
+          notifBtn.classList.remove('is-active');
+          notifBtn.textContent = 'Attiva notifiche';
+        } else {
+          const digest = lastRenderedTrainStatusPayload ? computeTrainNotificationDigest(lastRenderedTrainStatusPayload) : '';
+          saveTrainNotificationsSettings({ enabled: true, target, lastDigest: digest || '', lastNotifiedAt: 0 });
+          notifBtn.classList.add('is-active');
+          notifBtn.textContent = 'Notifiche attive';
+        }
+      })();
+
+      return;
+    }
+
     const favBtn = e.target.closest('.favorite-current-btn');
     if (favBtn) {
       const data = {
@@ -4227,6 +4308,7 @@ function buildPrimaryStatus(d, journey, currentInfo) {
 
 function renderTrainStatus(payload) {
   const d = payload && payload.data;
+  lastRenderedTrainStatusPayload = payload;
   trainResult.innerHTML = '';
   if (!d) {
     const msg = payload && payload.message
@@ -4236,9 +4318,16 @@ function renderTrainStatus(payload) {
     return { concluded: false };
   }
 
-  const journey = computeJourneyState(d);
+  // Usa dati computed dal backend quando disponibili
+  const computed = payload.computed || {};
+  const journey = computed.journeyState 
+    ? { state: computed.journeyState.state } 
+    : computeJourneyState(d);
   const fermate = Array.isArray(d.fermate) ? d.fermate : [];
-  const globalDelay = getGlobalDelayMinutes(d);
+  const globalDelay = computed.globalDelay != null 
+    ? computed.globalDelay 
+    : getGlobalDelayMinutes(d);
+  
   const timelineState = deriveTimelineFromTimes(fermate, {
     journeyState: journey.state,
     globalDelay,
@@ -4282,6 +4371,9 @@ function renderTrainStatus(payload) {
     kindCode: getTrainKindShortCode(d),
   };
   const trainIsFavorite = trainMeta.numero ? isFavoriteTrain(trainMeta.numero) : false;
+  const notifState = getCurrentTrainNotificationState(payload);
+  const notifSupported = (typeof window !== 'undefined') && ('Notification' in window);
+  const notifPermission = notifSupported ? Notification.permission : 'unsupported';
 
   const lastDetectionMillis = parseToMillis(d.oraUltimoRilevamento);
   const lastDetectionAgeMinutes = lastDetectionMillis != null
@@ -4323,6 +4415,19 @@ function renderTrainStatus(payload) {
 
   const favoriteBtnHtml = trainMeta.numero
     ? `<button type="button" class="favorite-current-btn${trainIsFavorite ? ' is-active' : ''}" data-num="${trainMeta.numero}" data-kind="${encodeDatasetValue(trainMeta.kindCode || '')}" data-orig="${encodeDatasetValue(trainMeta.origine)}" data-dest="${encodeDatasetValue(trainMeta.destinazione)}" data-dep="${encodeDatasetValue(trainMeta.partenza || '')}" data-arr="${encodeDatasetValue(trainMeta.arrivo || '')}">${buildFavoriteButtonInnerHtml(trainIsFavorite)}</button>`
+    : '';
+
+  const notifBtnDisabled = !notifSupported || notifPermission === 'denied' || !trainMeta.numero;
+  const notifBtnLabel = (() => {
+    if (!trainMeta.numero) return '';
+    if (!notifSupported) return 'Notifiche non supportate';
+    if (notifPermission === 'denied') return 'Notifiche bloccate';
+    if (notifState.enabled && notifState.matches) return 'Notifiche attive';
+    return 'Attiva notifiche';
+  })();
+
+  const notifBtnHtml = trainMeta.numero
+    ? `<button type="button" class="notification-current-btn${(notifState.enabled && notifState.matches) ? ' is-active' : ''}" data-num="${trainMeta.numero}" data-origin-code="${encodeDatasetValue(payload?.originCode || '')}" data-technical="${encodeDatasetValue(payload?.technical || '')}" data-epoch-ms="${encodeDatasetValue(String(payload?.referenceTimestamp ?? ''))}" ${notifBtnDisabled ? 'disabled' : ''}>${escapeHtml(notifBtnLabel)}</button>`
     : '';
 
   const headerIconAlt = normalizeTrainShortCode(trainMeta.kindCode) || 'Treno';
@@ -4381,7 +4486,9 @@ function renderTrainStatus(payload) {
       ? `<p class='train-primary-meta'>${positionText}</p>`
       : ''
     }
-      ${favoriteBtnHtml ? `<div class='favorite-current-wrapper'>${favoriteBtnHtml}</div>` : ''}
+      ${(favoriteBtnHtml || notifBtnHtml)
+        ? `<div class='favorite-current-wrapper'>${notifBtnHtml || ''}${favoriteBtnHtml || ''}</div>`
+        : ''}
     </div>
   `;
 
@@ -5174,6 +5281,13 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
     }
 
     const dd = data.data;
+
+    // Notifiche: valuta su ogni snapshot (anche in auto-refresh).
+    try {
+      maybeSendTrainNotification(data);
+    } catch {
+      // ignore
+    }
 
     // Se il backend ci dice quale origin/technical ha risolto, ricordiamocelo.
     if (data.originCode || data.technical || data.referenceTimestamp) {
