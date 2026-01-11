@@ -34,7 +34,7 @@
   <hr />
 
   <section>
-    <h2>Cerca soluzioni (LeFrecce)</h2>
+    <h2>Cerca soluzioni</h2>
     <input id="fromName" type="text" placeholder="Da (stazione)..." autocomplete="off" />
     <div id="fromSuggestions"></div>
     <p id="fromPicked"></p>
@@ -75,7 +75,7 @@
       if (q.length < 2) return [];
       if (abortCtrlStation) abortCtrlStation.abort();
       abortCtrlStation = new AbortController();
-      const resp = await fetch(`/api/viaggiatreno/autocomplete?query=${encodeURIComponent(q)}`, {
+      const resp = await fetch(`/api/stations/autocomplete?query=${encodeURIComponent(q)}`, {
         signal: abortCtrlStation.signal,
       });
       const json = await resp.json();
@@ -176,7 +176,7 @@
         if (q.length < 2) return [];
         if (abortCtrl) abortCtrl.abort();
         abortCtrl = new AbortController();
-        const resp = await fetch(`/api/viaggiatreno/autocomplete?query=${encodeURIComponent(q)}`, {
+        const resp = await fetch(`/api/stations/autocomplete?query=${encodeURIComponent(q)}`, {
           signal: abortCtrl.signal,
         });
         const json = await resp.json();

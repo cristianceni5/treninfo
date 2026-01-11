@@ -21,3 +21,6 @@ pnpm-debug.log*
 # Build artifacts (if added later)
 dist/
 build/
+
+# Local archive (do not commit)
+old-functions/

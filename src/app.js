@@ -107,9 +107,32 @@ function addStationNameVariant(id, name) {
 }
 
 try {
-  const stationsPath = path.join(__dirname, '..', 'stations-viaggiatreno.json');
-  const raw = fs.readFileSync(stationsPath, 'utf8');
-  const list = JSON.parse(raw);
+  // Preferisci `require` per garantire l'inclusione nel bundle Netlify Functions.
+  // (La lettura via fs può fallire in produzione se il file non viene incluso automaticamente.)
+  let list = null;
+  try {
+    // eslint-disable-next-line global-require, import/no-dynamic-require
+    list = require('../stations-viaggiatreno.json');
+  } catch {
+    list = null;
+  }
+  if (!Array.isArray(list)) {
+    const candidates = [
+      path.join(__dirname, '..', 'stations-viaggiatreno.json'),
+      path.resolve(process.cwd(), 'stations-viaggiatreno.json'),
+    ];
+    let loaded = null;
+    for (const p of candidates) {
+      try {
+        const raw = fs.readFileSync(p, 'utf8');
+        loaded = JSON.parse(raw);
+        break;
+      } catch {
+        // try next
+      }
+    }
+    list = loaded;
+  }
   if (Array.isArray(list)) {
     list
       .filter((s) => s && s.id)
@@ -422,8 +445,9 @@ function mapDepartureEntry(entry) {
   return {
     numeroTreno: entry && entry.numeroTreno != null ? Number(entry.numeroTreno) : null,
     categoria: tipoTreno.codice,
-    origine: stationPublicNameFromIdOrName(entry?.codOrigine),
-    destinazione: stationPublicNameFromIdOrName(entry?.codDestinazione),
+    origine: stationPublicNameFromIdOrName(entry?.codOrigine) || stationPublicNameFromIdOrName(entry?.origine),
+    destinazione:
+      stationPublicNameFromIdOrName(entry?.codDestinazione) || stationPublicNameFromIdOrName(entry?.destinazione),
     orarioPartenza: partenzaMs,
     orarioPartenzaLeggibile: formatHHmmFromMs(partenzaMs),
     ritardo: Number.isFinite(ritardo) ? ritardo : null,
@@ -455,8 +479,9 @@ function mapArrivalEntry(entry) {
   return {
     numeroTreno: entry && entry.numeroTreno != null ? Number(entry.numeroTreno) : null,
     categoria: tipoTreno.codice,
-    origine: stationPublicNameFromIdOrName(entry?.codOrigine),
-    destinazione: stationPublicNameFromIdOrName(entry?.codDestinazione),
+    origine: stationPublicNameFromIdOrName(entry?.codOrigine) || stationPublicNameFromIdOrName(entry?.origine),
+    destinazione:
+      stationPublicNameFromIdOrName(entry?.codDestinazione) || stationPublicNameFromIdOrName(entry?.destinazione),
     orarioArrivo: arrivoMs,
     orarioArrivoLeggibile: formatHHmmFromMs(arrivoMs),
     ritardo: Number.isFinite(ritardo) ? ritardo : null,
@@ -594,9 +619,50 @@ app.get('/api/viaggiatreno/autocomplete', async (req, res) => {
   }
 });
 
-// Compat: /api/stations/autocomplete -> /api/viaggiatreno/autocomplete
+// Autocomplete stazioni (locale: usa stations-viaggiatreno.json, senza chiamate esterne)
 app.get('/api/stations/autocomplete', (req, res) => {
-  res.redirect(307, `/api/viaggiatreno/autocomplete?query=${encodeURIComponent(req.query.query || '')}`);
+  const query = (req.query.query || '').trim();
+  const limitRaw = req.query.limit;
+  const limit = Number.isFinite(Number(limitRaw)) ? Math.max(1, Math.min(50, Number(limitRaw))) : 10;
+  if (query.length < 2) return res.json({ ok: true, data: [] });
+
+  const qKey = normalizeStationNameKey(query);
+  if (!qKey) return res.json({ ok: true, data: [] });
+
+  const qTokens = qKey.split(' ').filter(Boolean);
+  const scored = [];
+
+  for (const s of stationList) {
+    if (!s?.name) continue;
+    const sKey = normalizeStationNameKey(s.name);
+    if (!sKey) continue;
+
+    let score = 0;
+    if (sKey === qKey) score += 10;
+    if (sKey.startsWith(qKey)) score += 5;
+    if (sKey.includes(qKey)) score += 2;
+
+    let hits = 0;
+    for (const t of qTokens) {
+      if (t && sKey.includes(t)) hits += 1;
+    }
+    if (hits > 0) score += hits / Math.max(1, qTokens.length);
+
+    if (score > 0) scored.push({ name: String(s.name), score });
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'it'));
+
+  const data = [];
+  const seen = new Set();
+  for (const item of scored) {
+    if (seen.has(item.name)) continue;
+    seen.add(item.name);
+    data.push(item.name);
+    if (data.length >= limit) break;
+  }
+
+  res.json({ ok: true, data });
 });
 
 // Info stazione (flatten + meteo)
@@ -1155,6 +1221,16 @@ app.get('/api/solutions', async (req, res) => {
 // ============================================================================
 // Extra endpoint utili
 // ============================================================================
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    stationDb: {
+      loaded: stationList.length > 0,
+      count: stationList.length,
+    },
+  });
+});
+
 app.get('/api/viaggiatreno/station-board', async (req, res) => {
   const stationCode = resolveStationCodeOrNull(req.query.stationCode, req.query.stationName || req.query.name);
   const raw = ENABLE_RAW_UPSTREAM && parseBool(req.query.raw, false);

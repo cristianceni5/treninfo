@@ -9,6 +9,9 @@
   # Evita conflitti: Netlify usa 3999 di default per le Functions
   functionsPort = 9999
 
+[functions]
+  included_files = ["stations-viaggiatreno.json"]
+
 # /api/* → /.netlify/functions/api (la function api gestisce già /api/...)
 [[redirects]]
   from = "/api/*"
