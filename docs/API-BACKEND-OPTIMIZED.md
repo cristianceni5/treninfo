@@ -11,23 +11,60 @@ Il backend è stato ottimizzato per fornire tutti i dati già formattati e pront
 Restituisce lo stato dettagliato di un treno con tutti i dati formattati.
 
 **Parametri:**
-- `trainNumber`: Numero del treno (obbligatorio)
-- `originCode`: Codice stazione di origine (opzionale)
-- `technical`: Stringa tecnica (opzionale)
-- `epochMs`: Timestamp di riferimento (opzionale)
-- `full`: Se `true`, restituisce `data` completo (payload grezzo RFI). Default `false` (data compatto).
+- `numeroTreno`: Numero del treno (obbligatorio)
+- `codiceOrigine`: Codice stazione di origine (opzionale)
+- `tecnico`: Stringa tecnica (opzionale)
+- `timestampRiferimento`: Timestamp di riferimento epoch ms (opzionale)
+- `debug`: Se `true`, aggiunge un blocco `debug` con dati completi (grezzi RFI + computed). Default `false`.
 
 **Risposta:**
 
 ```json
 {
   "ok": true,
-  "originCode": "S06904",
-  "technical": "18828-S06904",
-  "referenceTimestamp": 1736524800000,
-  "data": { /* dati RFI (compatti di default; completi con ?full=1) */ },
-  "principali": { /* dati essenziali (chiavi in italiano, senza duplicati) */ },
-  "computed": {
+  "treno": {
+    /* dati essenziali (chiavi in italiano, senza duplicati) */
+  },
+  "debug": {
+    /* presente solo con debug=1: dati completi (grezzi RFI + computed) */
+  }
+}
+```
+
+Il backend espone un payload minimale per la UI (`treno`). Se serve investigare problemi o confrontare i campi RFI, usare `debug=1`.
+
+## Struttura Dati Dettagliata
+
+### tipoTreno
+Oggetto con:
+- `codice`: sigla breve (es. `FR`, `IC`, `REG`)
+- `etichetta`: label per UI
+- `categoria`: categoria semantica (`high-speed`, `intercity`, `regional`, `bus`, `unknown`)
+
+### ritardoMinuti
+Numero (può essere negativo = anticipo) o `null`.
+
+### fermate
+Array con fermate formattate e distinzioni orarie utili:
+- `orari.*.programmatoIniziale` (valore “Zero” quando disponibile)
+- `orari.*.programmato` (orario programmato aggiornato)
+- `orari.*.probabile` (programmato + ritardo)
+- `orari.*.reale` (effettivo)
+
+### rilevamento
+Oggetto con:
+- `testo`: stringa leggibile (es. `"14:50 Roma Prenestina"`)
+- `timestamp`: epoch ms di ultimo rilevamento
+- `stazione`: nome stazione (raw)
+
+### oraLuogoRilevamento
+Nel payload minimale è incluso dentro `rilevamento.testo` (formato `"HH:mm Stazione"`).
+
+<!--
+Sezioni legacy sotto (computed/data) non più centrali per il nuovo payload.
+-->
+
+/*
     // --- CAMPI ORIGINALI (mantenuti per compatibilità) ---
     "trainKind": {
       "code": "REG",

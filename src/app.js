@@ -1580,16 +1580,16 @@ app.get('/api/stations/arrivals', async (req, res) => {
 // GET /api/trains/status?trainNumber=666&originCode=S06904&technical=...&epochMs=...
 // ----------------------------------------------------------------------------
 app.get('/api/trains/status', async (req, res) => {
-  const trainNumber = (req.query.trainNumber || '').trim();
-  const originCodeHint = (req.query.originCode || '').trim();
-  const technicalHint = (req.query.technical || '').trim();
-  const epochMsHint = parseToMillis(req.query.epochMs);
-  const full = parseBool(req.query.full, false);
+  const trainNumber = (req.query.numeroTreno || req.query.trainNumber || '').trim();
+  const originCodeHint = (req.query.codiceOrigine || req.query.originCode || '').trim();
+  const technicalHint = (req.query.tecnico || req.query.technical || '').trim();
+  const epochMsHint = parseToMillis(req.query.epochMs || req.query.timestampRiferimento);
+  const debug = parseBool(req.query.debug, false);
 
   if (!trainNumber) {
     return res
       .status(400)
-      .json({ ok: false, error: 'Parametro "trainNumber" obbligatorio' });
+      .json({ ok: false, errore: 'Parametro "numeroTreno" obbligatorio' });
   }
 
   try {
@@ -1767,42 +1767,6 @@ app.get('/api/trains/status', async (req, res) => {
     // Arricchisci la risposta con dati computati e formattati
     const enriched = enrichTrainData(finalSnapshot.data);
 
-    function stripTrainStatusDataForClient(snapshot) {
-      if (!snapshot || typeof snapshot !== 'object') return snapshot;
-
-      // Manteniamo SOLO i campi che il frontend usa davvero (script.js)
-      // + fermate complete per timeline (il resto è ridondante o già presente in computed).
-      const keep = {
-        // Identità corsa
-        numeroTreno: snapshot.numeroTreno ?? null,
-        origine: snapshot.origine ?? null,
-        destinazione: snapshot.destinazione ?? null,
-
-        // Codice treno (fallback UI)
-        compNumeroTreno: snapshot.compNumeroTreno ?? null,
-
-        // Ritardo / messaggi base usati in UI
-        ritardo: snapshot.ritardo ?? null,
-        compRitardo: snapshot.compRitardo ?? null,
-        compMotivoRitardo: snapshot.compMotivoRitardo ?? null,
-        compVariazionePercorso: snapshot.compVariazionePercorso ?? null,
-        subTitle: snapshot.subTitle ?? null,
-
-        // Stato corsa (fallback frontend)
-        trenoSoppresso: snapshot.trenoSoppresso ?? null,
-        fermateSoppresse: snapshot.fermateSoppresse ?? null,
-
-        // Ultimo rilevamento (UI)
-        oraUltimoRilevamento: snapshot.oraUltimoRilevamento ?? null,
-        stazioneUltimoRilevamento: snapshot.stazioneUltimoRilevamento ?? null,
-
-        // Timeline
-        fermate: snapshot.fermate ?? null,
-      };
-
-      return keep;
-    }
-
     function buildPrincipali(snapshot, computed) {
       const raw = snapshot && typeof snapshot === 'object' ? snapshot : {};
       const c = computed && typeof computed === 'object' ? computed : {};
@@ -1869,9 +1833,33 @@ app.get('/api/trains/status', async (req, res) => {
           })
         : [];
 
+      const posizione = c.currentStop
+        ? {
+            stazione: c.currentStop.stationName ?? null,
+            idStazione: c.currentStop.stationCode ?? null,
+            indice: c.currentStop.index ?? null,
+            timestamp: c.currentStop.timestamp ?? null,
+          }
+        : null;
+
+      const statoViaggio = c.journeyState
+        ? {
+            stato: c.journeyState.state ?? null,
+            etichetta: c.journeyState.label ?? null,
+          }
+        : null;
+
+      const codiceCompleto = (() => {
+        const rawCode = raw.compNumeroTreno != null ? String(raw.compNumeroTreno).trim() : '';
+        if (rawCode) return rawCode.replace(/\s+/g, ' ').trim();
+        const fallback = [c.tipologiaTreno, c.numeroTreno].filter(Boolean).join(' ').trim();
+        return fallback || null;
+      })();
+
       return {
         numeroTreno: c.numeroTreno ?? (raw.numeroTreno != null ? String(raw.numeroTreno) : null),
         codiceTreno: c.tipologiaTreno ?? c.trainKind?.code ?? null,
+        codiceCompleto,
         tipoTreno: c.trainKind
           ? {
               codice: c.trainKind.code ?? null,
@@ -1897,8 +1885,8 @@ app.get('/api/trains/status', async (req, res) => {
         },
         ritardoMinuti: typeof c.globalDelay === 'number' ? c.globalDelay : null,
         stato: c.statoTreno ?? null,
-        statoViaggio: c.journeyState ?? null,
-        posizione: c.currentStop ?? null,
+        statoViaggio,
+        posizione,
         prossimaFermata: c.prossimaFermata ?? null,
         rilevamento: {
           testo: c.oraLuogoRilevamento ?? null,
@@ -1911,24 +1899,32 @@ app.get('/api/trains/status', async (req, res) => {
       };
     }
 
-    res.json({
+    const principali = buildPrincipali(finalSnapshot.data, enriched);
+
+    const response = {
       ok: true,
-      originCode,
-      technical: selected.technical,
-      referenceTimestamp: finalSnapshot.referenceTimestamp,
-      data: full ? finalSnapshot.data : stripTrainStatusDataForClient(finalSnapshot.data),
-      principali: buildPrincipali(finalSnapshot.data, enriched),
-      // Dati arricchiti/computati dal backend (tutti i campi formattati)
-      computed: enriched,
-    });
+      treno: principali,
+    };
+
+    if (debug) {
+      response.debug = {
+        originCode,
+        tecnico: selected.technical,
+        timestampRiferimento: finalSnapshot.referenceTimestamp,
+        datiRfiCompleti: finalSnapshot.data,
+        computed: enriched,
+      };
+    }
+
+    res.json(response);
   } catch (err) {
     console.error('Errore trains/status backend:', err);
     res
       .status(err.status || 500)
       .json({
         ok: false,
-        error: 'Errore interno train status',
-        details: err.message,
+        errore: 'Errore interno train status',
+        dettagli: err.message,
       });
   }
 });

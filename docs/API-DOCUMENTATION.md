@@ -179,11 +179,11 @@ Informazioni dettagliate su un treno specifico (percorso, fermate, ritardi).
 **Endpoint**: `GET /api/trains/status`
 
 **Parametri**:
-- `trainNumber` (string, obbligatorio): numero treno
-- `originCode` (string, opzionale): codice stazione origine (per disambiguare)
-- `technical` (string, opzionale): ID tecnico completo
-- `epochMs` (number, opzionale): timestamp riferimento
-- `full` (boolean, opzionale, default: false): se `true`, restituisce `data` completo (payload grezzo RFI). Se `false`, `data` è compatto (solo campi essenziali per il frontend).
+- `numeroTreno` (string, obbligatorio): numero treno
+- `codiceOrigine` (string, opzionale): codice stazione origine (per disambiguare)
+- `tecnico` (string, opzionale): ID tecnico completo
+- `timestampRiferimento` (number, opzionale): timestamp riferimento (epoch ms)
+- `debug` (boolean, opzionale, default: false): se `true`, aggiunge un blocco `debug` con i dati completi (grezzi RFI + computed).
 
 **Esempio**:
 ```bash
@@ -306,101 +306,48 @@ curl "https://treninfo.netlify.app/api/trains/status?trainNumber=9544"
     },
     "globalDelay": 3,
     "journeyState": {
-      "state": "RUNNING",
+    curl "https://treninfo.netlify.app/api/trains/status?numeroTreno=9544"
       "label": "In viaggio"
     },
-    "currentStop": {
+    **Risposta** (minimale, dati principali per l'utente):
       "stationName": "PC RUBIERA",
       "stationCode": "S05106",
-      "index": 5,
-      "timestamp": 1736524560000
+      "ok": true,
+      "treno": {
+        "numeroTreno": "9544",
+        "codiceTreno": "FR",
+        "codiceCompleto": "FR 9544",
+        "tipoTreno": { "codice": "FR", "etichetta": "FR", "categoria": "high-speed" },
+        "tratta": { "origine": "SALERNO", "destinazione": "MILANO CENTRALE" },
+        "orari": {
+          "partenza": { "programmatoIniziale": "12:38", "programmato": "12:38", "reale": "12:40" },
+          "arrivo": { "programmatoIniziale": "18:30", "programmato": "18:30", "reale": null }
+        },
+        "ritardoMinuti": 3,
+        "stato": "partito",
+        "posizione": { "stazione": "Roma Termini", "idStazione": "S09218", "indice": 3, "timestamp": 1736528100000 },
+        "rilevamento": { "testo": "17:56 Roma Prenestina", "timestamp": 1736528160000, "stazione": "ROMA PRENESTINA" },
+        "aggiornamentoRfi": "con un ritardo di 3 min.",
+        "messaggioRfi": "con un ritardo di 3 min.",
+        "fermate": [
+          {
+            "stazione": "Salerno",
+            "id": "S09818",
+            "progressivo": 1,
+            "orari": {
+              "arrivo": { "programmato": null, "programmatoIniziale": null, "probabile": null, "reale": null },
+              "partenza": { "programmato": "12:38", "programmatoIniziale": "12:38", "probabile": "12:41", "reale": "12:40" }
+            },
+            "binari": { "programmato": "1", "reale": "1", "variato": false },
+            "soppressa": false,
+            "tipoFermata": "P"
+  - Aggiornato in tempo reale da RFI
+        ]
+      }
     }
-  }
-}
-```
+    ```
 
-**Nota**: `principali` è pensato per UI/utente (chiavi in italiano e senza duplicati). `data` resta utile per debug/compatibilità (completo con `?full=1`).
-
-**Struttura campo `computed`**:
-
-### Informazioni Generali
-- `tipologiaTreno` (String): sigla tipo treno (FR/FA/FB/IC/REG/RV/ecc)
-- `numeroTreno` (String): numero identificativo del treno
-- `origine` (String): nome stazione capolinea partenza (maiuscolo)
-- `destinazione` (String): nome stazione capolinea arrivo (maiuscolo)
-
-### Orari Principali
-- `orarioPartenzaProg` (String): orario partenza programmato in formato HH:mm (es. "12:38")
-  - Estratto dalla prima fermata del percorso
-- `orarioArrivoProg` (String): orario arrivo programmato in formato HH:mm (es. "18:30")
-  - Estratto dall'ultima fermata del percorso
-
-### Ritardo e Stato
-- `deltaTempo` (String): ritardo formattato con segno
-  - `"+3"` = 3 minuti di ritardo
-  - `"-2"` = 2 minuti di anticipo
-  - `"0"` = perfettamente in orario
-  - `null` = non disponibile
-- `statoTreno` (String): stato semplificato per visualizzazione
-  - `"programmato"` = treno non ancora partito
-  - `"partito"` = treno in viaggio
-  - `"concluso"` = treno arrivato a destinazione
-  - `"soppresso"` = treno completamente cancellato
-  - `"parziale"` = treno con alcune fermate soppresse
-
-### Posizione Corrente
-- `prossimaFermata` (String): nome della prossima fermata prevista
-  - Calcolata automaticamente dalla posizione corrente
-  - Salta fermate soppresse
-  - `null` se non ci sono fermate successive
-- `oraLuogoRilevamento` (String): ultimo rilevamento formattato
-  - Formato: `"HH:mm-AM/PM NomeStazione"` (es. "17:56-PM PC RUBIERA")
-  - Include ora, periodo giornata e stazione
-  - `null` se non disponibile
-
-### Messaggi
-- `messaggioRfi` (String): messaggi ufficiali da RFI
-  - Include: soppressioni, motivazioni ritardi, comunicazioni
-  - Può contenere testo multilingua
-  - `null` se nessun messaggio
-- `infoAgg` (String): informazioni aggiuntive sul treno
-  - Composizione: "Executive in testa in partenza da Reggio Emilia"
-  - Servizi: "Servizio di ristorazione disponibile"
-  - Altre info operative
-  - `null` se nessuna info
-
-### Fermate (Array)
-Array completo di tutte le fermate del percorso. Ogni fermata include:
-
-**Identificazione**:
-- `stazione` (String): nome completo fermata
-- `id` (String): codice RFI fermata (formato Sxxxxx)
-- `progressivo` (Number): ordine fermata (1 = prima, 2 = seconda, ecc)
-
-**Orari Programmati** (dall'orario ufficiale):
-- `orarioArrivoProgrammato` (String): orario arrivo previsto in HH:mm
-  - `null` per la prima fermata (origine, solo partenza)
-- `orarioPartenzaProgrammato` (String): orario partenza previsto in HH:mm
-  - `null` per l'ultima fermata (destinazione, solo arrivo)
-
-**Orari Probabili** (calcolati dal backend = programmato + deltaTempo):
-- `orarioArrivoProbabile` (String): orario arrivo stimato con ritardo in HH:mm
-- `orarioPartenzaProbabile` (String): orario partenza stimata con ritardo in HH:mm
-
-**Orari Effettivi/Reali** (quando disponibili):
-- `orarioArrivoReale` (String): orario arrivo effettivo in HH:mm
-  - `null` se il treno non è ancora arrivato a questa fermata
-  - Aggiornato in tempo reale da RFI
-- `orarioPartenzaReale` (String): orario partenza effettivo in HH:mm
-  - `null` se il treno non è ancora partito da questa fermata
-  - Aggiornato in tempo reale da RFI
-
-**Binari**:
-- `binarioProgrammato` (String): binario previsto dall'orario ufficiale
-- `binarioReale` (String): binario effettivo/aggiornato
-- `binarioVariato` (Boolean): `true` se il binario è cambiato rispetto al programmato
-
-**Stato**:
+    **Nota**: se ti serve il payload enorme per debug, usa `debug=1` (aggiunge `debug.datiRfiCompleti` e `debug.computed`).
 - `soppressa` (Boolean): `true` se questa fermata è stata soppressa
 - `tipoFermata` (String): tipo fermata (P=partenza, A=arrivo, F=fermata, S=soppressa)
 

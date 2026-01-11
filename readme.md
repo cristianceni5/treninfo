@@ -31,7 +31,7 @@ Applicazione web professionale per consultare informazioni in tempo reale su tre
 ### 💾 Persistenza Dati
 - **Treni Recenti**: storico ultimi 5 treni consultati
 - **Scelte Salvate**: ricorda disambiguazioni per numeri treno multipli
-- **Debug Raw JSON**: payload completo disponibile (es. `/api/trains/status?...&full=1`)
+- **Debug Raw JSON**: payload completo disponibile (es. `/api/trains/status?...&debug=1`)
 
 ---
 
@@ -91,7 +91,7 @@ GET /api/stations/info?stationCode=S06421
 GET /api/stations/departures?stationCode=S06421
 
 # Stato treno completo
-GET /api/trains/status?trainNumber=9544
+GET /api/trains/status?numeroTreno=9544
 
 # Soluzioni viaggio
 GET /api/solutions?fromName=Firenze&toName=Milano&date=2026-01-15&time=10:00
