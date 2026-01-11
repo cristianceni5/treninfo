@@ -1,0 +1,187 @@
+<!--Developed by Cristian Ceni 2025 dhn-->
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="format-detection" content="telephone=no,date=no,address=no,email=no">
+    <meta name="color-scheme" content="light dark">
+    <title>Treninfo</title>
+    <link rel="shortcut icon" type="image/png" href="img/iconDef.png" />
+    <link rel="stylesheet" href="styles.css">
+    <!-- Leaflet rimosso: la mappa non è più usata -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <div class="app-inner">
+      <header class="app-header">
+        <div class="app-title">
+          <picture>
+            <source srcset="/img/iconDark.png" media="(prefers-color-scheme: dark)" />
+            <img src="/img/iconDef.png" alt="" class="icon-img" />
+          </picture>
+          <div>
+            <h1>Treninfo</h1>
+            <p class="small muted">
+              Dati in tempo reale sullo stato dei treni RFI.
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <main class="stack">
+        <!-- CERCA VIAGGIO -->
+        <section class="card card-trip-search" id="tripSearch">
+          <h2 class="card-title">
+            <span>Cerca viaggio</span>
+          </h2>
+
+          <div class="trip-search-form">
+            <div class="trip-fromto">
+              <div class="form-row">
+                <div class="input-root autocomplete-wrapper">
+                  <input
+                    id="tripFrom"
+                    type="search"
+                    placeholder="Partenza (es. Milano Centrale)"
+                    autocomplete="off"
+                  />
+                  <ul id="tripFromList" class="autocomplete"></ul>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="input-root autocomplete-wrapper">
+                  <input
+                    id="tripTo"
+                    type="search"
+                    placeholder="Arrivo (es. Roma Termini)"
+                    autocomplete="off"
+                  />
+                  <ul id="tripToList" class="autocomplete"></ul>
+                </div>
+              </div>
+
+              <div class="trip-swap-col">
+                <button type="button" id="tripSwapBtn" class="trip-swap-btn" aria-label="Inverti stazione di partenza e arrivo" title="Inverti partenza/arrivo">
+                  ⇄
+                </button>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="input-root">
+                <input id="tripDate" type="date" />
+              </div>
+              <div class="input-root">
+                <input id="tripTime" type="time" />
+              </div>
+            </div>
+
+            <div class="form-row buttons-row">
+               <button type="button" id="tripSearchBtn">Cerca Soluzioni</button>
+               <button type="button" id="tripClearBtn">Cancella</button>
+            </div>
+          </div>
+
+          <div id="tripError" class="error" hidden></div>
+
+          <div id="tripResults" class="trip-results"></div>
+          
+          <!-- Recent Trips -->
+          <div id="tripStorage" class="storage-area hidden"></div>
+        </section>
+        <!-- INFO STAZIONI non so come ma ho trovato l'API giusta-->
+        <section class="card card-station-search" id="stationSearch">
+          <h2 class="card-title">
+            <span>Cerca stazione</span>
+          </h2>
+          
+          <div class="station-search-form">
+            <div class="form-row">
+              <div class="input-root autocomplete-wrapper">
+                <input
+                  id="stationQuery"
+                  type="search"
+                  placeholder="Nome stazione (es. Roma Termini)"
+                  autocomplete="off"
+                />
+                <ul id="stationList" class="autocomplete"></ul>
+              </div>
+              <button type="button" id="stationClearBtn">Cancella</button>
+            </div>
+          </div>
+
+          <div id="stationError" class="error" hidden></div>
+
+          <div id="stationInfo" class="station-info-card hidden"></div>
+
+          <div id="stationBoard" class="station-board hidden">
+            <div class="station-board-tabs" role="tablist">
+              <button type="button" class="station-board-tab is-active" data-board="departures" role="tab" aria-selected="true">
+                Partenze
+              </button>
+              <button type="button" class="station-board-tab" data-board="arrivals" role="tab" aria-selected="false">
+                Arrivi
+              </button>
+            </div>
+            <div id="stationBoardList" class="station-board-list"></div>
+          </div>
+          
+          <!-- Recent Stations -->
+          <div id="stationStorage" class="storage-area hidden"></div>
+          </section>
+
+        <!-- RICERCA TRENO -->
+        <section class="card card-train-search" id="trainSearch">
+          <h2 class="card-title">
+            <span>Ricerca treno</span>
+          </h2>
+
+          <div class="train-search-form">
+            <div class="form-row">
+              <div class="input-root">
+                <input
+                  id="trainNumber"
+                  type="text"
+                  inputmode="numeric"
+                  placeholder="Numero treno (es. 18828)"
+                  autocomplete="off"
+                />
+              </div>
+              <button type="button" id="trainSearchBtn">
+                Cerca
+              </button>
+              <button type="button" id="trainClearBtn">Cancella</button>
+            </div>
+          </div>
+
+          <div id="trainError" class="error"></div>
+          <div id="trainResult"></div>
+
+          <!-- Recent Trains -->
+          <div id="trainStorage" class="storage-area hidden"></div>
+        </section>
+
+        <!-- FAVORITI & RECENTI (Removed as moved to individual cards) -->
+        <!-- <section class="card card-train-storage"> ... </section> -->
+
+
+
+      </main>
+      <footer class="footer">
+        <div class="footer-content">
+          <span class="developer-label">Developed by</span>
+          <a href="https://cristianceni.netlify.app/" target="_blank" rel="noopener noreferrer" class="developer-link">
+            <img src="img/CS_black_all.png" alt="Cristian Ceni Logo" class="developer-logo">
+            Cristian Ceni
+          </a>
+        </div>
+      </footer>
+    </div>
+  </div>
+  <!-- Leaflet rimosso: la mappa non è più usata -->
+  <script src="script.js"></script>
+</body>
+</html>

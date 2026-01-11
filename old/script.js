@@ -24,199 +24,132 @@ let trainAutoRefreshOriginCode = null;
 let trainAutoRefreshEpochMs = null;
 let trainAutoRefreshAbortController = null;
 let trainAutoRefreshInFlight = false;
-let trainAutoRefreshLastSuccessAt = 0;
-let lastRenderedTrainStatusPayload = null;
-
-// I dati computati (tipo treno, ritardo, stato viaggio) vengono calcolati dal backend.
-// Il frontend li usa direttamente dai campi "computed" o "_computed" nelle risposte API.
-
-const RECENT_KEY = 'monitor_treno_recent';
-const FAVORITES_KEY = 'monitor_treno_favorites';
-const TRAIN_CHOICE_BY_NUMBER_KEY = 'train_choice_by_number';
-const MAX_RECENT = 5;
-// Preferiti rimossi: teniamo la key solo per eventuale cleanup.
-
-// REGION_LABELS rimosso - il backend fornisce le regioni
-// Icone rimosse - il backend fornisce tutto tramite computed
-
-// Funzioni icone rimosse - il backend fornisce computed.trainKind
-
-function normalizeTrainShortCode(raw) {
-  const code = (raw || '').toString().trim().toUpperCase();
-  return /^[A-Z]{1,4}$/.test(code) ? code : '';
-}
-
-// deriveShortCodeFromRule semplificato - il backend fornisce computed.trainKind
-function deriveShortCodeFromRule(rule) {
-  const raw = Array.isArray(rule?.matches) ? rule.matches : [];
-  const extra = [rule?.detailLabel, rule?.boardLabel];
-  const candidates = new Set(
-    [...raw, ...extra]
-      .map((x) => String(x || '').toUpperCase().trim())
-      .filter(Boolean)
-      .map((x) => x.replace(/[^A-Z]/g, ''))
-      .filter((x) => x.length >= 1 && x.length <= 4)
-  );
-
-  // Prima sigla valida 2-4 lettere
-  for (const c of candidates) {
-    if (c.length >= 2 && c.length <= 4) return c;
-  }
-  return '';
-}
-
-// Fallback semplice per estrarre il tipo treno quando backend non fornisce computed
-// Estrae la sigla iniziale (es. "FR 9544" → "FR")
-function resolveTrainKindFromCode(...rawValues) {
-  for (const raw of rawValues) {
-    if (raw == null) continue;
-    const normalized = String(raw)
-      .toUpperCase()
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!normalized) continue;
-    
-    // Estrai sigla iniziale (es. "FR 9544" → "FR", "REG 12345" → "REG")
-    const prefixMatch = normalized.match(/^([A-Z]{1,4})\b/);
-    const numberMatch = normalized.match(/(\d{2,5})/);
-    
-    if (prefixMatch) {
-      const code = prefixMatch[1];
-      const number = numberMatch ? numberMatch[1] : '';
-      
-      // Mappa classi CSS base
-      let className = '';
-      if (['FR', 'FA', 'TGV', 'ES', 'ITA'].includes(code)) className = 'train-title--fr';
-      else if (code === 'ITA') className = 'train-title--ita';
-      else if (['IC', 'ICN', 'EC', 'EN', 'FB', 'RJ'].includes(code)) className = 'train-title--ic';
-      else if (['REG', 'RV', 'R', 'SUB', 'MET', 'LEX', 'MXP', 'FL'].includes(code)) className = 'train-title--reg';
-      
-      return {
-        boardLabel: code,
-        detailLabel: code,
-        className,
-        shortCode: code,
-        number,
-      };
-    }
-  }
-  return null;
-}
-
-// DOM ----------------------------------------------------------------
-
+// Station DOM elements (usate da autocomplete / board)
 const stationQueryInput = document.getElementById('stationQuery');
 const stationList = document.getElementById('stationList');
+const stationClearBtn = document.getElementById('stationClearBtn');
+const stationError = document.getElementById('stationError');
 const stationInfoContainer = document.getElementById('stationInfo');
 const stationBoardContainer = document.getElementById('stationBoard');
 const stationBoardList = document.getElementById('stationBoardList');
-const stationBoardTabs = document.querySelectorAll('.station-board-tab');
-const stationSearchBtn = document.getElementById('stationSearchBtn');
-const stationClearBtn = document.getElementById('stationClearBtn');
-const stationSearchSection = document.getElementById('stationSearch');
-const trainSearchSection = document.getElementById('trainSearch');
-const stationError = document.getElementById('stationError');
+const stationBoardTabs = Array.from(document.querySelectorAll('.station-board-tab'));
+function renderTrainStatus(payload) {
+  const d = payload && payload.data;
+  lastRenderedTrainStatusPayload = payload;
+  trainResult.innerHTML = '';
+  if (!d) {
+    const msg = payload && payload.message
+      ? payload.message
+      : 'Nessun dato disponibile per questo treno.';
+    trainResult.innerHTML = `<p class='muted'>${msg}</p>`;
+    return { concluded: false };
+  }
 
-const trainNumberInput = document.getElementById('trainNumber');
-const trainSearchBtn = document.getElementById('trainSearchBtn');
-const trainClearBtn = document.getElementById('trainClearBtn');
-const trainError = document.getElementById('trainError');
-const trainResult = document.getElementById('trainResult');
+  // Estraggo i dati principali dal nuovo JSON
+  const fermate = Array.isArray(d.fermate) ? d.fermate : [];
+  const trainNumber = d.numeroTreno || d.numeroTrenoEsteso || '';
+  const origin = d.origine || '';
+  const destination = d.destinazione || '';
+  const plannedDeparture = d.partenza || '';
+  const plannedArrival = d.arrivo || '';
+  const trainKind = d.kindCode || '';
+  const globalDelay = d.ritardoArrivoInStazione != null ? d.ritardoArrivoInStazione : 0;
+  const trainState = d.stato || 'Sconosciuto';
 
-// --- DOM: SOLUZIONI DI VIAGGIO ------------------------------------------
+  // Header
+  const headerHtml = `
+    <div class='train-header'>
+      <div class='train-main'>
+        <div class='train-title-row'>
+          <h2 class='train-title'>${escapeHtml(trainNumber)} ${escapeHtml(trainKind)}</h2>
+          <span class='badge-status badge-status-${trainState.toLowerCase()}'>${escapeHtml(trainState)}</span>
+        </div>
+        <div class='train-route'>
+          <span class='route-main'>${escapeHtml(origin)} → ${escapeHtml(destination)}</span>
+        </div>
+        <div class='train-times'>
+          <span>Partenza <strong>${escapeHtml(plannedDeparture)}</strong></span>
+          <span>Arrivo <strong>${escapeHtml(plannedArrival)}</strong></span>
+        </div>
+      </div>
+    </div>
+  `;
 
-const tripFromInput = document.getElementById('tripFrom');
-const tripFromList = document.getElementById('tripFromList');
-const tripToInput = document.getElementById('tripTo');
-const tripToList = document.getElementById('tripToList');
-const tripDateInput = document.getElementById('tripDate');
-const tripTimeInput = document.getElementById('tripTime');
-const tripSearchBtn = document.getElementById('tripSearchBtn');
-const tripClearBtn = document.getElementById('tripClearBtn');
-const tripSwapBtn = document.getElementById('tripSwapBtn');
-const tripResults = document.getElementById('tripResults');
-const tripError = document.getElementById('tripError');
+  // Stato primario
+  const primaryHtml = `
+    <div class='train-primary-stat'>
+      <p class='train-primary-main'>${escapeHtml(d.mainLine || '')}</p>
+      ${d.delayLine ? `<p class="train-primary-sub">${escapeHtml(d.delayLine)}</p>` : ''}
+      ${d.delaySubLine ? `<p class="train-primary-subtitle">${escapeHtml(d.delaySubLine)}</p>` : ''}
+    </div>
+  `;
 
-let tripFromId = null;
-let tripToId = null;
-let tripPaginationState = null;
-let lastTripSolutionsRaw = null;
+  // Tabella fermate
+  let tableHtml = '';
+  if (fermate.length > 0) {
+    const stopsRows = fermate.map((f, idx) => {
+      const stationName = escapeHtml(f.stazione || f.stazioneNome || '-');
+      const arrProg = f.arrivoTeorico || f.arrivo_teorico || f.programmata || '';
+      const arrReal = f.arrivoReale || '';
+      const depProg = f.partenzaTeorico || f.partenza_teorico || f.programmata || '';
+      const depReal = f.partenzaReale || '';
+      const deltaArrivo = f.deltaArrivo != null ? f.deltaArrivo : '';
+      const deltaPartenza = f.deltaPartenza != null ? f.deltaPartenza : '';
+      const binario = f.binario || f.binarioReale || f.binarioProgrammato || '';
 
-let selectedStation = null;
-let stationBoardData = { departures: [], arrivals: [] };
-let stationBoardActiveTab = 'departures';
-let lastStationRaw = null;
+      // Badge ritardo/anticipo
+      const arrBadge = deltaArrivo !== '' ? `<span class="badge-delay ${deltaArrivo > 0 ? 'badge-delay-late' : (deltaArrivo < 0 ? 'badge-delay-early' : 'badge-delay-ok')}">${deltaArrivo} min</span>` : '';
+      const depBadge = deltaPartenza !== '' ? `<span class="badge-delay ${deltaPartenza > 0 ? 'badge-delay-late' : (deltaPartenza < 0 ? 'badge-delay-early' : 'badge-delay-ok')}">${deltaPartenza} min</span>` : '';
 
-// --- INDICE STAZIONI LOCALE (TSV) --------------------------------------
-// Usato per l'autocomplete della ricerca stazione (evita chiamate a ViaggiaTreno).
+      return `
+        <tr>
+          <td>${stationName}</td>
+          <td>${arrProg}</td>
+          <td>${arrReal}</td>
+          <td>${arrBadge}</td>
+          <td>${depProg}</td>
+          <td>${depReal}</td>
+          <td>${depBadge}</td>
+          <td>${binario}</td>
+        </tr>
+      `;
+    }).join('');
 
-let stationIndex = [];
-let stationIndexByCode = new Map();
-let stationIndexByKey = new Map();
-let stationIndexLoadPromise = null;
+    tableHtml = `
+      <table class="train-stops-table">
+        <thead>
+          <tr>
+            <th>Stazione</th>
+            <th>Arrivo prog.</th>
+            <th>Arrivo reale</th>
+            <th>Δ Arrivo</th>
+            <th>Partenza prog.</th>
+            <th>Partenza reale</th>
+            <th>Δ Partenza</th>
+            <th>Binario</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${stopsRows}
+        </tbody>
+      </table>
+    `;
+  }
 
-// --- CANONICALIZZAZIONE + COORDINATE STAZIONI (TSV/GEO) -----------------
-// File aggiunti:
-// - stazioni_coord_coerenti.tsv (name + id_staz + id_reg + lat/lon)
-// Obiettivo: coerenza nomi/codici + coordinate per mappe/tratte senza dipendere da VT.
+  // JSON debug
+  const jsonDebugHtml = buildRawJsonDetails('Mostra raw JSON (stato treno)', payload);
 
-let stationCanonicalByCode = new Map();
-let stationCanonicalByKey = new Map();
-let stationCanonicalLoadPromise = null;
+  trainResult.innerHTML = headerHtml + primaryHtml + tableHtml + jsonDebugHtml;
 
-function normalizeStationSearchKey(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return { concluded: trainState === 'COMPLETED' };
 }
 
-async function ensureStationCanonicalLoaded() {
-  if (stationCanonicalLoadPromise) return stationCanonicalLoadPromise;
+  let stationCanonicalLoadPromise = null;
 
-  stationCanonicalLoadPromise = (async () => {
-    try {
-      const paths = [
-        '/stazioni_coord_canon.tsv',
-        '/stazioni_coord_coerenti.tsv',
-        '/src/stazioni_coord_coerenti.tsv',
-        '/src/stazioni_coord_canon.tsv',
-      ];
-      let text = null;
-
-      for (const path of paths) {
-        const res = await fetch(path, { cache: 'force-cache' });
-        if (res.ok) {
-          text = await res.text();
-          break;
-        }
-      }
-
-      if (!text) {
-        stationCanonicalByCode = new Map();
-        stationCanonicalByKey = new Map();
-        return;
-      }
-
-      const lines = text.split(/\r?\n/).filter(Boolean);
-      if (lines.length <= 1) {
-        stationCanonicalByCode = new Map();
-        stationCanonicalByKey = new Map();
-        return;
-      }
-
-      const header = (lines[0] || '').split('\t').map((h) => h.trim().toLowerCase());
-      const findIndex = (predicates) => {
-        for (let i = 0; i < header.length; i += 1) {
-          const h = header[i] || '';
-          if (predicates.some((p) => p(h))) return i;
-        }
-        return -1;
-      };
-
+  function ensureStationCanonicalLoaded() {
+    if (stationCanonicalLoadPromise) return stationCanonicalLoadPromise;
+    stationCanonicalLoadPromise = (async () => {
+      try {
       const codeIdx = findIndex([
         (h) => h === 'id_staz' || h === 'idstaz' || h === 'codice' || h === 'code' || h === 'stationcode',
         (h) => h.includes('id_staz') || h.includes('idstaz') || h.includes('stationcode'),
@@ -4033,6 +3966,7 @@ function renderTrainStatus(payload) {
       let arrPredMs = null;
       let depPredMs = null;
 
+
       const arrProg = arrProgRaw ? formatTimeFlexible(arrProgRaw) : '-';
       const depProg = depProgRaw ? formatTimeFlexible(depProgRaw) : '-';
 
@@ -4041,38 +3975,35 @@ function renderTrainStatus(payload) {
       const arrRealHH = hhmmFromRaw(arrRealRaw);
       const depRealHH = hhmmFromRaw(depRealRaw);
 
-      const ritArr = resolveDelay(f.ritardoArrivo, globalDelay);
-      const ritDep = resolveDelay(f.ritardoPartenza, globalDelay);
-      const predArrDelay = getPredictionDelayMinutes(f.ritardoArrivo, globalDelay, hasRealArrival);
-      const predDepDelay = getPredictionDelayMinutes(f.ritardoPartenza, globalDelay, hasRealDeparture);
+      // Nuovi campi dal backend
+      const deltaArrivo = f.orari?.arrivo?.deltaArrivo;
+      const deltaPartenza = f.orari?.partenza?.deltaPartenza;
 
-      const shouldPredictArrival =
-        (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
-        showArrival &&
-        !hasRealArrival &&
-        idx >= timelineCurrentIndex &&
-        withinOperationalPlan &&
-        Number.isFinite(predArrDelay) &&
-        predArrDelay !== 0 &&
-        arrProgRaw != null;
-
-      const shouldPredictDeparture =
-        (journey.state === 'RUNNING' || journey.state === 'PARTIAL') &&
-        showDeparture &&
-        !hasRealDeparture &&
-        idx >= timelineCurrentIndex &&
-        withinOperationalPlan &&
-        Number.isFinite(predDepDelay) &&
-        predDepDelay !== 0 &&
-        depProgRaw != null;
-
-      if (shouldPredictArrival) {
-        arrPredMs = computePredictedMillis(arrProgRaw, predArrDelay, journeyBaseMs);
+      // Badge per deltaArrivo
+      let deltaArrivoHtml = '';
+      if (typeof deltaArrivo === 'number') {
+        if (deltaArrivo > 0) {
+          deltaArrivoHtml = `<span class="stop-delay stop-delay--late">+${deltaArrivo} min</span>`;
+        } else if (deltaArrivo < 0) {
+          deltaArrivoHtml = `<span class="stop-delay stop-delay--early">${deltaArrivo} min</span>`;
+        } else {
+          deltaArrivoHtml = `<span class="stop-delay stop-delay--ontime">In orario</span>`;
+        }
       }
 
-      if (shouldPredictDeparture) {
-        depPredMs = computePredictedMillis(depProgRaw, predDepDelay, journeyBaseMs);
+      // Badge per deltaPartenza
+      let deltaPartenzaHtml = '';
+      if (typeof deltaPartenza === 'number') {
+        if (deltaPartenza > 0) {
+          deltaPartenzaHtml = `<span class="stop-delay stop-delay--late">+${deltaPartenza} min</span>`;
+        } else if (deltaPartenza < 0) {
+          deltaPartenzaHtml = `<span class="stop-delay stop-delay--early">${deltaPartenza} min</span>`;
+        } else {
+          deltaPartenzaHtml = `<span class="stop-delay stop-delay--ontime">In orario</span>`;
+        }
       }
+
+      // ...existing code...
 
       const trackInfo = extractTrackInfo(f);
       const trackClass = trackInfo.isReal ? 'col-track-pill col-track-pill--real' : 'col-track-pill';

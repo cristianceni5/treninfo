@@ -1,11 +1,13 @@
 {
-  "name": "cercatreni",
+  "name": "treninfo-server",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Server (Netlify Functions) che normalizza ViaggiaTreno + LeFrecce e restituisce JSON pronti per app.",
+  "private": true,
+  "main": "netlify/functions/api.js",
   "scripts": {
     "dev": "netlify dev",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "netlify dev",
+    "test": "node test/test-train-kind.js"
   },
   "keywords": [],
   "author": "",

@@ -9,6 +9,12 @@ const TRAIN_KIND_RULES = [
     category: 'high-speed',
   },
   {
+    matches: ['EUROCITY', 'EC'],
+    boardLabel: 'EC',
+    detailLabel: 'EC',
+    category: 'intercity',
+  },
+  {
     matches: ['FRECCIARGENTO', 'FRECCIARGENTO AV', 'FRECCIARGENTOAV', 'FA', 'FA AV'],
     boardLabel: 'FA',
     detailLabel: 'FA',
@@ -33,15 +39,9 @@ const TRAIN_KIND_RULES = [
     category: 'intercity',
   },
   {
-    matches: ['REGIONALE', 'REG'],
+    matches: ['REGIONALE', 'REG', 'REGIONALE VELOCE', 'RV', 'R', 'RE'],
     boardLabel: 'REG',
     detailLabel: 'REG',
-    category: 'regional',
-  },
-  {
-    matches: ['R'],
-    boardLabel: 'R',
-    detailLabel: 'R',
     category: 'regional',
   },
 ];
@@ -94,19 +94,24 @@ const tests = [
   { input: ' FB', expected: 'FB', desc: 'categoriaDescrizione " FB"' },
   { input: ' IC', expected: 'IC', desc: 'categoriaDescrizione " IC"' },
   { input: ' ICN', expected: 'ICN', desc: 'categoriaDescrizione " ICN"' },
+  { input: ' EC', expected: 'EC', desc: 'categoriaDescrizione " EC"' },
   
   // categoria (priorità 2)
   { input: 'FRECCIAROSSA', expected: 'FR', desc: 'categoria "FRECCIAROSSA"' },
   { input: 'FRECCIARGENTO', expected: 'FA', desc: 'categoria "FRECCIARGENTO"' },
   { input: 'FRECCIABIANCA', expected: 'FB', desc: 'categoria "FRECCIABIANCA"' },
+  { input: 'EUROCITY', expected: 'EC', desc: 'categoria "EUROCITY"' },
   { input: 'INTERCITY', expected: 'IC', desc: 'categoria "INTERCITY"' },
   { input: 'REGIONALE', expected: 'REG', desc: 'categoria "REGIONALE"' },
   
   // compNumeroTreno (priorità 4, solo come fallback)
   { input: 'FR 9544', expected: 'FR', desc: 'compNumeroTreno "FR 9544"' },
+  { input: 'EC 37', expected: 'EC', desc: 'compNumeroTreno "EC 37"' },
   { input: 'REG 12345', expected: 'REG', desc: 'compNumeroTreno "REG 12345"' },
+  { input: 'RE 1234', expected: 'REG', desc: 'compNumeroTreno "RE 1234"' },
   { input: 'IC 673', expected: 'IC', desc: 'compNumeroTreno "IC 673"' },
-  { input: 'R 2345', expected: 'R', desc: 'compNumeroTreno "R 2345"' },
+  { input: 'R 2345', expected: 'REG', desc: 'compNumeroTreno "R 2345"' },
+  { input: 'RV 2456', expected: 'REG', desc: 'compNumeroTreno "RV 2456"' },
 ];
 
 let passed = 0;

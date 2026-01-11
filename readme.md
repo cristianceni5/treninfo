@@ -1,21 +1,22 @@
-# 🚆 Treninfo — Informazioni Treni in Tempo Reale
+# 🚆 Treninfo Server — Backend API per Treni
 
 ![Status](https://img.shields.io/badge/status-online-brightgreen)
 ![Version](https://img.shields.io/badge/version-3.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-Applicazione web professionale per consultare informazioni in tempo reale su treni e stazioni italiane, con API REST complete e frontend intuitivo.
+Server (Netlify Functions) che normalizza i dati di ViaggiaTreno (RFI) e LeFrecce e restituisce JSON pronti per app.
 
 🌐 **App Live**: [https://treninfo.netlify.app](https://treninfo.netlify.app)
 
 ---
 
-## ✨ Funzionalità Principali
+## ✨ Cosa fa
 
-### 🔍 Ricerca e Monitoraggio
-- **Cerca Stazioni**: autocomplete intelligente con supporto ViaggiaTreno e LeFrecce
-- **Tabelloni Stazione**: partenze e arrivi in tempo reale con aggiornamento automatico
-- **Tracciamento Treni**: monitora treni specifici con dettaglio completo del viaggio
+### 🔍 API pronte per app
+- **Autocomplete stazioni**: restituisce nomi stazione coerenti (stringhe)
+- **Tabelloni stazione**: arrivi/partenze normalizzati
+- **Stato treno**: fermate con orari programmati/reali/probabili
+- **Soluzioni viaggio**: ricerca tratte via LeFrecce
 
 ### 🗺️ Visualizzazione Avanzata
 - **Timeline Viaggio**: visualizzazione grafica del progresso del treno
@@ -28,20 +29,12 @@ Applicazione web professionale per consultare informazioni in tempo reale su tre
 - **Prezzi Minimi**: visualizzazione prezzi per categoria di treno
 - **Dettaglio Tratte**: informazioni complete su ogni treno della soluzione
 
-### 💾 Persistenza Dati
-- **Treni Recenti**: storico ultimi 5 treni consultati
-- **Scelte Salvate**: ricorda disambiguazioni per numeri treno multipli
-- **Debug Raw JSON**: payload completo disponibile (es. `/api/trains/status?...&debug=1`)
+### 🔒 Output “pulito”
+- Nelle risposte **non** vengono esposti ID interni (codici stazione Sxxxxx / `lefrecceId`): l’app lavora con stringhe.
 
 ---
 
 ## 🏗️ Architettura
-
-### Frontend
-- **Framework**: Vanilla JavaScript (ES6+)
-- **Styling**: CSS3 moderno con variabili CSS
-- **UI/UX**: Design responsive, mobile-first
-- **Performance**: Lazy loading, debouncing, caching locale
 
 ### Backend (Netlify Functions)
 - **Runtime**: Node.js 18+
@@ -62,18 +55,7 @@ Applicazione web professionale per consultare informazioni in tempo reale su tre
 ## 📚 Documentazione
 
 ### API REST
-- **[API-DOCUMENTATION.md](docs/API-DOCUMENTATION.md)** — Documentazione completa delle API pubbliche
-  - Tutti gli endpoint con esempi
-  - Parametri dettagliati con tipi e validazioni
-  - Struttura risposte JSON completa
-  - Best practices implementazione
-  - Gestione errori e codici HTTP
-
-- **[API-BACKEND-OPTIMIZED.md](docs/API-BACKEND-OPTIMIZED.md)** — Documentazione backend tecnica
-  - Dati computati e formattati
-  - Pattern di utilizzo comuni
-  - Esempi codice avanzati
-  - Ottimizzazioni performance
+- **[API.md](docs/API.md)** — Documentazione unificata API (aggiornata)
 
 ### Endpoint Principali
 
@@ -85,19 +67,20 @@ https://treninfo.netlify.app
 GET /api/viaggiatreno/autocomplete?query=FIREN
 
 # Info stazione con meteo
-GET /api/stations/info?stationCode=S06421
+GET /api/stations/info?stationName=Firenze%20S.M.Novella
 
 # Partenze in tempo reale
-GET /api/stations/departures?stationCode=S06421
+GET /api/stations/departures?stationName=Firenze%20S.M.Novella
 
 # Stato treno completo
 GET /api/trains/status?numeroTreno=9544
 
 # Soluzioni viaggio
-GET /api/solutions?fromName=Firenze&toName=Milano&date=2026-01-15&time=10:00
+GET /api/solutions?fromStationCode=S06421&toStationCode=S01700&date=2026-01-15&time=10:00
 ```
 
-Vedi [documentazione completa](docs/API-DOCUMENTATION.md) per tutti i parametri e opzioni.
+Vedi `docs/API.md` per la documentazione completa.
+Guida rapida server: `docs/SERVER-TRENINFO.md`.
 
 ---
 
@@ -151,7 +134,7 @@ FETCH_TIMEOUT_MS=12000
 
 - `netlify.toml` — Configurazione deploy Netlify
 - `package.json` — Dipendenze e script npm
-- `stations.json` — Database stazioni con mapping codici RFI/LeFrecce
+- `stations-viaggiatreno.json` — Database stazioni canonico con mapping codici RFI/LeFrecce
 
 ---
 
@@ -160,9 +143,8 @@ FETCH_TIMEOUT_MS=12000
 ```
 CercaTreni/
 ├── index.html              # Pagina principale
-├── script.js               # Logica frontend (6000+ righe)
-├── styles.css              # Stili CSS
-├── stations.json           # Database stazioni
+├── test-rfi.html           # Pagina test chiamate API
+├── stations-viaggiatreno.json  # Database stazioni canonico
 ├── netlify.toml            # Config Netlify
 ├── package.json            # Dipendenze
 │
@@ -177,10 +159,11 @@ CercaTreni/
 │   └── test-train-kind.js # Test riconoscimento tipo treno
 │
 ├── docs/
-│   ├── API-DOCUMENTATION.md        # Doc API pubbliche
-│   ├── API-BACKEND-OPTIMIZED.md    # Doc backend tecnica
+│   ├── API.md                      # Doc API (unificata)
+│   ├── SERVER-TRENINFO.md          # Guida rapida server
 │   └── RIEPILOGO.txt               # Note sviluppo
 │
+├── old/                   # Archivio vecchi file/script
 └── img/                   # Assets immagini
 ```
 
@@ -407,7 +390,7 @@ Sviluppato nel 2025, continua nel 2026 dhnnnn
 Per bug, richieste di funzionalità o domande:
 - 🐛 [Issues GitHub](https://github.com/tuousername/cercatreni/issues)
 - 📧 Email: tua@email.com
-- 📖 [Documentazione completa](docs/API-DOCUMENTATION.md)
+- 📖 `docs/API.md`
 
 ---
 

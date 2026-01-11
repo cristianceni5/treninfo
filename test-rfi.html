@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <title>Treninfo Server - Test API</title>
+</head>
+<body>
+  <h1>Treninfo Server - Test API</h1>
+  <p><a href="/">Home</a></p>
+  <p>Regole di normalizzazione (stazioni/tipi treno) in <a href="/">Home</a>.</p>
+
+  <section>
+    <h2>Ricerca stazione (autocomplete backend)</h2>
+    <input id="stationInput" type="text" placeholder="Nome stazione..." autocomplete="off" />
+    <button id="btnInfo">Info</button>
+    <button id="btnDepartures">Partenze</button>
+    <button id="btnArrivals">Arrivi</button>
+    <div id="stationSuggestions"></div>
+    <p id="stationPicked"></p>
+    <pre id="stationResult"></pre>
+  </section>
+
+  <hr />
+
+  <section>
+    <h2>Ricerca treno</h2>
+    <input id="trainNumber" type="text" placeholder="Numero treno (es. 8527)" />
+    <input id="originName" type="text" placeholder="Origine (opzionale, es. Firenze S.M.Novella)" />
+    <input id="choice" type="number" placeholder="Choice (opzionale, se richiesto)" min="0" step="1" />
+    <button id="btnTrain">Cerca stato treno</button>
+    <pre id="trainResult"></pre>
+  </section>
+
+  <hr />
+
+  <section>
+    <h2>Cerca soluzioni (LeFrecce)</h2>
+    <input id="fromName" type="text" placeholder="Da (stazione)..." autocomplete="off" />
+    <div id="fromSuggestions"></div>
+    <p id="fromPicked"></p>
+
+    <input id="toName" type="text" placeholder="A (stazione)..." autocomplete="off" />
+    <div id="toSuggestions"></div>
+    <p id="toPicked"></p>
+
+    <input id="solDate" type="date" />
+    <input id="solTime" type="time" />
+    <button id="btnSolutions">Cerca soluzioni</button>
+    <pre id="solutionsResult"></pre>
+  </section>
+
+  <script>
+    const stationInput = document.getElementById('stationInput');
+    const suggestionsEl = document.getElementById('stationSuggestions');
+    const stationPickedEl = document.getElementById('stationPicked');
+    const stationResultEl = document.getElementById('stationResult');
+    const trainResultEl = document.getElementById('trainResult');
+    const solutionsResultEl = document.getElementById('solutionsResult');
+
+    let pickedStationName = null;
+    let abortCtrlStation = null;
+
+    function renderSuggestions(list) {
+      if (!list.length) {
+        suggestionsEl.innerHTML = '';
+        return;
+      }
+      suggestionsEl.innerHTML = list
+        .map((name) => `<div data-name="${name}">${name}</div>`)
+        .join('');
+    }
+
+    async function fetchStationSuggestions(query) {
+      const q = query.trim();
+      if (q.length < 2) return [];
+      if (abortCtrlStation) abortCtrlStation.abort();
+      abortCtrlStation = new AbortController();
+      const resp = await fetch(`/api/viaggiatreno/autocomplete?query=${encodeURIComponent(q)}`, {
+        signal: abortCtrlStation.signal,
+      });
+      const json = await resp.json();
+      return json && json.ok && Array.isArray(json.data) ? json.data : [];
+    }
+
+    suggestionsEl.addEventListener('click', (e) => {
+      const target = e.target.closest('div[data-name]');
+      if (!target) return;
+      pickedStationName = target.getAttribute('data-name');
+      stationPickedEl.textContent = `Stazione selezionata: ${pickedStationName}`;
+      stationInput.value = pickedStationName;
+      suggestionsEl.innerHTML = '';
+    });
+
+    stationInput.addEventListener('input', async () => {
+      pickedStationName = null;
+      stationPickedEl.textContent = '';
+      try {
+        const list = await fetchStationSuggestions(stationInput.value);
+        renderSuggestions(list);
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        renderSuggestions([]);
+      }
+    });
+
+    async function callApi(url) {
+      const resp = await fetch(url);
+      const text = await resp.text();
+      try {
+        return JSON.stringify(JSON.parse(text), null, 2);
+      } catch {
+        return text;
+      }
+    }
+
+    async function handleInfo(kind) {
+      const stationName = pickedStationName || stationInput.value.trim();
+      if (!stationName) {
+        stationResultEl.textContent = 'Seleziona una stazione dall\'autocomplete.';
+        return;
+      }
+      let endpoint = '';
+      if (kind === 'info') {
+        endpoint = `/api/stations/info?stationName=${encodeURIComponent(stationName)}`;
+      } else if (kind === 'departures') {
+        endpoint = `/api/stations/departures?stationName=${encodeURIComponent(stationName)}`;
+      } else if (kind === 'arrivals') {
+        endpoint = `/api/stations/arrivals?stationName=${encodeURIComponent(stationName)}`;
+      }
+      stationResultEl.textContent = 'Caricamento...';
+      try {
+        stationResultEl.textContent = await callApi(endpoint);
+      } catch (err) {
+        stationResultEl.textContent = `Errore: ${err.message}`;
+      }
+    }
+
+    document.getElementById('btnInfo').addEventListener('click', () => handleInfo('info'));
+    document.getElementById('btnDepartures').addEventListener('click', () => handleInfo('departures'));
+    document.getElementById('btnArrivals').addEventListener('click', () => handleInfo('arrivals'));
+
+    document.getElementById('btnTrain').addEventListener('click', async () => {
+      const trainNumber = document.getElementById('trainNumber').value.trim();
+      const originName = document.getElementById('originName').value.trim();
+      const choice = document.getElementById('choice').value.trim();
+      if (!trainNumber) {
+        trainResultEl.textContent = 'Inserisci un numero treno.';
+        return;
+      }
+      const params = new URLSearchParams({ trainNumber });
+      if (originName) params.set('originName', originName);
+      if (choice !== '') params.set('choice', choice);
+      const url = `/api/trains/status?${params.toString()}`;
+      trainResultEl.textContent = 'Caricamento...';
+      try {
+        trainResultEl.textContent = await callApi(url);
+      } catch (err) {
+        trainResultEl.textContent = `Errore: ${err.message}`;
+      }
+    });
+
+    function mountAutocomplete({ inputEl, suggestionsEl, pickedEl }) {
+      let abortCtrl = null;
+      let picked = null;
+
+      function render(list) {
+        if (!list.length) {
+          suggestionsEl.innerHTML = '';
+          return;
+        }
+        suggestionsEl.innerHTML = list.map((name) => `<div data-name="${name}">${name}</div>`).join('');
+      }
+
+      async function fetchSuggestions(query) {
+        const q = query.trim();
+        if (q.length < 2) return [];
+        if (abortCtrl) abortCtrl.abort();
+        abortCtrl = new AbortController();
+        const resp = await fetch(`/api/viaggiatreno/autocomplete?query=${encodeURIComponent(q)}`, {
+          signal: abortCtrl.signal,
+        });
+        const json = await resp.json();
+        return json && json.ok && Array.isArray(json.data) ? json.data : [];
+      }
+
+      suggestionsEl.addEventListener('click', (e) => {
+        const target = e.target.closest('div[data-name]');
+        if (!target) return;
+        picked = target.getAttribute('data-name');
+        inputEl.value = picked;
+        pickedEl.textContent = `Selezionato: ${picked}`;
+        suggestionsEl.innerHTML = '';
+      });
+
+      inputEl.addEventListener('input', async () => {
+        picked = null;
+        pickedEl.textContent = '';
+        try {
+          const list = await fetchSuggestions(inputEl.value);
+          render(list);
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+          render([]);
+        }
+      });
+
+      return {
+        getValue() {
+          return (picked || inputEl.value || '').trim() || null;
+        },
+      };
+    }
+
+    const fromAuto = mountAutocomplete({
+      inputEl: document.getElementById('fromName'),
+      suggestionsEl: document.getElementById('fromSuggestions'),
+      pickedEl: document.getElementById('fromPicked'),
+    });
+    const toAuto = mountAutocomplete({
+      inputEl: document.getElementById('toName'),
+      suggestionsEl: document.getElementById('toSuggestions'),
+      pickedEl: document.getElementById('toPicked'),
+    });
+
+    // Default date/time
+    (function initDateTime() {
+      const d = new Date();
+      const yyyy = String(d.getFullYear());
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      document.getElementById('solDate').value = `${yyyy}-${mm}-${dd}`;
+      document.getElementById('solTime').value = `${String(d.getHours()).padStart(2, '0')}:${String(
+        d.getMinutes()
+      ).padStart(2, '0')}`;
+    })();
+
+    document.getElementById('btnSolutions').addEventListener('click', async () => {
+      const fromName = fromAuto.getValue();
+      const toName = toAuto.getValue();
+      const date = document.getElementById('solDate').value;
+      const time = document.getElementById('solTime').value;
+
+      if (!fromName || !toName) {
+        solutionsResultEl.textContent = 'Inserisci (o seleziona) stazione di partenza e arrivo.';
+        return;
+      }
+      if (!date) {
+        solutionsResultEl.textContent = 'Inserisci una data.';
+        return;
+      }
+
+      const params = new URLSearchParams({
+        fromName,
+        toName,
+        date,
+      });
+      if (time) params.set('time', time);
+
+      const url = `/api/solutions?${params.toString()}`;
+      solutionsResultEl.textContent = 'Caricamento...';
+      try {
+        solutionsResultEl.textContent = await callApi(url);
+      } catch (err) {
+        solutionsResultEl.textContent = `Errore: ${err.message}`;
+      }
+    });
+
+  </script>
+</body>
+</html>

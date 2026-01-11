@@ -6,9 +6,23 @@
 [dev]
   publish = "."
   functions = "netlify/functions"
+  # Evita conflitti: Netlify usa 3999 di default per le Functions
+  functionsPort = 9999
 
 # /api/* → /.netlify/functions/api (la function api gestisce già /api/...)
 [[redirects]]
   from = "/api/*"
   to   = "/.netlify/functions/api/:splat"
   status = 200
+
+[[redirects]]
+  from = "/test-rfi"
+  to = "/test-rfi.html"
+  status = 200
+
+# Non esporre il DB stazioni completo (contiene id interni usati solo dal backend)
+[[redirects]]
+  from = "/stations-viaggiatreno.json"
+  to = "/404"
+  status = 404
+  force = true
