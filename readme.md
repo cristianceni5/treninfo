@@ -31,7 +31,7 @@ Applicazione web professionale per consultare informazioni in tempo reale su tre
 ### 💾 Persistenza Dati
 - **Treni Recenti**: storico ultimi 5 treni consultati
 - **Scelte Salvate**: ricorda disambiguazioni per numeri treno multipli
-- **Debug Raw JSON**: mostra il payload completo delle risposte sotto ogni sezione
+- **Debug Raw JSON**: payload completo disponibile (es. `/api/trains/status?...&full=1`)
 
 ---
 

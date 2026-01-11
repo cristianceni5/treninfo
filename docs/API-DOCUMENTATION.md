@@ -183,20 +183,21 @@ Informazioni dettagliate su un treno specifico (percorso, fermate, ritardi).
 - `originCode` (string, opzionale): codice stazione origine (per disambiguare)
 - `technical` (string, opzionale): ID tecnico completo
 - `epochMs` (number, opzionale): timestamp riferimento
+- `full` (boolean, opzionale, default: false): se `true`, restituisce `data` completo (payload grezzo RFI). Se `false`, `data` è compatto (solo campi essenziali per il frontend).
 
 **Esempio**:
 ```bash
 curl "https://treninfo.netlify.app/api/trains/status?trainNumber=9544"
 ```
 
-**Risposta** (struttura completa con dati formattati):
+**Risposta** (con dati formattati):
 ```json
 {
   "ok": true,
   "originCode": "S09818",
   "technical": "9544-S09818",
   "referenceTimestamp": 1736524800000,
-  "data": { /* dati grezzi RFI completi */ },
+  "data": { /* dati RFI (compatti di default; completi con ?full=1) */ },
   
   "computed": {
     // === INFORMAZIONI TRENO ===
@@ -215,7 +216,7 @@ curl "https://treninfo.netlify.app/api/trains/status?trainNumber=9544"
     
     // === POSIZIONE CORRENTE ===
     "prossimaFermata": "REGGIO EMILIA AV MEDIOPADANA", // String: prossima fermata prevista
-    "oraLuogoRilevamento": "17:56-PM PC RUBIERA",   // String: ultimo rilevamento (HH:mm-AM/PM Stazione)
+    "oraLuogoRilevamento": "17:56 PC RUBIERA",      // String: ultimo rilevamento (HH:mm Stazione)
     
     // === MESSAGGI ===
     "messaggioRfi": "con un ritardo di 3 min.",     // String: messaggi ufficiali RFI

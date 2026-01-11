@@ -144,6 +144,27 @@ function parseBool(val, defaultVal = false) {
 // Utility per Gestione Timestamp e Date
 // ============================================================================
 
+// In ambienti serverless (es. Netlify) il timezone di sistema può essere UTC.
+// I timestamp RFI sono epoch millis: per visualizzare l'orario corretto in Italia
+// formattiamo esplicitamente in Europe/Rome.
+const APP_TIME_ZONE = process.env.APP_TIME_ZONE || 'Europe/Rome';
+let IT_TIME_FORMATTER = null;
+
+function getItTimeFormatter() {
+  if (IT_TIME_FORMATTER) return IT_TIME_FORMATTER;
+  try {
+    IT_TIME_FORMATTER = new Intl.DateTimeFormat('it-IT', {
+      timeZone: APP_TIME_ZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  } catch {
+    IT_TIME_FORMATTER = null;
+  }
+  return IT_TIME_FORMATTER;
+}
+
 function parseToMillis(raw) {
   if (raw == null) return null;
   if (typeof raw === 'number') {
@@ -630,16 +651,8 @@ function formatLastDetection(data) {
   // Formatta l'ora
   const formattedTime = formatTime(time);
   if (!formattedTime) return null;
-  
-  // Determina AM/PM
-  const ms = parseToMillis(time);
-  if (!ms) return null;
-  
-  const d = new Date(ms);
-  const hours = d.getHours();
-  const period = hours >= 12 ? 'PM' : 'AM';
-  
-  return `${formattedTime}-${period} ${normalizedStation}`;
+
+  return `${formattedTime} ${normalizedStation}`;
 }
 
 /**
@@ -667,6 +680,16 @@ function formatTime(timestamp) {
   if (!timestamp) return null;
   const ms = parseToMillis(timestamp);
   if (!ms) return null;
+  const formatter = getItTimeFormatter();
+  if (formatter) {
+    try {
+      return formatter.format(new Date(ms));
+    } catch {
+      // fallback sotto
+    }
+  }
+
+  // Fallback: usa il timezone di sistema
   const d = new Date(ms);
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
@@ -1561,6 +1584,7 @@ app.get('/api/trains/status', async (req, res) => {
   const originCodeHint = (req.query.originCode || '').trim();
   const technicalHint = (req.query.technical || '').trim();
   const epochMsHint = parseToMillis(req.query.epochMs);
+  const full = parseBool(req.query.full, false);
 
   if (!trainNumber) {
     return res
@@ -1672,7 +1696,6 @@ app.get('/api/trains/status', async (req, res) => {
             technical: c.technical,
             originCode: c.originCode,
             epochMs: c.epochMs,
-            rawLine: c.rawLine,
           })),
         });
       }
@@ -1744,13 +1767,54 @@ app.get('/api/trains/status', async (req, res) => {
     // Arricchisci la risposta con dati computati e formattati
     const enriched = enrichTrainData(finalSnapshot.data);
 
+    function stripTrainStatusDataForClient(snapshot) {
+      if (!snapshot || typeof snapshot !== 'object') return snapshot;
+
+      // Manteniamo SOLO i campi che il frontend usa davvero (script.js)
+      // + fermate complete per timeline (il resto è ridondante o già presente in computed).
+      const keep = {
+        // Identità corsa
+        numeroTreno: snapshot.numeroTreno ?? null,
+        numeroTrenoEsteso: snapshot.numeroTrenoEsteso ?? null,
+        origine: snapshot.origine ?? null,
+        destinazione: snapshot.destinazione ?? null,
+
+        // Tipo treno (fallback frontend)
+        categoria: snapshot.categoria ?? null,
+        categoriaDescrizione: snapshot.categoriaDescrizione ?? null,
+        tipoTreno: snapshot.tipoTreno ?? null,
+        compNumeroTreno: snapshot.compNumeroTreno ?? null,
+        compTipologiaTreno: snapshot.compTipologiaTreno ?? null,
+        siglaTreno: snapshot.siglaTreno ?? null,
+
+        // Ritardo / messaggi base usati in UI
+        ritardo: snapshot.ritardo ?? null,
+        compRitardo: snapshot.compRitardo ?? null,
+        compMotivoRitardo: snapshot.compMotivoRitardo ?? null,
+        compVariazionePercorso: snapshot.compVariazionePercorso ?? null,
+        subTitle: snapshot.subTitle ?? null,
+
+        // Stato corsa (fallback frontend)
+        trenoSoppresso: snapshot.trenoSoppresso ?? null,
+        fermateSoppresse: snapshot.fermateSoppresse ?? null,
+
+        // Ultimo rilevamento (UI)
+        oraUltimoRilevamento: snapshot.oraUltimoRilevamento ?? null,
+        stazioneUltimoRilevamento: snapshot.stazioneUltimoRilevamento ?? null,
+
+        // Timeline
+        fermate: snapshot.fermate ?? null,
+      };
+
+      return keep;
+    }
+
     res.json({
       ok: true,
       originCode,
-      rawSearchLine: selected.rawLine,
       technical: selected.technical,
       referenceTimestamp: finalSnapshot.referenceTimestamp,
-      data: finalSnapshot.data,
+      data: full ? finalSnapshot.data : stripTrainStatusDataForClient(finalSnapshot.data),
       // Dati arricchiti/computati dal backend (tutti i campi formattati)
       computed: enriched,
     });

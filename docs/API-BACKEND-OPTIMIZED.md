@@ -15,6 +15,7 @@ Restituisce lo stato dettagliato di un treno con tutti i dati formattati.
 - `originCode`: Codice stazione di origine (opzionale)
 - `technical`: Stringa tecnica (opzionale)
 - `epochMs`: Timestamp di riferimento (opzionale)
+- `full`: Se `true`, restituisce `data` completo (payload grezzo RFI). Default `false` (data compatto).
 
 **Risposta:**
 
@@ -24,7 +25,7 @@ Restituisce lo stato dettagliato di un treno con tutti i dati formattati.
   "originCode": "S06904",
   "technical": "18828-S06904",
   "referenceTimestamp": 1736524800000,
-  "data": { /* dati grezzi RFI completi */ },
+  "data": { /* dati RFI (compatti di default; completi con ?full=1) */ },
   "computed": {
     // --- CAMPI ORIGINALI (mantenuti per compatibilità) ---
     "trainKind": {
@@ -94,7 +95,7 @@ Restituisce lo stato dettagliato di un treno con tutti i dati formattati.
     // --- CAMPI STATO E POSIZIONE ---
     "statoTreno": "partito",              // Stato semplificato: "programmato", "partito", "soppresso", "concluso", "parziale"
     "prossimaFermata": "Arezzo",          // Nome della prossima fermata
-    "oraLuogoRilevamento": "18:35-PM Rovezzano"  // Ultimo rilevamento: "HH:mm-AM/PM Stazione"
+    "oraLuogoRilevamento": "18:35 Rovezzano"  // Ultimo rilevamento: "HH:mm Stazione"
   }
 }
 ```
@@ -183,16 +184,15 @@ if (computed.prossimaFermata) {
 ```
 
 ### oraLuogoRilevamento
-Ultimo rilevamento del treno formattato come `"HH:mm-AM/PM Stazione"` (es. `"18:35-PM Rovezzano"`).
+Ultimo rilevamento del treno formattato come `"HH:mm Stazione"` (es. `"18:35 Rovezzano"`).
 - Include ora formattata in HH:mm
-- Indica AM (mattina) o PM (pomeriggio)
 - Include il nome della stazione
 - `null` se non ci sono rilevamenti disponibili
 
 **Esempio di visualizzazione:**
 ```javascript
 if (computed.oraLuogoRilevamento) {
-  // Mostra: "Ultimo rilevamento: 18:35-PM Rovezzano"
+  // Mostra: "Ultimo rilevamento: 18:35 Rovezzano"
   console.log(`Ultimo rilevamento: ${computed.oraLuogoRilevamento}`);
 }
 ```
