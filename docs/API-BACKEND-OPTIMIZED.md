@@ -26,6 +26,7 @@ Restituisce lo stato dettagliato di un treno con tutti i dati formattati.
   "technical": "18828-S06904",
   "referenceTimestamp": 1736524800000,
   "data": { /* dati RFI (compatti di default; completi con ?full=1) */ },
+  "principali": { /* dati essenziali (chiavi in italiano, senza duplicati) */ },
   "computed": {
     // --- CAMPI ORIGINALI (mantenuti per compatibilità) ---
     "trainKind": {

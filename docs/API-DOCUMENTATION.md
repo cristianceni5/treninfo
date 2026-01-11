@@ -198,6 +198,37 @@ curl "https://treninfo.netlify.app/api/trains/status?trainNumber=9544"
   "technical": "9544-S09818",
   "referenceTimestamp": 1736524800000,
   "data": { /* dati RFI (compatti di default; completi con ?full=1) */ },
+
+  "principali": {
+    "numeroTreno": "9544",
+    "codiceTreno": "FR",
+    "tipoTreno": { "codice": "FR", "etichetta": "FR", "categoria": "high-speed" },
+    "tratta": { "origine": "SALERNO", "destinazione": "MILANO CENTRALE" },
+    "orari": {
+      "partenza": { "programmatoIniziale": "12:38", "programmato": "12:38", "reale": "12:40" },
+      "arrivo": { "programmatoIniziale": "18:30", "programmato": "18:30", "reale": null }
+    },
+    "ritardoMinuti": 3,
+    "stato": "partito",
+    "posizione": { "stationName": "Roma Termini", "stationCode": "S09218", "index": 3, "timestamp": 1736528100000 },
+    "rilevamento": { "testo": "17:56 Roma Prenestina", "timestamp": 1736528160000, "stazione": "ROMA PRENESTINA" },
+    "aggiornamentoRfi": "con un ritardo di 3 min.",
+    "messaggioRfi": "con un ritardo di 3 min.",
+    "fermate": [
+      {
+        "stazione": "Salerno",
+        "id": "S09818",
+        "progressivo": 1,
+        "orari": {
+          "arrivo": { "programmato": null, "programmatoIniziale": null, "probabile": null, "reale": null },
+          "partenza": { "programmato": "12:38", "programmatoIniziale": "12:38", "probabile": "12:41", "reale": "12:40" }
+        },
+        "binari": { "programmato": "1", "reale": "1", "variato": false },
+        "soppressa": false,
+        "tipoFermata": "P"
+      }
+    ]
+  },
   
   "computed": {
     // === INFORMAZIONI TRENO ===
@@ -287,6 +318,8 @@ curl "https://treninfo.netlify.app/api/trains/status?trainNumber=9544"
   }
 }
 ```
+
+**Nota**: `principali` è pensato per UI/utente (chiavi in italiano e senza duplicati). `data` resta utile per debug/compatibilità (completo con `?full=1`).
 
 **Struttura campo `computed`**:
 

@@ -1775,17 +1775,11 @@ app.get('/api/trains/status', async (req, res) => {
       const keep = {
         // Identità corsa
         numeroTreno: snapshot.numeroTreno ?? null,
-        numeroTrenoEsteso: snapshot.numeroTrenoEsteso ?? null,
         origine: snapshot.origine ?? null,
         destinazione: snapshot.destinazione ?? null,
 
-        // Tipo treno (fallback frontend)
-        categoria: snapshot.categoria ?? null,
-        categoriaDescrizione: snapshot.categoriaDescrizione ?? null,
-        tipoTreno: snapshot.tipoTreno ?? null,
+        // Codice treno (fallback UI)
         compNumeroTreno: snapshot.compNumeroTreno ?? null,
-        compTipologiaTreno: snapshot.compTipologiaTreno ?? null,
-        siglaTreno: snapshot.siglaTreno ?? null,
 
         // Ritardo / messaggi base usati in UI
         ritardo: snapshot.ritardo ?? null,
@@ -1809,12 +1803,121 @@ app.get('/api/trains/status', async (req, res) => {
       return keep;
     }
 
+    function buildPrincipali(snapshot, computed) {
+      const raw = snapshot && typeof snapshot === 'object' ? snapshot : {};
+      const c = computed && typeof computed === 'object' ? computed : {};
+      const rawStops = Array.isArray(raw.fermate) ? raw.fermate : [];
+
+      const firstStop = rawStops.length ? rawStops[0] : null;
+      const lastStop = rawStops.length ? rawStops[rawStops.length - 1] : null;
+
+      const partenzaProgInizialeMs =
+        pickFirstTimeMs(firstStop, [
+          'partenzaTeoricaZero',
+          'partenza_teoricaZero',
+          'partenza_teorica_zero',
+          'partenza_teorica',
+          'partenzaTeorica',
+          'programmataZero',
+        ]) || pickFirstTimeMs(raw, ['orarioPartenzaZero', 'orarioPartenza']);
+
+      const arrivoProgInizialeMs =
+        pickFirstTimeMs(lastStop, [
+          'arrivoTeoricaZero',
+          'arrivo_teoricaZero',
+          'arrivo_teorica_zero',
+          'arrivo_teorico',
+          'arrivo_teorica',
+          'arrivoTeorica',
+          'programmataZero',
+        ]) || pickFirstTimeMs(raw, ['orarioArrivoZero', 'orarioArrivo']);
+
+      const fermatePrincipali = Array.isArray(c.fermate)
+        ? c.fermate.map((stop, idx) => {
+            const r = rawStops[idx] || {};
+            const arrivoProgZero =
+              pickFirstTimeMs(r, ['arrivoTeoricaZero', 'arrivo_teoricaZero', 'arrivo_teorica_zero']) || null;
+            const partenzaProgZero =
+              pickFirstTimeMs(r, ['partenzaTeoricaZero', 'partenza_teoricaZero', 'partenza_teorica_zero']) || null;
+
+            return {
+              stazione: stop?.stazione ?? null,
+              id: stop?.id ?? null,
+              progressivo: stop?.progressivo ?? null,
+              orari: {
+                arrivo: {
+                  programmato: stop?.orarioArrivoProgrammato ?? null,
+                  programmatoIniziale: arrivoProgZero != null ? formatTime(arrivoProgZero) : null,
+                  probabile: stop?.orarioArrivoProbabile ?? null,
+                  reale: stop?.orarioArrivoReale ?? null,
+                },
+                partenza: {
+                  programmato: stop?.orarioPartenzaProgrammato ?? null,
+                  programmatoIniziale: partenzaProgZero != null ? formatTime(partenzaProgZero) : null,
+                  probabile: stop?.orarioPartenzaProbabile ?? null,
+                  reale: stop?.orarioPartenzaReale ?? null,
+                },
+              },
+              binari: {
+                programmato: stop?.binarioProgrammato ?? null,
+                reale: stop?.binarioReale ?? null,
+                variato: !!stop?.binarioVariato,
+              },
+              soppressa: !!stop?.soppressa,
+              tipoFermata: stop?.tipoFermata ?? null,
+            };
+          })
+        : [];
+
+      return {
+        numeroTreno: c.numeroTreno ?? (raw.numeroTreno != null ? String(raw.numeroTreno) : null),
+        codiceTreno: c.tipologiaTreno ?? c.trainKind?.code ?? null,
+        tipoTreno: c.trainKind
+          ? {
+              codice: c.trainKind.code ?? null,
+              etichetta: c.trainKind.label ?? null,
+              categoria: c.trainKind.category ?? null,
+            }
+          : null,
+        tratta: {
+          origine: c.origine ?? raw.origine ?? null,
+          destinazione: c.destinazione ?? raw.destinazione ?? null,
+        },
+        orari: {
+          partenza: {
+            programmatoIniziale: partenzaProgInizialeMs != null ? formatTime(partenzaProgInizialeMs) : null,
+            programmato: c.orarioPartenzaProg ?? null,
+            reale: c.orarioPartenzaReale ?? null,
+          },
+          arrivo: {
+            programmatoIniziale: arrivoProgInizialeMs != null ? formatTime(arrivoProgInizialeMs) : null,
+            programmato: c.orarioArrivoProg ?? null,
+            reale: c.orarioArrivoReale ?? null,
+          },
+        },
+        ritardoMinuti: typeof c.globalDelay === 'number' ? c.globalDelay : null,
+        stato: c.statoTreno ?? null,
+        statoViaggio: c.journeyState ?? null,
+        posizione: c.currentStop ?? null,
+        prossimaFermata: c.prossimaFermata ?? null,
+        rilevamento: {
+          testo: c.oraLuogoRilevamento ?? null,
+          timestamp: raw.oraUltimoRilevamento ?? null,
+          stazione: raw.stazioneUltimoRilevamento ?? null,
+        },
+        aggiornamentoRfi: raw.subTitle ? String(raw.subTitle).trim() : null,
+        messaggioRfi: c.messaggioRfi ?? null,
+        fermate: fermatePrincipali,
+      };
+    }
+
     res.json({
       ok: true,
       originCode,
       technical: selected.technical,
       referenceTimestamp: finalSnapshot.referenceTimestamp,
       data: full ? finalSnapshot.data : stripTrainStatusDataForClient(finalSnapshot.data),
+      principali: buildPrincipali(finalSnapshot.data, enriched),
       // Dati arricchiti/computati dal backend (tutti i campi formattati)
       computed: enriched,
     });
