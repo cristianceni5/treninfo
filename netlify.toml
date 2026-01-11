@@ -7,8 +7,8 @@
   publish = "."
   functions = "netlify/functions"
 
-# /api/* → /.netlify/functions/api/api/* (nota il doppio /api)
+# /api/* → /.netlify/functions/api (la function api gestisce già /api/...)
 [[redirects]]
   from = "/api/*"
-  to   = "/.netlify/functions/api/api/:splat"
+  to   = "/.netlify/functions/api/:splat"
   status = 200

@@ -36,8 +36,6 @@
 
   /* Pannelli/box secondari (match del precedente #f8fafc) */
   --bg-panel: #f8fafc;
-
-  --color-favorite: #e11d48;
   --state-forecast: #eab308;
 
   --kind-fr: #c81f1f;
@@ -275,9 +273,9 @@ select:focus-visible {
 .app-shell {
   min-height: 100vh;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 12px 8px;
+  padding: var(--gap) var(--gap-sm);
 }
 
 /* .app-inner – contenitore principale con bordo e ombra */
@@ -288,7 +286,7 @@ select:focus-visible {
   border: none;
   border-radius: var(--radius-card);
   box-shadow: none;
-  padding: var(--card-padding-wide);
+  padding: var(--gap);
   display: flex;
   flex-direction: column;
   min-height: 100%;
@@ -301,7 +299,7 @@ select:focus-visible {
 @media (min-width: 768px) {
   .app-shell { padding: 20px 16px; }
   .app-inner {
-    padding: calc(var(--card-padding-wide) + 4px) calc(var(--card-padding-wide) + 6px);
+    padding: calc(var(--card-padding-wide) + 2px) calc(var(--card-padding-wide) + 4px);
   }
 }
 
@@ -383,7 +381,7 @@ select:focus-visible {
   background: var(--bg-card);
   border-radius: var(--radius-card);
   border: 1px solid var(--border-subtle);
-  padding: var(--card-padding-wide) var(--card-padding); 
+  padding: var(--card-padding);
   box-shadow: var(--shadow-card);
 }
 
@@ -416,7 +414,7 @@ select:focus-visible {
 }
 
 .card-train-search #trainResult {
-  margin-top: 20px;
+  margin-top: var(--timeline-gap);
 }
 
 /* Selezione treno (numero ambiguo) --------------------------------- */
@@ -527,7 +525,7 @@ select:focus-visible {
   gap: var(--gap-sm);
   position: relative;
   padding-left: 0;
-  margin: var(--gap-xs) 0 var(--gap-sm);
+  margin: 0 0 var(--gap-sm);
   font-size: clamp(1.1rem, 1.6vw, 1.25rem);
   font-weight: 700;
   line-height: 1.2;
@@ -540,7 +538,7 @@ select:focus-visible {
   color: var(--text-soft);
   font-size: 0.82rem;
   font-weight: 500;
-  margin: calc(var(--gap) + var(--gap-sm)) 0 var(--gap-sm);
+  margin: var(--gap) 0 var(--gap-sm);
   letter-spacing: 0.02em;
 }
 
@@ -2486,8 +2484,7 @@ a[href^='mailto'] {
   align-items: center;
 }
 
-.train-pill-remove,
-.train-pill-star {
+.train-pill-remove {
   border: none;
   background: var(--bg-card);
   border-radius: 50%;
@@ -2501,106 +2498,8 @@ a[href^='mailto'] {
   border: 1px solid var(--border-subtle);
 }
 
-.train-pill-remove:hover,
-.train-pill-star:hover {
+.train-pill-remove:hover {
   background: var(--bg-body);
-}
-
-.train-pill-star.is-active {
-  color: var(--color-favorite);
-  border-color: var(--color-favorite);
-  background: rgba(225, 29, 72, 0.12);
-}
-
-.favorite-current-btn {
-  margin-top: 0;
-  font-size: 0.82rem;
-  padding: 6px 16px;
-  min-height: 40px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--color-favorite);
-  background: rgba(225, 29, 72, 0.08);
-  color: var(--color-favorite);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--gap-xs);
-  transition: background var(--anim-normal), box-shadow var(--anim-normal), transform var(--anim-fast);
-}
-
-.favorite-btn-text {
-  display: inline-block;
-}
-
-.favorite-btn-heart {
-  font-size: 1.05em;
-  line-height: 1;
-}
-
-@media (max-width: 640px) {
-  .favorite-current-btn {
-    width: 100%;
-    min-height: 44px;
-  }
-}
-
-.favorite-current-btn.is-active {
-  background: rgba(225, 29, 72, 0.12);
-  border-color: var(--color-favorite);
-  color: var(--color-favorite);
-}
-
-.favorite-current-btn:hover {
-  box-shadow: var(--shadow-soft);
-  background: rgba(225, 29, 72, 0.10);
-}
-
-.favorite-current-btn.is-active:hover {
-  background: rgba(225, 29, 72, 0.16);
-}
-
-.favorite-current-btn:active { transform: translateY(0); }
-
-.favorite-current-wrapper { 
-  margin-top: var(--gap-sm); 
-  margin-bottom: var(--gap-sm);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-xs);
-}
-
-.notification-current-btn {
-  margin-top: 0;
-  font-size: 0.82rem;
-  padding: 6px 16px;
-  min-height: 40px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--brand-border);
-  background: var(--bg-card);
-  color: var(--primary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--anim-normal), box-shadow var(--anim-normal), transform var(--anim-fast);
-}
-
-.notification-current-btn:hover {
-  box-shadow: var(--shadow-soft);
-  background: var(--bg-subtle);
-}
-
-.notification-current-btn:active { transform: translateY(0); }
-
-.notification-current-btn.is-active {
-  background: var(--bg-subtle);
-  border-color: var(--primary);
-  color: var(--primary);
-}
-
-.notification-current-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  box-shadow: none;
 }
 
 .sr-only {
@@ -2789,19 +2688,11 @@ a[href^='mailto'] {
   .storage-pills { gap: var(--gap-sm); }
   .train-pill { flex-wrap: wrap; }
   .train-pill-actions { gap: var(--gap-sm); }
-  .train-pill-remove,
-  .favorite-pill-remove,
-  .train-pill-star {
+  .train-pill-remove {
     width: 38px;
     height: 38px;
     min-height: 38px;
     padding: 0;
-  }
-  .favorite-current-btn {
-    width: 100%;
-    justify-content: center;
-    font-size: 0.88rem;
-    min-height: 46px;
   }
 
   .station-info-card { padding: 0; }
@@ -3809,28 +3700,9 @@ button.train-badge:active {
   transform: var(--anim-scale-active);
 }
 
-.storage-chip.favorite {
-  border-color: var(--color-favorite);
-  /* Sfondo opaco: niente alpha (altrimenti si vede sotto quando si sovrappongono) */
-  background: var(--bg-card);
-  color: var(--color-favorite);
-}
-
-/* Nei preferiti: testo coerente col bordo (niente grigi) */
-.storage-chip.favorite .chip-route,
-.storage-chip.favorite .chip-meta,
-.storage-chip.favorite .chip-time,
-.storage-chip.favorite .storage-chip-icon {
-  color: inherit;
-}
-
 .storage-chip-icon {
   font-size: 1.1rem;
   color: var(--text-muted);
-}
-
-.storage-chip.favorite .storage-chip-icon {
-  color: var(--color-favorite);
 }
 
 .storage-chip-content {
@@ -3865,10 +3737,6 @@ button.train-badge:active {
   padding: 0;
 }
 
-.storage-chip-fav-glyph {
-  font-size: 1.12em;
-  line-height: 1;
-}
 
 .storage-chip-btn {
   -webkit-tap-highlight-color: transparent;
@@ -3902,17 +3770,6 @@ button.train-badge:active {
   }
 }
 
-.storage-chip-fav.is-active {
-  /* Mantieni feedback ma con sfondo opaco */
-  background: var(--bg-subtle);
-  border-color: var(--color-favorite);
-  color: var(--color-favorite);
-}
-
-.storage-chip-fav:hover {
-  color: var(--color-favorite);
-  background: var(--bg-subtle);
-}
 
 /* Train Chip Specific Styles */
 .chip-type-train {

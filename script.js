@@ -2,7 +2,19 @@
 
 // In locale usiamo Netlify Dev (functions + redirects) sulla stessa origin.
 // Quindi l'API base resta relativa sia in dev che in produzione.
-const API_BASE = '';
+// Rileva automaticamente la base delle API in locale
+// - Netlify Dev: usa percorsi relativi (redirect /api -> functions)
+// - Server standalone su 3000: usa host esplicito
+// - Produzione/altro: percorsi relativi
+const API_BASE = (() => {
+  try {
+    const host = window?.location?.host || '';
+    if (host.includes('localhost:3000')) return 'http://localhost:3000';
+    return '';
+  } catch {
+    return '';
+  }
+})();
 
 // Refresh “quasi real-time” (una chiamata al minuto massimo) quando un treno è in monitoraggio.
 const TRAIN_AUTO_REFRESH_INTERVAL_MS = 60_000;
@@ -21,332 +33,20 @@ let lastRenderedTrainStatusPayload = null;
 const RECENT_KEY = 'monitor_treno_recent';
 const FAVORITES_KEY = 'monitor_treno_favorites';
 const TRAIN_CHOICE_BY_NUMBER_KEY = 'train_choice_by_number';
-const TRAIN_NOTIFICATIONS_KEY = 'treninfo_train_notifications';
 const MAX_RECENT = 5;
-const MAX_FAVORITES = 8;
+// Preferiti rimossi: teniamo la key solo per eventuale cleanup.
 
-function loadTrainNotificationsSettings() {
-  try {
-    const raw = localStorage.getItem(TRAIN_NOTIFICATIONS_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (!parsed || typeof parsed !== 'object') {
-      return { enabled: false, target: null, lastDigest: '', lastNotifiedAt: 0 };
-    }
-    return {
-      enabled: !!parsed.enabled,
-      target: parsed.target && typeof parsed.target === 'object' ? parsed.target : null,
-      lastDigest: typeof parsed.lastDigest === 'string' ? parsed.lastDigest : '',
-      lastNotifiedAt: Number.isFinite(Number(parsed.lastNotifiedAt)) ? Number(parsed.lastNotifiedAt) : 0,
-    };
-  } catch {
-    return { enabled: false, target: null, lastDigest: '', lastNotifiedAt: 0 };
-  }
-}
+// REGION_LABELS rimosso - il backend fornisce le regioni
+// Icone rimosse - il backend fornisce tutto tramite computed
 
-function saveTrainNotificationsSettings(next) {
-  try {
-    localStorage.setItem(TRAIN_NOTIFICATIONS_KEY, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
-}
-
-function buildTrainNotificationTarget({ trainNumber, originCode = '', technical = '', epochMs = null } = {}) {
-  const num = String(trainNumber || '').trim();
-  if (!num) return null;
-  return {
-    trainNumber: num,
-    originCode: String(originCode || '').trim(),
-    technical: String(technical || '').trim(),
-    epochMs: Number.isFinite(Number(epochMs)) ? Number(epochMs) : null,
-  };
-}
-
-function trainNotificationTargetKey(target) {
-  if (!target || typeof target !== 'object') return '';
-  const num = String(target.trainNumber || '').trim();
-  if (!num) return '';
-  const origin = String(target.originCode || '').trim();
-  const technical = String(target.technical || '').trim();
-  const epoch = Number.isFinite(Number(target.epochMs)) ? String(Number(target.epochMs)) : '';
-  return [num, origin, technical, epoch].join('|');
-}
-
-function getCurrentTrainNotificationState(payload) {
-  const settings = loadTrainNotificationsSettings();
-  if (!settings.enabled) return { enabled: false, matches: false, targetKey: '' };
-
-  const d = payload && payload.data;
-  const num = String((d && (d.numeroTreno || d.numeroTrenoEsteso)) || '').trim();
-  const target = buildTrainNotificationTarget({
-    trainNumber: num,
-    originCode: payload?.originCode || '',
-    technical: payload?.technical || '',
-    epochMs: payload?.referenceTimestamp ?? null,
-  });
-
-  const currentKey = trainNotificationTargetKey(target);
-  const savedKey = trainNotificationTargetKey(settings.target);
-  return { enabled: true, matches: !!currentKey && currentKey === savedKey, targetKey: currentKey };
-}
-
-async function ensureBrowserNotificationPermission() {
-  if (typeof window === 'undefined') return 'unsupported';
-  if (!('Notification' in window)) return 'unsupported';
-  if (Notification.permission === 'granted') return 'granted';
-  if (Notification.permission === 'denied') return 'denied';
-  try {
-    const p = await Notification.requestPermission();
-    return p;
-  } catch {
-    return 'denied';
-  }
-}
-
-function computeTrainNotificationDigest(payload) {
-  const d = payload && payload.data;
-  if (!d) return '';
-  
-  // Usa dati computed dal backend quando disponibili
-  const computed = payload.computed || {};
-  const journey = computed.journeyState 
-    ? { state: computed.journeyState.state } 
-    : computeJourneyState(d);
-  const globalDelay = computed.globalDelay != null 
-    ? computed.globalDelay 
-    : getGlobalDelayMinutes(d);
-  
-  const lastStation = String(d.stazioneUltimoRilevamento || '').trim();
-  const lastTime = String(d.oraUltimoRilevamento || '').trim();
-  const fermate = Array.isArray(d.fermate) ? d.fermate : [];
-  const timelineState = deriveTimelineFromTimes(fermate, { journeyState: journey.state, globalDelay });
-  const currentIdx = Number.isFinite(timelineState?.currentIdx) ? String(timelineState.currentIdx) : '';
-  return [
-    String(journey.state || ''),
-    String(globalDelay ?? ''),
-    lastStation,
-    lastTime,
-    currentIdx,
-  ].join('|');
-}
-
-function buildTrainNotificationMessage(payload) {
-  const d = payload && payload.data;
-  if (!d) return null;
-
-  // Usa dati computed dal backend quando disponibili
-  const computed = payload.computed || {};
-  const journey = computed.journeyState 
-    ? { state: computed.journeyState.state } 
-    : computeJourneyState(d);
-  const globalDelay = computed.globalDelay != null 
-    ? computed.globalDelay 
-    : getGlobalDelayMinutes(d);
-  
-  const num = String(d.numeroTreno || d.numeroTrenoEsteso || '').trim();
-  const route = [String(d.origine || '').trim(), String(d.destinazione || '').trim()].filter(Boolean).join(' → ');
-
-  const stateLabelMap = {
-    PLANNED: 'Pianificato',
-    RUNNING: 'In viaggio',
-    COMPLETED: 'Concluso',
-    CANCELLED: 'Soppresso',
-    PARTIAL: 'Cancellato parz.',
-    UNKNOWN: 'Sconosciuto',
-  };
-  const stateLabel = stateLabelMap[journey.state] || stateLabelMap.UNKNOWN;
-
-  const lastDetectionMillis = parseToMillis(d.oraUltimoRilevamento);
-  const lastTime = d.oraUltimoRilevamento ? formatTimeFlexible(d.oraUltimoRilevamento) : '';
-  const lastStation = String(d.stazioneUltimoRilevamento || '').trim();
-  const last = [lastTime, lastStation].filter(Boolean).join(' - ');
-
-  const delayPart = Number.isFinite(Number(globalDelay))
-    ? (globalDelay > 0 ? `${globalDelay} min ritardo` : (globalDelay < 0 ? `${Math.abs(globalDelay)} min anticipo` : 'In orario'))
-    : '';
-
-  const bodyParts = [
-    `Stato: ${stateLabel}`,
-    delayPart ? `• ${delayPart}` : '',
-    last ? `• Ultimo: ${last}` : '',
-  ].filter(Boolean);
-
-  return {
-    title: num ? `Treno ${num}` : 'Aggiornamento treno',
-    body: `${route ? `${route}\n` : ''}${bodyParts.join(' ')}`.trim(),
-    tag: num ? `train-update-${num}` : 'train-update',
-    timestamp: lastDetectionMillis != null ? lastDetectionMillis : Date.now(),
-  };
-}
-
-function maybeSendTrainNotification(payload) {
-  const settings = loadTrainNotificationsSettings();
-  if (!settings.enabled || !settings.target) return;
-
-  const d = payload && payload.data;
-  if (!d) return;
-
-  const target = buildTrainNotificationTarget({
-    trainNumber: String(d.numeroTreno || d.numeroTrenoEsteso || '').trim(),
-    originCode: payload?.originCode || '',
-    technical: payload?.technical || '',
-    epochMs: payload?.referenceTimestamp ?? null,
-  });
-
-  const currentKey = trainNotificationTargetKey(target);
-  const savedKey = trainNotificationTargetKey(settings.target);
-  if (!currentKey || currentKey !== savedKey) return;
-
-  // Notifica solo quando la pagina non è in primo piano, per evitare spam mentre stai guardando.
-  if (typeof document !== 'undefined' && document.visibilityState === 'visible') return;
-
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-
-  const digest = computeTrainNotificationDigest(payload);
-  if (!digest) return;
-
-  const now = Date.now();
-  const MIN_GAP_MS = 30_000;
-  if (settings.lastDigest === digest) return;
-  if (settings.lastNotifiedAt && now - settings.lastNotifiedAt < MIN_GAP_MS) return;
-
-  const msg = buildTrainNotificationMessage(payload);
-  if (!msg) return;
-
-  try {
-    // `tag` evita che si accumulino notifiche duplicate (dipende dal browser).
-    new Notification(msg.title, { body: msg.body, tag: msg.tag });
-    saveTrainNotificationsSettings({
-      ...settings,
-      lastDigest: digest,
-      lastNotifiedAt: now,
-    });
-  } catch {
-    // ignore
-  }
-}
-
-const REGION_LABELS = {
-  '1': 'Lombardia',
-  '2': 'Liguria',
-  '3': 'Piemonte',
-  '4': "Valle d'Aosta",
-  '5': 'Lazio',
-  '6': 'Umbria',
-  '7': 'Molise',
-  '8': 'Emilia-Romagna',
-  '10': 'Friuli Venezia Giulia',
-  '11': 'Marche',
-  '12': 'Veneto',
-  '13': 'Toscana',
-  '14': 'Sicilia',
-  '15': 'Basilicata',
-  '16': 'Puglia',
-  '17': 'Calabria',
-  '18': 'Campania',
-  '19': 'Abruzzo',
-  '20': 'Sardegna',
-  '21': 'Trentino-Alto Adige',
-  '22': 'Trentino-Alto Adige',
-};
-
-// Icone per tipo treno (mantenute per UI)
-const TRAIN_KIND_ICON_SRC = {
-  FR: '/img/FR_black.svg',
-  FA: '/img/FA_black.svg',
-  FB: '/img/FB_black.svg',
-  IC: '/img/IC.svg',
-  ICN: '/img/NI.svg',
-  ITA: '/img/ITA.svg',
-  BU: '/img/BU_black.svg',
-  BUS: '/img/BU_black.svg',
-  EC: '/img/EC_black.svg',
-  R: '/img/RV.svg',
-  REG: '/img/RV.svg',
-  RV: '/img/RV.svg',
-};
-
-const REGIONAL_ICON_CODES = new Set([
-  'R',
-  'REG', 'RV', 'IR', 'IREG',
-  'LEX',
-  'SUB', 'MET', 'SFM',
-  'MXP', 'FL',
-  'DD', 'DIR', 'D', 'ACC',
-  'PE', 'PEXP',
-  'TEXP', 'CEXP',
-]);
-
-function getTrainKindIconSrc(kindCode) {
-  const code = (kindCode || '').toString().trim().toUpperCase();
-  // Tutte le sigle che iniziano per R (es. RXP) sono regionali (escluso RJ).
-  if (code && code.startsWith('R') && code !== 'RJ') return '/img/RV.svg';
-  if (TRAIN_KIND_ICON_SRC[code]) return TRAIN_KIND_ICON_SRC[code];
-  if (REGIONAL_ICON_CODES.has(code)) return '/img/RV.svg';
-  return '/img/trenitalia.png';
-}
-
-const THEMED_TRAIN_ICON_CODES = new Set(['FR', 'FA', 'FB', 'BU', 'BUS', 'EC']);
-
-function getTrainKindIconMarkup(kindCode, options = {}) {
-  const { alt = '', imgClass = '', ariaHidden = false } = options;
-  const code = (kindCode || '').toString().trim().toUpperCase();
-  const ariaHiddenAttr = ariaHidden ? ' aria-hidden="true"' : '';
-  const classAttr = imgClass ? ` class="${imgClass}"` : '';
-  const safeAlt = escapeHtml(alt);
-
-  if (THEMED_TRAIN_ICON_CODES.has(code)) {
-    const base = code === 'BUS' ? 'BU' : code;
-    return `<picture${ariaHiddenAttr}><source srcset="/img/${base}_white.svg" media="(prefers-color-scheme: dark)" /><img src="/img/${base}_black.svg" alt="${safeAlt}"${classAttr}${ariaHiddenAttr} /></picture>`;
-  }
-
-  const src = getTrainKindIconSrc(code);
-  return `<img src="${src}" alt="${safeAlt}"${classAttr}${ariaHiddenAttr} />`;
-}
+// Funzioni icone rimosse - il backend fornisce computed.trainKind
 
 function normalizeTrainShortCode(raw) {
   const code = (raw || '').toString().trim().toUpperCase();
   return /^[A-Z]{1,4}$/.test(code) ? code : '';
 }
 
-const PREFERRED_SHORT_CODES = [
-  'ICN',
-  'FR',
-  'FA',
-  'FB',
-  'IC',
-  'ITA',
-  'BU',
-  'BUS',
-  'EC',
-  'EN',
-  'RJ',
-  'TGV',
-  'ES',
-  'ESC',
-  'R',
-  'REG',
-  'RV',
-  'REX',
-  'RE',
-  'IREG',
-  'IR',
-  'LEX',
-  'SUB',
-  'MET',
-  'MXP',
-  'FL',
-  'DD',
-  'D',
-  'ACC',
-  'EXP',
-  'SFM',
-  'PEXP',
-  'PE',
-  'TEXP',
-  'CEXP',
-];
-
+// deriveShortCodeFromRule semplificato - il backend fornisce computed.trainKind
 function deriveShortCodeFromRule(rule) {
   const raw = Array.isArray(rule?.matches) ? rule.matches : [];
   const extra = [rule?.detailLabel, rule?.boardLabel];
@@ -358,11 +58,7 @@ function deriveShortCodeFromRule(rule) {
       .filter((x) => x.length >= 1 && x.length <= 4)
   );
 
-  for (const preferred of PREFERRED_SHORT_CODES) {
-    if (candidates.has(preferred)) return preferred;
-  }
-
-  // fallback: prima sigla "compatta" (2-4 lettere)
+  // Prima sigla valida 2-4 lettere
   for (const c of candidates) {
     if (c.length >= 2 && c.length <= 4) return c;
   }
@@ -426,8 +122,6 @@ const trainSearchBtn = document.getElementById('trainSearchBtn');
 const trainClearBtn = document.getElementById('trainClearBtn');
 const trainError = document.getElementById('trainError');
 const trainResult = document.getElementById('trainResult');
-const recentTrainsContainer = document.getElementById('recentTrains');
-const favoriteTrainsContainer = document.getElementById('favoriteTrains');
 
 // --- DOM: SOLUZIONI DI VIAGGIO ------------------------------------------
 
@@ -446,16 +140,19 @@ const tripError = document.getElementById('tripError');
 let tripFromId = null;
 let tripToId = null;
 let tripPaginationState = null;
+let lastTripSolutionsRaw = null;
 
 let selectedStation = null;
 let stationBoardData = { departures: [], arrivals: [] };
 let stationBoardActiveTab = 'departures';
+let lastStationRaw = null;
 
 // --- INDICE STAZIONI LOCALE (TSV) --------------------------------------
 // Usato per l'autocomplete della ricerca stazione (evita chiamate a ViaggiaTreno).
 
 let stationIndex = [];
 let stationIndexByCode = new Map();
+let stationIndexByKey = new Map();
 let stationIndexLoadPromise = null;
 
 // --- CANONICALIZZAZIONE + COORDINATE STAZIONI (TSV/GEO) -----------------
@@ -498,7 +195,11 @@ async function ensureStationCanonicalLoaded() {
         }
       }
 
-      if (!text) throw new Error('TSV stazioni non trovato (prova /stazioni_coord_coerenti.tsv)');
+      if (!text) {
+        stationCanonicalByCode = new Map();
+        stationCanonicalByKey = new Map();
+        return;
+      }
 
       const lines = text.split(/\r?\n/).filter(Boolean);
       if (lines.length <= 1) {
@@ -607,9 +308,26 @@ function getCanonicalStationRecord(code, fallbackName = '') {
 }
 
 function resolveStationDisplayName(code, fallbackName = '') {
+  const normalized = normalizeStationCode(code);
+  if (normalized) {
+    const hit = stationIndexByCode.get(normalized);
+    if (hit?.name) return String(hit.name);
+
+    // Supporta varianti (es: senza prefisso S, senza zeri)
+    const variants = buildCodeVariants(normalized);
+    for (const v of variants) {
+      const hv = stationIndexByCode.get(normalizeStationCode(v));
+      if (hv?.name) return String(hv.name);
+    }
+  }
+  const keyFromName = normalizeStationSearchKey(fallbackName);
+  if (keyFromName) {
+    const hitByName = stationIndexByKey.get(keyFromName);
+    if (hitByName?.name) return String(hitByName.name);
+  }
   const rec = getCanonicalStationRecord(code, fallbackName);
-  if (rec?.name) return rec.name;
-  return (fallbackName || '').toString().trim();
+  if (rec?.name) return String(rec.name);
+  return String((fallbackName || '').toString().trim());
 }
 
 function parseCoordNumber(raw) {
@@ -622,9 +340,20 @@ function parseCoordNumber(raw) {
 }
 
 function resolveStationCoords(code, fallbackName = '', stationDetails = null) {
-  const rec =
-    getCanonicalStationRecord(code, fallbackName) ||
-    stationIndexByCode.get(normalizeStationCode(code));
+  const normalized = normalizeStationCode(code);
+  const byCode = (() => {
+    if (!normalized) return null;
+    const hit = stationIndexByCode.get(normalized);
+    if (hit) return hit;
+    const variants = buildCodeVariants(normalized);
+    for (const v of variants) {
+      const hv = stationIndexByCode.get(normalizeStationCode(v));
+      if (hv) return hv;
+    }
+    return null;
+  })();
+
+  const rec = getCanonicalStationRecord(code, fallbackName) || byCode;
 
   const lat =
     (rec && rec.lat != null ? rec.lat : null) ??
@@ -1492,9 +1221,41 @@ async function ensureStationIndexLoaded() {
 
   stationIndexLoadPromise = (async () => {
     try {
-      await ensureStationCanonicalLoaded();
+      // Prova a caricare stations.json (preferito)
+      try {
+        const resp = await fetch('/stations.json', { cache: 'no-cache' });
+        if (resp && resp.ok) {
+          const json = await resp.json();
+          if (Array.isArray(json) && json.length > 0) {
+            const parsed = json
+              .filter((s) => s && s.id && s.name)
+              .map((s) => ({
+                code: String(s.id),
+                name: String(s.name),
+                key: normalizeStationSearchKey(String(s.name)),
+                lat: s.lat != null ? s.lat : null,
+                lon: s.lon != null ? s.lon : null,
+              }));
+            parsed.sort((a, b) => a.key.localeCompare(b.key, 'it'));
+            stationIndex = parsed;
+            stationIndexByCode = new Map(
+              parsed.map((item) => [normalizeStationCode(item.code), item])
+            );
+            stationIndexByKey = new Map();
+            parsed.forEach((item) => {
+              if (item?.key && !stationIndexByKey.has(item.key)) {
+                stationIndexByKey.set(item.key, item);
+              }
+            });
+            return; // Indice pronto da stations.json
+          }
+        }
+      } catch (e) {
+        // Ignora e passa al fallback TSV
+      }
 
-      // L'indice per l'autocomplete è direttamente quello "coerente".
+      // Fallback: usa TSV canonici se presenti
+      await ensureStationCanonicalLoaded();
       const parsed = Array.from(stationCanonicalByCode.values())
         .filter((item) => item && item.name && item.code);
 
@@ -1503,10 +1264,17 @@ async function ensureStationIndexLoaded() {
       stationIndexByCode = new Map(
         parsed.map((item) => [normalizeStationCode(item.code), item])
       );
+      stationIndexByKey = new Map();
+      parsed.forEach((item) => {
+        if (item?.key && !stationIndexByKey.has(item.key)) {
+          stationIndexByKey.set(item.key, item);
+        }
+      });
     } catch (err) {
       console.error('Errore caricamento indice stazioni TSV:', err);
       stationIndex = [];
       stationIndexByCode = new Map();
+      stationIndexByKey = new Map();
     }
   })();
 
@@ -2166,6 +1934,13 @@ async function loadStationByCode(name, code) {
     const dep = depRes.ok ? await depRes.json() : null;
     const arr = arrRes.ok ? await arrRes.json() : null;
 
+    lastStationRaw = {
+      selection: { name: displayName, code: normalizedCode },
+      info,
+      departures: dep,
+      arrivals: arr,
+    };
+
     const infoPayload = info?.ok ? info : null;
     stationBoardData = {
       departures: dep?.ok ? dep.data || [] : [],
@@ -2175,8 +1950,9 @@ async function loadStationByCode(name, code) {
     if (infoPayload) {
       renderStationInfoContent(selectedStation, infoPayload);
     } else if (stationInfoContainer) {
+      const rawHtml = buildRawJsonDetails('Mostra raw JSON (stazione)', lastStationRaw);
       stationInfoContainer.classList.remove('hidden');
-      stationInfoContainer.innerHTML = `<p class="small muted">Informazioni non disponibili per ${escapeHtml(displayName)}.</p>`;
+      stationInfoContainer.innerHTML = `<p class="small muted">Informazioni non disponibili per ${escapeHtml(displayName)}.</p>${rawHtml || ''}`;
     }
 
     renderStationBoard('departures');
@@ -2197,41 +1973,18 @@ function renderStationInfoContent(selection, infoPayload) {
   void stationCodes;
 
   stationInfoContainer.classList.remove('hidden');
+  const displayName = resolveStationDisplayName(selection?.code, selection?.name) || 'Stazione';
+  const rawHtml = buildRawJsonDetails('Mostra raw JSON (stazione)', lastStationRaw);
   stationInfoContainer.innerHTML = `
-    ${hasCoords ? `
-      <div class="map-widget" id="stationMapWidget">
-        <div class="map-widget-head">
-          ${mapsLink
-            ? `<a href="${mapsLink}" target="_blank" rel="noopener noreferrer" class="station-maps-btn">
-                <picture aria-hidden="true">
-                  <source srcset="/img/maps_white.svg" media="(prefers-color-scheme: dark)" />
-                  <img src="/img/maps_black.svg" alt="" class="station-maps-icon" aria-hidden="true" />
-                </picture>
-                Maps
-              </a>`
-            : ''}
-          <button type="button" class="map-recenter-btn" data-map-action="recenter">
-            <picture aria-hidden="true">
-              <source srcset="/img/gps_white.svg" media="(prefers-color-scheme: dark)" />
-              <img src="/img/gps_black.svg" alt="" class="map-recenter-icon" aria-hidden="true" />
-            </picture>
-            Ricentra
-          </button>
-        </div>
-        <div class="mini-map station-mini-map map-widget-body" id="stationMiniMap"></div>
-      </div>
-    ` : `<p class="small muted">Coordinate non disponibili.</p>`}
+    <div class="station-info-compact">
+      <p class="small"><strong>${escapeHtml(displayName)}</strong></p>
+      ${hasCoords ? `
+        <p class="small muted">Coordinate: ${coords.lat}, ${coords.lon}</p>
+        ${mapsLink ? `<p class="small"><a href="${mapsLink}" target="_blank" rel="noopener noreferrer">Apri su Maps</a></p>` : ''}
+      ` : `<p class="small muted">Coordinate non disponibili.</p>`}
+    </div>
+    ${rawHtml || ''}
   `;
-
-  if (hasCoords) {
-    const displayName = resolveStationDisplayName(selection?.code, selection?.name) || 'Stazione';
-    const root = stationInfoContainer.querySelector('#stationMapWidget');
-    attachMapWidget(
-      root,
-      [{ ...coords, label: displayName }],
-      { mode: 'point', title: `Stazione: ${displayName}`, stationZoom: 15 }
-    );
-  }
 }
 
 function buildBoardDelayBadge(delay, isCancelled) {
@@ -2619,10 +2372,11 @@ function buildIsoDateTime(dateStr, timeStr) {
 }
 
 
-// RECENTI & PREFERITI ------------------------------------------------
+// RECENTI ------------------------------------------------
 
 const TRIP_RECENT_KEY = 'treninfo_recent_trips';
 const STATION_RECENT_KEY = 'treninfo_recent_stations';
+// Preferiti rimossi: teniamo le key solo per eventuale cleanup.
 const TRIP_FAVORITES_KEY = 'treninfo_favorite_trips';
 const STATION_FAVORITES_KEY = 'treninfo_favorite_stations';
 
@@ -2669,8 +2423,6 @@ function removeFromStorage(key, uniqueVal, uniqueKey = 'id') {
 
 function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isFavCallback) {
   if (!container) return;
-
-  const showFav = typeof onToggleFav === 'function';
   
   if (!list || list.length === 0) {
     container.innerHTML = '';
@@ -2717,17 +2469,8 @@ function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isF
       contentHtml = `<span class="storage-chip-label">${escapeHtml(item.name)}</span>`;
     }
 
-    const isFav = isFavCallback ? isFavCallback(item) : false;
-    
     return `
-      <div class="storage-chip ${isFav ? 'favorite' : ''} ${extraClass}" role="button" tabindex="0" data-id="${escapeHtml(id)}">
-        <div class="storage-chip-actions">
-            ${showFav ? `
-              <button type="button" class="storage-chip-btn storage-chip-fav ${isFav ? 'is-active' : ''}" title="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}" aria-label="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}">
-                  <span class="storage-chip-fav-glyph" aria-hidden="true">${isFav ? '♥' : '♡'}</span>
-              </button>
-            ` : ''}
-        </div>
+      <div class="storage-chip ${extraClass}" role="button" tabindex="0" data-id="${escapeHtml(id)}">
         <span class="storage-chip-content">
             ${contentHtml}
         </span>
@@ -2738,10 +2481,8 @@ function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isF
   // Add event listeners
   container.querySelectorAll('.storage-chip').forEach((chip, idx) => {
     const item = list[idx];
-    const isFavNow = isFavCallback ? isFavCallback(item) : false;
 
-    // Swipe SOLO sui recenti (non preferiti): verso sinistra per eliminare.
-    if (!isFavNow && typeof onRemove === 'function') {
+    if (typeof onRemove === 'function') {
       attachSwipeToStorageChip(chip, {
         onDelete: () => onRemove(item),
       });
@@ -2752,14 +2493,7 @@ function renderChips(container, list, type, onSelect, onRemove, onToggleFav, isF
         chip.__swipeSkipClick = false;
         return;
       }
-      const favBtn = e.target.closest('.storage-chip-fav');
-      
-      if (favBtn) {
-        e.stopPropagation();
-        if (showFav) onToggleFav(list[idx]);
-      } else {
-        onSelect(list[idx]);
-      }
+      onSelect(list[idx]);
     });
   });
 }
@@ -2897,14 +2631,9 @@ function attachSwipeToStorageChip(chip, { onDelete }) {
 
 function renderGroupedChips(container, groups, type, onSelect, onRemove, onToggleFav, isFavCallback) {
   if (!container) return;
-  const favorites = Array.isArray(groups?.favorites) ? groups.favorites : [];
   const recents = Array.isArray(groups?.recents) ? groups.recents : [];
-  const sections = [];
 
-  if (favorites.length) sections.push({ title: 'Preferiti', items: favorites });
-  if (recents.length) sections.push({ title: 'Recenti', items: recents });
-
-  if (!sections.length) {
+  if (!recents.length) {
     container.innerHTML = '';
     container.classList.add('hidden');
     return;
@@ -2913,7 +2642,6 @@ function renderGroupedChips(container, groups, type, onSelect, onRemove, onToggl
   container.classList.remove('hidden');
 
   const allItems = [];
-  const showFav = typeof onToggleFav === 'function';
 
   const renderOne = (item, idx) => {
     let contentHtml = '';
@@ -2949,43 +2677,30 @@ function renderGroupedChips(container, groups, type, onSelect, onRemove, onToggl
       contentHtml = `<span class="storage-chip-label">${escapeHtml(item.name)}</span>`;
     }
 
-    const isFav = isFavCallback ? isFavCallback(item) : false;
-
     return `
-      <div class="storage-chip ${isFav ? 'favorite' : ''} ${extraClass}" role="button" tabindex="0" data-idx="${idx}" data-id="${escapeHtml(id)}">
-        <div class="storage-chip-actions">
-          ${showFav ? `
-            <button type="button" class="storage-chip-btn storage-chip-fav ${isFav ? 'is-active' : ''}" title="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}" aria-label="${isFav ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}">
-              <span class="storage-chip-fav-glyph" aria-hidden="true">${isFav ? '♥' : '♡'}</span>
-            </button>
-          ` : ''}
-        </div>
+      <div class="storage-chip ${extraClass}" role="button" tabindex="0" data-idx="${idx}" data-id="${escapeHtml(id)}">
         <span class="storage-chip-content">${contentHtml}</span>
       </div>
     `;
   };
 
   let nextIdx = 0;
-  const sectionsHtml = sections.map((section) => {
-    const chipsHtml = section.items.map((item) => {
-      const idx = nextIdx;
-      allItems[idx] = item;
-      nextIdx += 1;
-      return renderOne(item, idx);
-    }).join('');
-
-    return `
-      <div class="storage-block">
-        <div class="storage-block-head">
-          <div class="storage-block-title">${escapeHtml(section.title)}</div>
-          <div class="storage-block-count">${section.items.length}</div>
-        </div>
-        <div class="storage-block-list">${chipsHtml}</div>
-      </div>
-    `;
+  const chipsHtml = recents.map((item) => {
+    const idx = nextIdx;
+    allItems[idx] = item;
+    nextIdx += 1;
+    return renderOne(item, idx);
   }).join('');
 
-  container.innerHTML = sectionsHtml;
+  container.innerHTML = `
+    <div class="storage-block">
+      <div class="storage-block-head">
+        <div class="storage-block-title">Recenti</div>
+        <div class="storage-block-count">${recents.length}</div>
+      </div>
+      <div class="storage-block-list">${chipsHtml}</div>
+    </div>
+  `;
 
   container.querySelectorAll('.storage-chip').forEach((chip) => {
     chip.addEventListener('click', (e) => {
@@ -2993,25 +2708,17 @@ function renderGroupedChips(container, groups, type, onSelect, onRemove, onToggl
         chip.__swipeSkipClick = false;
         return;
       }
-      const favBtn = e.target.closest('.storage-chip-fav');
       const idx = Number(chip.getAttribute('data-idx'));
       const item = allItems[idx];
       if (!item) return;
 
-      if (favBtn) {
-        e.stopPropagation();
-        if (showFav) onToggleFav(item);
-      } else {
-        onSelect(item);
-      }
+      onSelect(item);
     });
 
-    // Swipe SOLO sui recenti (non preferiti): verso sinistra per eliminare.
     const idx = Number(chip.getAttribute('data-idx'));
     const item = allItems[idx];
     if (!item) return;
-    const isFavNow = isFavCallback ? isFavCallback(item) : false;
-    if (!isFavNow && typeof onRemove === 'function') {
+    if (typeof onRemove === 'function') {
       attachSwipeToStorageChip(chip, {
         onDelete: () => onRemove(item),
       });
@@ -3035,47 +2742,18 @@ function normalizeTripList(rawList) {
 
 // --- TRAIN STORAGE ---
 
-function buildFavoriteButtonInnerHtml(isFavorite) {
-  const label = isFavorite ? 'Rimuovi dai preferiti' : 'Salva nei preferiti';
-  const glyph = isFavorite ? '♥' : '♡';
-  return `<span class="favorite-btn-heart" aria-hidden="true">${glyph}</span><span class="favorite-btn-text">${escapeHtml(label)}</span>`;
-}
-
 function updateTrainStorage() {
   const recents = loadStorage(RECENT_KEY);
-  const favorites = loadStorage(FAVORITES_KEY);
-  
-  // Preferiti prima dei recenti (più naturale). De-duplica per numero.
-  const favIds = new Set(favorites.map(i => String(i.numero)));
-  const uniqueRecents = recents.filter(i => !favIds.has(String(i.numero)));
 
-  renderGroupedChips(trainStorageContainer, { favorites, recents: uniqueRecents }, 'train',
+  renderGroupedChips(trainStorageContainer, { favorites: [], recents }, 'train',
     (item) => {
       trainNumberInput.value = item.numero;
       cercaStatoTreno(String(item.numero || '').trim(), { useRememberedChoice: true });
     }, 
     (item) => {
-      // Remove
-      if (favIds.has(String(item.numero))) {
-         const newFavs = removeFromStorage(FAVORITES_KEY, item.numero, 'numero');
-      } else {
-         const newRecents = removeFromStorage(RECENT_KEY, item.numero, 'numero');
-      }
+      removeFromStorage(RECENT_KEY, item.numero, 'numero');
       updateTrainStorage();
-    },
-    (item) => {
-      // Toggle Fav
-      const isFav = favIds.has(String(item.numero));
-      if (isFav) {
-        removeFromStorage(FAVORITES_KEY, item.numero, 'numero');
-        // Add back to recents if not there? It's probably there or we should add it
-        addToStorage(RECENT_KEY, item, 'numero', MAX_RECENT);
-      } else {
-        addToStorage(FAVORITES_KEY, item, 'numero', MAX_FAVORITES);
-      }
-      updateTrainStorage();
-    },
-    (item) => favIds.has(String(item.numero))
+    }
   );
 }
 
@@ -3092,46 +2770,15 @@ function addRecentTrain(details) {
   updateTrainStorage();
 }
 
-function isFavoriteTrain(numero) {
-  const list = loadStorage(FAVORITES_KEY);
-  return list.some(t => String(t.numero) === String(numero));
-}
-
-function toggleFavoriteTrain(data) {
-  if (!data || !data.numero) return;
-  const isFav = isFavoriteTrain(data.numero);
-  if (isFav) {
-    removeFromStorage(FAVORITES_KEY, data.numero, 'numero');
-    // Ensure it's in recents so it doesn't disappear completely if it was just viewed
-    addToStorage(RECENT_KEY, data, 'numero', MAX_RECENT);
-  } else {
-    addToStorage(FAVORITES_KEY, data, 'numero', MAX_FAVORITES);
-  }
-  updateTrainStorage();
-}
-
-function updateFavoriteActionButton(btn) {
-  if (!btn) return;
-  const num = btn.getAttribute('data-num');
-  const isFav = isFavoriteTrain(num);
-  btn.classList.toggle('is-active', isFav);
-  btn.innerHTML = buildFavoriteButtonInnerHtml(isFav);
-}
-
 // --- TRIP STORAGE ---
 
 function updateTripStorage() {
   const recents = normalizeTripList(loadStorage(TRIP_RECENT_KEY));
-  const favorites = normalizeTripList(loadStorage(TRIP_FAVORITES_KEY));
 
   // Migrazione soft: assicura che in storage ci sia sempre la forma {id,from,to}
   saveStorage(TRIP_RECENT_KEY, recents);
-  saveStorage(TRIP_FAVORITES_KEY, favorites);
 
-  const favIds = new Set(favorites.map(i => `${i.from}|${i.to}`));
-  const uniqueRecents = recents.filter(i => !favIds.has(`${i.from}|${i.to}`));
-
-  renderGroupedChips(tripStorageContainer, { favorites, recents: uniqueRecents }, 'trip',
+  renderGroupedChips(tripStorageContainer, { favorites: [], recents }, 'trip',
     (item) => {
       tripFromInput.value = item.from;
       tripToInput.value = item.to;
@@ -3140,26 +2787,9 @@ function updateTripStorage() {
     },
     (item) => {
       const id = `${item.from}|${item.to}`;
-      if (favIds.has(id)) {
-        removeFromStorage(TRIP_FAVORITES_KEY, id, 'id');
-      } else {
-        removeFromStorage(TRIP_RECENT_KEY, id, 'id');
-      }
+      removeFromStorage(TRIP_RECENT_KEY, id, 'id');
       updateTripStorage();
-    },
-    (item) => {
-      const id = `${item.from}|${item.to}`;
-      const normalized = { ...item, id };
-      const isFav = favIds.has(id);
-      if (isFav) {
-        removeFromStorage(TRIP_FAVORITES_KEY, id, 'id');
-        addToStorage(TRIP_RECENT_KEY, normalized, 'id', MAX_RECENT);
-      } else {
-        addToStorage(TRIP_FAVORITES_KEY, normalized, 'id', MAX_FAVORITES);
-      }
-      updateTripStorage();
-    },
-    (item) => favIds.has(`${item.from}|${item.to}`)
+    }
   );
 }
 
@@ -3174,11 +2804,8 @@ function addRecentTrip(from, to) {
 
 function updateStationStorage() {
   const recents = loadStorage(STATION_RECENT_KEY);
-  const favorites = loadStorage(STATION_FAVORITES_KEY);
-  const favIds = new Set(favorites.map(i => String(i.id)));
-  const uniqueRecents = recents.filter(i => !favIds.has(String(i.id)));
 
-  renderGroupedChips(stationStorageContainer, { favorites, recents: uniqueRecents }, 'station',
+  renderGroupedChips(stationStorageContainer, { favorites: [], recents }, 'station',
     (item) => {
       const input = document.getElementById('stationQuery');
       if (input) {
@@ -3188,24 +2815,9 @@ function updateStationStorage() {
       }
     },
     (item) => {
-      if (favIds.has(String(item.id))) {
-        removeFromStorage(STATION_FAVORITES_KEY, item.id, 'id');
-      } else {
-        removeFromStorage(STATION_RECENT_KEY, item.id, 'id');
-      }
+      removeFromStorage(STATION_RECENT_KEY, item.id, 'id');
       updateStationStorage();
-    },
-    (item) => {
-      const isFav = favIds.has(String(item.id));
-      if (isFav) {
-        removeFromStorage(STATION_FAVORITES_KEY, item.id, 'id');
-        addToStorage(STATION_RECENT_KEY, item, 'id', MAX_RECENT);
-      } else {
-        addToStorage(STATION_FAVORITES_KEY, item, 'id', MAX_FAVORITES);
-      }
-      updateStationStorage();
-    },
-    (item) => favIds.has(String(item.id))
+    }
   );
 }
 
@@ -3217,6 +2829,16 @@ function addRecentStation(station) {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+  // Cleanup legacy preferiti (feature rimossa)
+  try {
+    localStorage.removeItem(FAVORITES_KEY);
+    localStorage.removeItem(TRIP_FAVORITES_KEY);
+    localStorage.removeItem(STATION_FAVORITES_KEY);
+    // Cleanup legacy notifiche (feature rimossa)
+    localStorage.removeItem('treninfo_train_notifications');
+  } catch {
+    // ignore
+  }
   updateTrainStorage();
   updateTripStorage();
   updateStationStorage();
@@ -3227,119 +2849,28 @@ document.addEventListener('DOMContentLoaded', () => {
 // renderFavoriteTrains();
 // renderRecentTrains();
 
-if (trainResult) {
-  trainResult.addEventListener('click', (e) => {
-    const notifBtn = e.target.closest('.notification-current-btn');
-    if (notifBtn) {
-      e.preventDefault();
-      if (notifBtn.disabled) return;
-
-      const num = (notifBtn.getAttribute('data-num') || '').trim();
-      const originCode = decodeDatasetValue(notifBtn.getAttribute('data-origin-code') || '');
-      const technical = decodeDatasetValue(notifBtn.getAttribute('data-technical') || '');
-      const epochRaw = decodeDatasetValue(notifBtn.getAttribute('data-epoch-ms') || '');
-      const epochMs = Number.isFinite(Number(epochRaw)) ? Number(epochRaw) : null;
-
-      (async () => {
-        const permission = await ensureBrowserNotificationPermission();
-        if (permission !== 'granted') {
-          notifBtn.textContent = permission === 'denied' ? 'Notifiche bloccate' : 'Attiva notifiche';
-          return;
-        }
-
-        const target = buildTrainNotificationTarget({ trainNumber: num, originCode, technical, epochMs });
-        if (!target) return;
-
-        const settings = loadTrainNotificationsSettings();
-        const savedKey = trainNotificationTargetKey(settings.target);
-        const currentKey = trainNotificationTargetKey(target);
-        const isActiveForThis = settings.enabled && savedKey && currentKey === savedKey;
-
-        if (isActiveForThis) {
-          saveTrainNotificationsSettings({ enabled: false, target: null, lastDigest: '', lastNotifiedAt: 0 });
-          notifBtn.classList.remove('is-active');
-          notifBtn.textContent = 'Attiva notifiche';
-        } else {
-          const digest = lastRenderedTrainStatusPayload ? computeTrainNotificationDigest(lastRenderedTrainStatusPayload) : '';
-          saveTrainNotificationsSettings({ enabled: true, target, lastDigest: digest || '', lastNotifiedAt: 0 });
-          notifBtn.classList.add('is-active');
-          notifBtn.textContent = 'Notifiche attive';
-        }
-      })();
-
-      return;
-    }
-
-    const favBtn = e.target.closest('.favorite-current-btn');
-    if (favBtn) {
-      const data = {
-        numero: favBtn.getAttribute('data-num') || '',
-        kindCode: decodeDatasetValue(favBtn.getAttribute('data-kind') || ''),
-        origine: decodeDatasetValue(favBtn.getAttribute('data-orig') || ''),
-        destinazione: decodeDatasetValue(favBtn.getAttribute('data-dest') || ''),
-        partenza: decodeDatasetValue(favBtn.getAttribute('data-dep') || ''),
-        arrivo: decodeDatasetValue(favBtn.getAttribute('data-arr') || ''),
-      };
-      toggleFavoriteTrain(data);
-      updateFavoriteActionButton(favBtn);
-    }
-  });
-}
 
 // LOGICA STATO TRENO --------------------------------------------------
 
+// getTrainKindInfo semplificato - usa computed.trainKind dal backend
 function getTrainKindInfo(d) {
-  const metadata = resolveTrainKindFromCode(
-    d.compNumeroTreno,
-    d.siglaTreno,
-    d.compTipologiaTreno,
-    d.categoriaDescrizione,
-    d.tipoTreno
-  );
-
-  if (metadata) {
-    return { label: metadata.detailLabel, kindClass: metadata.className };
+  if (d.computed?.trainKind) {
+    return {
+      label: d.computed.trainKind.label || 'Treno',
+      kindClass: d.computed.trainKind.category || 'generic',
+    };
   }
-
+  // Fallback minimale
   const rawType = (d.compNumeroTreno || '').toString().toUpperCase();
-  if (!rawType) return { label: '', kindClass: '' };
-  return { label: rawType, kindClass: '' };
+  // compNumeroTreno spesso è tipo "REG 1234": qui vogliamo SOLO la sigla.
+  const siglaMatch = rawType.match(/[A-Z]{1,6}/);
+  const sigla = siglaMatch ? siglaMatch[0] : '';
+  return { label: sigla, kindClass: '' };
 }
 
+// getTrainKindShortCode semplificato - usa computed.trainKind.code dal backend
 function getTrainKindShortCode(d) {
-  const metadata = resolveTrainKindFromCode(
-    d?.compNumeroTreno,
-    d?.siglaTreno,
-    d?.compTipologiaTreno,
-    d?.categoriaDescrizione,
-    d?.tipoTreno
-  );
-
-  const direct = (metadata?.shortCode || '').toString().trim().toUpperCase();
-  if (/^[A-Z]{1,4}$/.test(direct)) {
-    // Tutte le sigle che iniziano per R (es. RXP) le trattiamo come REG (escluso RJ).
-    if (direct.startsWith('R') && direct !== 'RJ') return 'REG';
-    return direct;
-  }
-
-  const detail = (metadata?.detailLabel || '').toString().toUpperCase();
-  const board = (metadata?.boardLabel || '').toString().toUpperCase();
-
-  if (detail.includes('INTERCITY NOTTE') || board.includes('INTERCITY NOTTE')) return 'ICN';
-  if (detail.includes('EUROCITY') || board.includes('EUROCITY')) return 'EC';
-  if (detail.includes('EURONIGHT') || board.includes('EURONIGHT')) return 'EN';
-  if (detail.includes('INTERCITY') || board.includes('INTERCITY')) return 'IC';
-  if (detail.includes('REGIOEXPRESS') || board.includes('REGIOEXPRESS')) return 'REX';
-  if (detail.includes('LEONARDO') || board.includes('LEONARDO')) return 'LEX';
-  if (detail.includes('INTERREGIONALE') || board.includes('INTERREGIONALE')) return 'IREG';
-  if (detail.includes('BUS') || board.includes('BUS')) return 'BUS';
-  if (detail.includes('FRECCIAROSSA') || board.includes('FRECCIAROSSA')) return 'FR';
-  if (detail.includes('FRECCIARGENTO') || board.includes('FRECCIARGENTO')) return 'FA';
-  if (detail.includes('FRECCIABIANCA') || board.includes('FRECCIABIANCA')) return 'FB';
-  if (detail.includes('REGIONALE VELOCE') || board.includes('REGIONALE VELOCE')) return 'RV';
-  if (detail.includes('REGIONALE') || board.includes('REGIONALE')) return 'REG';
-
-  return '';
+  return d.computed?.trainKind?.code || '';
 }
 
 function getLastRealStopIndex(fermate) {
@@ -3961,50 +3492,25 @@ function getTimelineClassNames(idx, totalStops, lastDepartedIdx, journeyState, a
   return `${topClass} ${bottomClass}`;
 }
 
+// computeJourneyState semplificato - usa computed.journeyState dal backend
 function computeJourneyState(d) {
-  const fermate = Array.isArray(d.fermate) ? d.fermate : [];
-  const now = Date.now();
-
-  if (fermate.length === 0) {
+  if (d.computed?.journeyState) {
     return {
-      state: 'UNKNOWN',
-      pastCount: 0,
-      total: 0,
-      minutesToDeparture: null,
-      disruption: { reasonText: '', partialStation: null },
+      state: d.computed.journeyState.state || 'UNKNOWN',
+      pastCount: d.computed.journeyState.pastCount || 0,
+      total: d.computed.journeyState.total || 0,
+      minutesToDeparture: d.computed.journeyState.minutesToDeparture,
+      disruption: d.computed.journeyState.disruption || { reasonText: '', partialStation: null },
     };
   }
-
-  const total = fermate.length;
-  const first = fermate[0];
-  const last = fermate[fermate.length - 1];
-
-  const firstProg = parseToMillis(first.partenza_teorica ?? first.partenzaTeorica ?? first.programmata);
-  const lastArrReal = parseToMillis(last.arrivoReale ?? last.effettiva);
-
-  const lastRealIdx = getLastRealStopIndex(fermate);
-  const pastCount = lastRealIdx >= 0 ? lastRealIdx + 1 : 0;
-  const disruption = detectOperationalDisruption(d, fermate, lastRealIdx);
-
-  let state = 'UNKNOWN';
-  let minutesToDeparture = null;
-
-  if (disruption.isCancelled) {
-    state = 'CANCELLED';
-  } else if (disruption.isPartial) {
-    state = 'PARTIAL';
-  } else if (pastCount === 0) {
-    if (firstProg && firstProg > now) {
-      state = 'PLANNED';
-      minutesToDeparture = Math.round((firstProg - now) / 60000);
-    } else {
-      state = 'PLANNED';
-    }
-  } else {
-    state = 'RUNNING';
-  }
-
-  return { state, pastCount, total, minutesToDeparture, disruption };
+  // Fallback minimale
+  return {
+    state: 'UNKNOWN',
+    pastCount: 0,
+    total: Array.isArray(d.fermate) ? d.fermate.length : 0,
+    minutesToDeparture: null,
+    disruption: { reasonText: '', partialStation: null },
+  };
 }
 
 function findCurrentStopInfo(d) {
@@ -4036,18 +3542,9 @@ function findCurrentStopInfo(d) {
   return { currentStop: null, currentIndex: -1 };
 }
 
+// getGlobalDelayMinutes semplificato - usa computed.globalDelay dal backend
 function getGlobalDelayMinutes(d) {
-  const direct = parseDelayMinutes(d.ritardo);
-  if (direct != null) return direct;
-  if (Array.isArray(d.compRitardo)) {
-    const txt = d.compRitardo[0] || '';
-    const match = txt.match(/(-?\d+)\s*min/);
-    if (match) {
-      const parsed = Number(match[1]);
-      if (!Number.isNaN(parsed)) return parsed;
-    }
-  }
-  return null;
+  return typeof d?.computed?.globalDelay === 'number' ? d.computed.globalDelay : null;
 }
 
 function getCompletionChip(d, journey, globalDelay) {
@@ -4119,9 +3616,24 @@ function buildPrimaryStatus(d, journey, currentInfo) {
       : '';
   const enrichedCancellationIsOfficial = /cancell|soppress/i.test(enrichedCancellationReason);
 
+  const rawNum = String(d.numeroTreno || '').trim();
+  const numMatch = rawNum.match(/(\d+)/);
+  const safeNum = (numMatch ? numMatch[1] : rawNum).trim();
+
   let title = '';
-  if (kindInfo.label) title = `${kindInfo.label} ${d.numeroTreno || ''}`.trim();
-  else title = `Treno ${d.numeroTreno || ''}`.trim();
+  if (kindInfo.label) {
+    const base = String(kindInfo.label || '').trim();
+    const baseHasDigits = /\d/.test(base);
+    const baseHasNumToken = safeNum ? new RegExp(`\\b${safeNum}\\b`).test(base) : false;
+    if (baseHasDigits || baseHasNumToken) {
+      // Evita "REG 799 799" quando base è già tipo "REG 799"
+      title = base;
+    } else {
+      title = safeNum && base ? `${base} ${safeNum}` : (base || `Treno ${safeNum}`.trim());
+    }
+  } else {
+    title = `Treno ${safeNum}`.trim();
+  }
 
   let subtitle = '';
   if (origin || destination) subtitle = `${origin || '?'} → ${destination || '?'}`;
@@ -4370,10 +3882,6 @@ function renderTrainStatus(payload) {
     arrivo: plannedArrival,
     kindCode: getTrainKindShortCode(d),
   };
-  const trainIsFavorite = trainMeta.numero ? isFavoriteTrain(trainMeta.numero) : false;
-  const notifState = getCurrentTrainNotificationState(payload);
-  const notifSupported = (typeof window !== 'undefined') && ('Notification' in window);
-  const notifPermission = notifSupported ? Notification.permission : 'unsupported';
 
   const lastDetectionMillis = parseToMillis(d.oraUltimoRilevamento);
   const lastDetectionAgeMinutes = lastDetectionMillis != null
@@ -4413,33 +3921,10 @@ function renderTrainStatus(payload) {
   const badgeStateClass = `badge-status-${stateKey.toLowerCase()}`;
   const badgeStateLabel = badgeLabelMap[stateKey] || badgeLabelMap.UNKNOWN;
 
-  const favoriteBtnHtml = trainMeta.numero
-    ? `<button type="button" class="favorite-current-btn${trainIsFavorite ? ' is-active' : ''}" data-num="${trainMeta.numero}" data-kind="${encodeDatasetValue(trainMeta.kindCode || '')}" data-orig="${encodeDatasetValue(trainMeta.origine)}" data-dest="${encodeDatasetValue(trainMeta.destinazione)}" data-dep="${encodeDatasetValue(trainMeta.partenza || '')}" data-arr="${encodeDatasetValue(trainMeta.arrivo || '')}">${buildFavoriteButtonInnerHtml(trainIsFavorite)}</button>`
-    : '';
-
-  const notifBtnDisabled = !notifSupported || notifPermission === 'denied' || !trainMeta.numero;
-  const notifBtnLabel = (() => {
-    if (!trainMeta.numero) return '';
-    if (!notifSupported) return 'Notifiche non supportate';
-    if (notifPermission === 'denied') return 'Notifiche bloccate';
-    if (notifState.enabled && notifState.matches) return 'Notifiche attive';
-    return 'Attiva notifiche';
-  })();
-
-  const notifBtnHtml = trainMeta.numero
-    ? `<button type="button" class="notification-current-btn${(notifState.enabled && notifState.matches) ? ' is-active' : ''}" data-num="${trainMeta.numero}" data-origin-code="${encodeDatasetValue(payload?.originCode || '')}" data-technical="${encodeDatasetValue(payload?.technical || '')}" data-epoch-ms="${encodeDatasetValue(String(payload?.referenceTimestamp ?? ''))}" ${notifBtnDisabled ? 'disabled' : ''}>${escapeHtml(notifBtnLabel)}</button>`
-    : '';
-
-  const headerIconAlt = normalizeTrainShortCode(trainMeta.kindCode) || 'Treno';
-  const headerIconHtml = getTrainKindIconMarkup(trainMeta.kindCode, { alt: headerIconAlt, imgClass: 'train-logo-img', ariaHidden: true });
-
   const headerHtml = `
     <div class='train-header'>
       <div class='train-main'>
         <div class='train-title-row'>
-          <span class='train-logo' aria-hidden='true' data-kind='${escapeHtml(normalizeTrainShortCode(trainMeta.kindCode))}'>
-            ${headerIconHtml}
-          </span>
           <h2 class='train-title'>${primary.title || 'Dettagli treno'}</h2>
           <span class='badge-status ${badgeStateClass}'>
             ${badgeStateLabel}
@@ -4486,45 +3971,18 @@ function renderTrainStatus(payload) {
       ? `<p class='train-primary-meta'>${positionText}</p>`
       : ''
     }
-      ${(favoriteBtnHtml || notifBtnHtml)
-        ? `<div class='favorite-current-wrapper'>${notifBtnHtml || ''}${favoriteBtnHtml || ''}</div>`
-        : ''}
     </div>
   `;
 
   const routePoints = buildTrainRoutePoints(fermate, 220);
-  const showRouteMap = routePoints.length >= 1;
+  const showRouteMap = false;
   const originLabel = resolveStationDisplayName('', trainMeta.origine) || trainMeta.origine || '';
   const destLabel = resolveStationDisplayName('', trainMeta.destinazione) || trainMeta.destinazione || '';
   const routeMapAriaTitle = originLabel && destLabel ? `Percorso treno: ${originLabel} → ${destLabel}` : 'Percorso treno';
   const activeStop = timelineState.currentIdx >= 0 ? fermate[timelineState.currentIdx] : null;
   const activeStopCode = activeStop ? getStopStationCode(activeStop) : '';
   const activeStopName = activeStop ? (activeStop.stazione || activeStop.stazioneNome || '') : '';
-  const routeMapHtml = showRouteMap
-    ? `
-      <div class="train-route-map">
-        <div class="map-widget" id="trainMapWidget">
-          <div class="map-widget-head">
-            <button type="button" class="map-recenter-btn" data-map-action="goto-active">
-              <picture aria-hidden="true">
-                <source srcset="/img/stop_white.svg" media="(prefers-color-scheme: dark)" />
-                <img src="/img/stop_black.svg" alt="" class="map-recenter-icon" aria-hidden="true" />
-              </picture>
-              Vedi fermata
-            </button>
-            <button type="button" class="map-recenter-btn" data-map-action="recenter">
-              <picture aria-hidden="true">
-                <source srcset="/img/gps_white.svg" media="(prefers-color-scheme: dark)" />
-                <img src="/img/gps_black.svg" alt="" class="map-recenter-icon" aria-hidden="true" />
-              </picture>
-              Ricentra
-            </button>
-          </div>
-          <div class="mini-map train-mini-map map-widget-body" id="trainMiniMap"></div>
-        </div>
-      </div>
-    `
-    : '';
+  const routeMapHtml = '';
 
   // Tabella fermate ---------------------------------------------------
 
@@ -5014,42 +4472,30 @@ function renderTrainStatus(payload) {
     `;
   }
 
-  const jsonDebugHtml = isDebugUiEnabled()
-    ? `
-      <details class='json-debug'>
-        <summary>Dettagli raw (JSON ViaggiaTreno)</summary>
-        <pre>${escapeHtml(JSON.stringify(d, null, 2))}</pre>
-      </details>
-    `
-    : '';
+  const jsonDebugHtml = buildRawJsonDetails('Mostra raw JSON (stato treno)', payload);
 
   trainResult.innerHTML = headerHtml + primaryHtml + routeMapHtml + tableHtml + jsonDebugHtml;
 
-  if (showRouteMap) {
-    const root = trainResult.querySelector('#trainMapWidget');
-    attachMapWidget(root, routePoints, {
-      mode: 'route',
-      title: routeMapAriaTitle,
-      maxFitZoom: 12,
-      activeCode: activeStopCode,
-      activeLabel: activeStopName,
-      activeZoom: 15,
-      segment: mapSegment,
-      pastStopIdx: mapPastIdx,
-    });
-  }
+  // mappa rimossa
 
   return { concluded: isConcludedAtLastStop };
 }
 
-function isDebugUiEnabled() {
+function buildRawJsonDetails(summaryLabel, data) {
+  if (data == null) return '';
+  const summary = String(summaryLabel || 'Mostra raw JSON');
+  let payload;
   try {
-    if (typeof window === 'undefined') return false;
-    const p = new URLSearchParams(window.location.search || '');
-    return p.has('debug');
+    payload = JSON.stringify(data, null, 2);
   } catch {
-    return false;
+    payload = String(data);
   }
+  return `
+    <details class='json-debug'>
+      <summary>${escapeHtml(summary)}</summary>
+      <pre>${escapeHtml(payload)}</pre>
+    </details>
+  `;
 }
 
 function escapeHtml(str) {
@@ -5132,13 +4578,9 @@ function renderTrainNumberDisambiguationMenu(trainNumber, choices) {
 
       const kindMeta = resolveTrainKindFromCode(displayRaw);
       const kindCode = normalizeTrainShortCode(kindMeta?.shortCode);
-      // Se non riconosciamo il tipo (o non abbiamo un logo dedicato), NON mostriamo un logo generico (crea confusione).
-      const showIcon = !!kindCode && (Boolean(TRAIN_KIND_ICON_SRC[kindCode]) || REGIONAL_ICON_CODES.has(kindCode));
-      const iconAlt = kindCode || '';
-      const iconHtml = showIcon
-        ? `<span class="train-pick-icon" aria-hidden="true">${getTrainKindIconMarkup(kindCode, { alt: iconAlt })}</span>`
-        : '';
-      const btnClass = showIcon ? 'train-pick-btn' : 'train-pick-btn train-pick-btn--no-icon';
+      // Icone rimosse
+      const iconHtml = '';
+      const btnClass = 'train-pick-btn train-pick-btn--no-icon';
       return `
         <button
           type="button"
@@ -5281,13 +4723,6 @@ async function cercaStatoTreno(trainNumberOverride = '', options = {}) {
     }
 
     const dd = data.data;
-
-    // Notifiche: valuta su ogni snapshot (anche in auto-refresh).
-    try {
-      maybeSendTrainNotification(data);
-    } catch {
-      // ignore
-    }
 
     // Se il backend ci dice quale origin/technical ha risolto, ricordiamocelo.
     if (data.originCode || data.technical || data.referenceTimestamp) {
@@ -5522,6 +4957,9 @@ if (tripSearchBtn) {
       const res = await fetch(`${API_BASE}/api/solutions?${firstPageParams.toString()}`);
       const json = await res.json();
 
+      lastTripSolutionsRaw = json;
+      if (tripPaginationState) tripPaginationState.lastResponse = json;
+
       if (!json.ok) {
         tripResults.innerHTML = '';
         setInlineError(tripError, `Errore: ${json.error || 'Sconosciuto'}`);
@@ -5554,7 +4992,8 @@ if (tripSearchBtn) {
 
 function renderTripResults(solutions, context = {}) {
   if (!solutions || solutions.length === 0) {
-    tripResults.innerHTML = '<div class="info">Nessuna soluzione trovata.</div>';
+    const rawHtml = buildRawJsonDetails('Mostra raw JSON (soluzioni)', tripPaginationState?.lastResponse || lastTripSolutionsRaw);
+    tripResults.innerHTML = `<div class="info">Nessuna soluzione trovata.</div>${rawHtml || ''}`;
     return;
   }
 
@@ -5743,7 +5182,7 @@ function renderTripResults(solutions, context = {}) {
         const kindCode = deriveKindCodeFromIdent(ident, t);
         const typeClass = getTrainTypeClass(kindCode, ident);
         const badgeIconAlt = kindCode || 'Treno';
-        const logoHtml = `<span class=\"train-badge-icon\" aria-hidden=\"true\">${getTrainKindIconMarkup(kindCode, { alt: badgeIconAlt })}</span>`;
+        const logoHtml = '';
 
         if (num && clickable) {
           return `<button type="button" class="train-badge train-link ${typeClass}" data-num="${num}" data-kind="${escapeHtml(kindCode)}" title="Vedi stato treno ${num}">${logoHtml} ${ident}</button>`;
@@ -5758,8 +5197,8 @@ function renderTripResults(solutions, context = {}) {
                   const ident = buildTrainIdentFromNode(node);
                   const t = node?.train || node;
             const code = deriveKindCodeFromIdent(ident, t);
-            if (code && code.startsWith('R') && code !== 'RJ') return 'REG';
-            return REGIONAL_ICON_CODES.has(code) ? 'REG' : code;
+            // Restituisce il codice normalizzato
+            return code;
               })
               .filter(Boolean)
         )
@@ -5769,8 +5208,7 @@ function renderTripResults(solutions, context = {}) {
       if (!codes || codes.length === 0) return '';
 
       const renderIcon = (code) => {
-        const alt = code;
-        return `<span class=\"sol-train-icon\" data-kind=\"${escapeHtml(code)}\">${getTrainKindIconMarkup(code, { alt })}</span>`;
+        return `<span class=\"sol-train-icon\" data-kind=\"${escapeHtml(code)}\">${escapeHtml(code || 'Treno')}</span>`;
       };
 
       const parts = [];
@@ -5860,8 +5298,7 @@ function renderTripResults(solutions, context = {}) {
           return String(nodeIdent || 'Treno').trim() || 'Treno';
         })();
 
-        const nodeIconAlt = nodeKind ? String(nodeKind) : 'Treno';
-        const nodeIconHtml = `<span class="sol-segment-train-icon" aria-hidden="true">${getTrainKindIconMarkup(nodeKind, { alt: nodeIconAlt })}</span>`;
+        const nodeIconHtml = `<span class="sol-segment-train-icon" aria-hidden="true">${escapeHtml(nodeKind || 'Treno')}</span>`;
 
         const dep = formatTime(node.departureTime);
         const arr = formatTime(node.arrivalTime);
@@ -5967,6 +5404,8 @@ function renderTripResults(solutions, context = {}) {
     html += `<div class="solutions-actions"><button type="button" id="tripLoadMoreBtn" ${disabledAttr}>${label}</button></div>`;
   }
 
+  html += buildRawJsonDetails('Mostra raw JSON (soluzioni)', tripPaginationState?.lastResponse || lastTripSolutionsRaw);
+
   tripResults.innerHTML = html;
 }
 
@@ -5991,6 +5430,9 @@ if (tripResults) {
           nextParams.set('limit', String(tripPaginationState.limit));
           const res = await fetch(`${API_BASE}/api/solutions?${nextParams.toString()}`);
           const json = await res.json();
+
+          lastTripSolutionsRaw = json;
+          if (tripPaginationState) tripPaginationState.lastResponse = json;
 
           if (!json.ok) {
             setInlineError(tripError, `Errore: ${json.error || 'Sconosciuto'}`);
@@ -6060,7 +5502,8 @@ if (tripClearBtn) {
   });
 }
   const activeIndex = (() => {
-    if (activeIndexOverride != null) return activeIndexOverride;
+    const idxOverride = Number.isFinite(opts.activeIndex) ? Number(opts.activeIndex) : null;
+    if (idxOverride != null) return idxOverride;
     const activeCodeRaw = (opts.activeCode || '').toString().trim();
     const activeCodeKey = activeCodeRaw ? normalizeStationCode(activeCodeRaw) : '';
     if (activeCodeKey) {

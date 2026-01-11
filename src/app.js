@@ -1,14 +1,41 @@
-//Developed by Cristian Ceni 2025 dhn
-
+// Developed by Cristian Ceni 2025 dhn missile
+// Aggiornato il backend per l'app mobile sennò era un casino
 // src/app.js - Backend ViaggiaTreno per Netlify Functions
 
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 
-// CORS
-// Se vuoi restringere le origini (utile quando consumerai queste API da React), imposta:
+// Carica stations.json per normalizzazione nomi stazioni
+let stationsMap = {};
+let stationsById = {};
+let stationsByLefrecce = {};
+try {
+  const stationsPath = path.join(__dirname, '..', 'stations.json');
+  const stationsData = JSON.parse(fs.readFileSync(stationsPath, 'utf8'));
+  // Crea mappe per lookup veloce
+  stationsData.forEach(station => {
+    if (station.id) {
+      stationsMap[station.id] = station.name || station.id;
+      stationsById[station.id] = station;
+      if (station.lefrecceId) {
+        stationsByLefrecce[station.lefrecceId] = station;
+      }
+    }
+  });
+  console.log(`✅ Caricati ${Object.keys(stationsMap).length} nomi stazioni da stations.json`);
+  console.log(`✅ ${Object.keys(stationsByLefrecce).length} stazioni con lefrecceId`);
+} catch (err) {
+  console.warn('⚠️ Impossibile caricare stations.json:', err.message);
+}
+
+// ============================================================================
+// CORS Configuration
+// ============================================================================
+// Se vuoi restringere le origini, imposta la variabile d'ambiente:
 // CORS_ORIGINS="https://tuodominio.com,http://localhost:5173"
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || '')
   .split(',')
@@ -28,27 +55,39 @@ app.use(
   })
 );
 
-// Per leggere JSON nel body delle POST (es. /api/solutions in POST)
+// ============================================================================
+// Middleware
+// ============================================================================
+
+// Parser JSON per body delle richieste POST
 app.use(express.json());
 
-// ---------------- API ------------------
+// Rimuove il prefisso /.netlify/functions/api quando deployato su Netlify
+app.use((req, res, next) => {
+  if (req.path.startsWith('/.netlify/functions/api')) {
+    req.url = req.url.replace('/.netlify/functions/api', '');
+  }
+  next();
+});
 
-// Base per le API ViaggiaTreno "classiche"
-const BASE_URL =
-  'http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno';
+// ============================================================================
+// Configurazione API Base URLs
+// ============================================================================
 
-// Base "new" per tabellone HTML - anche se forse non l'uso perché non so in do metterlo
-const BASE_URL_BOARD =
-  'http://www.viaggiatreno.it/viaggiatrenonew/resteasy/viaggiatreno';
+// Base URL per le API ViaggiaTreno REST
+const BASE_URL = 'http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno';
 
-// Base LeFrecce per ricerca viaggio
+// Base URL per tabellone HTML (versione "new")
+const BASE_URL_BOARD = 'http://www.viaggiatreno.it/viaggiatrenonew/resteasy/viaggiatreno';
+
+// Base URL per API LeFrecce (ricerca soluzioni di viaggio)
 const LEFRECCE_BASE = 'https://www.lefrecce.it/Channels.Website.BFF.WEB';
 
+// ============================================================================
+// Helper Fetch con Timeout
+// ============================================================================
 
-// ---------------- Helper fetch con timeout -----------------
-
-// Timeout fetch in ms (default 12 secondi)
-
+// Timeout per richieste HTTP in millisecondi (default: 12 secondi)
 const FETCH_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 12000);
 
 async function fetchWithTimeout(url, options = {}) {
@@ -91,7 +130,7 @@ async function fetchJson(url) {
   return resp.json();
 }
 
-// Parser boolean da query/body
+// Parser per valori booleani da query string o body
 function parseBool(val, defaultVal = false) {
   if (val === undefined || val === null) return defaultVal;
   if (typeof val === 'boolean') return val;
@@ -101,8 +140,9 @@ function parseBool(val, defaultVal = false) {
   return defaultVal;
 }
 
-
-// Utility comuni per gestire i timestamp ViaggiaTreno ----------------
+// ============================================================================
+// Utility per Gestione Timestamp e Date
+// ============================================================================
 
 function parseToMillis(raw) {
   if (raw == null) return null;
@@ -205,7 +245,9 @@ async function fetchTrainStatusSnapshot(originCode, trainNumber, epochMs) {
   }
 }
 
-// ----------------- HELPER FUNZIONI COMPUTATE -----------------
+// ============================================================================
+// Helper: Funzioni per Campi Computed
+// ============================================================================
 
 /**
  * Regole per determinare il tipo treno.
@@ -518,9 +560,10 @@ function computeCurrentStop(data) {
       (f.stazione || '').toUpperCase() === lastKnownStation.toUpperCase()
     );
     if (idx >= 0) {
+      const stationId = fermate[idx].id || '';
       return {
-        stationName: fermate[idx].stazione,
-        stationCode: fermate[idx].id,
+        stationName: stationsMap[stationId] || normalizeStationName(fermate[idx].stazione),
+        stationCode: stationId,
         index: idx,
         timestamp: data.oraUltimoRilevamento || null,
       };
@@ -530,9 +573,10 @@ function computeCurrentStop(data) {
   // Fallback: ultima fermata con orario reale
   for (let i = fermate.length - 1; i >= 0; i--) {
     if (fermate[i].partenzaReale != null || fermate[i].arrivoReale != null) {
+      const stationId = fermate[i].id || '';
       return {
-        stationName: fermate[i].stazione,
-        stationCode: fermate[i].id,
+        stationName: stationsMap[stationId] || normalizeStationName(fermate[i].stazione),
+        stationCode: stationId,
         index: i,
         timestamp: fermate[i].partenzaReale || fermate[i].arrivoReale,
       };
@@ -543,12 +587,275 @@ function computeCurrentStop(data) {
 }
 
 /**
- * Arricchisce i dati RFI con campi computati.
+ * Calcola la prossima fermata del treno basandosi sulla fermata attuale.
+ * @returns {string|null} Nome della prossima fermata o null
+ */
+function computeNextStop(data, currentStop) {
+  const fermate = Array.isArray(data.fermate) ? data.fermate : [];
+  if (!fermate.length || !currentStop) return null;
+  
+  const currentIndex = currentStop.index;
+  if (currentIndex == null || currentIndex < 0) return null;
+  
+  // Cerca la prossima fermata non soppressa
+  for (let i = currentIndex + 1; i < fermate.length; i++) {
+    const fermata = fermate[i];
+    const soppressa = fermata.tipoFermata === 'S' || fermata.soppresso === true;
+    if (!soppressa) {
+      const stationId = fermata.id || '';
+      return stationsMap[stationId] || normalizeStationName(fermata.stazione) || null;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Formatta ora e luogo dell'ultimo rilevamento.
+ * @returns {string|null} Formato: "18:35-PM Rovezzano" o null
+ */
+function formatLastDetection(data) {
+  const time = data.oraUltimoRilevamento;
+  const station = data.stazioneUltimoRilevamento;
+  
+  if (!time || !station) return null;
+  
+  // Normalizza nome stazione se possibile
+  const fermate = Array.isArray(data.fermate) ? data.fermate : [];
+  const matchingStop = fermate.find(f => 
+    f.stazione && f.stazione.toUpperCase() === station.toUpperCase()
+  );
+  const normalizedStation = matchingStop ? (stationsMap[matchingStop.id] || normalizeStationName(station)) : normalizeStationName(station);
+  
+  // Formatta l'ora
+  const formattedTime = formatTime(time);
+  if (!formattedTime) return null;
+  
+  // Determina AM/PM
+  const ms = parseToMillis(time);
+  if (!ms) return null;
+  
+  const d = new Date(ms);
+  const hours = d.getHours();
+  const period = hours >= 12 ? 'PM' : 'AM';
+  
+  return `${formattedTime}-${period} ${normalizedStation}`;
+}
+
+/**
+ * Restituisce lo stato semplificato del treno per visualizzazione rapida.
+ * @returns {string} "programmato", "partito", "soppresso", "concluso", "parziale"
+ */
+function getSimpleTrainState(journeyState) {
+  if (!journeyState || !journeyState.state) return 'programmato';
+  
+  const stateMap = {
+    'PLANNED': 'programmato',
+    'RUNNING': 'partito',
+    'COMPLETED': 'concluso',
+    'CANCELLED': 'soppresso',
+    'PARTIAL': 'parziale',
+  };
+  
+  return stateMap[journeyState.state] || 'programmato';
+}
+
+/**
+ * Formatta un orario da timestamp RFI (es. 1736524800000 o stringa) in formato HH:mm
+ */
+function formatTime(timestamp) {
+  if (!timestamp) return null;
+  const ms = parseToMillis(timestamp);
+  if (!ms) return null;
+  const d = new Date(ms);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+/**
+ * Calcola l'orario probabile sommando il ritardo (deltaTempo) all'orario programmato.
+ * @param {number|string} scheduledTimestamp - Timestamp orario programmato
+ * @param {number} delayMinutes - Ritardo in minuti (può essere negativo per anticipo)
+ * @returns {string|null} Orario probabile in formato HH:mm
+ */
+function computeProbableTime(scheduledTimestamp, delayMinutes) {
+  if (!scheduledTimestamp) return null;
+  const scheduledMs = parseToMillis(scheduledTimestamp);
+  if (!scheduledMs) return null;
+  
+  const delayMs = Number.isFinite(delayMinutes) ? delayMinutes * 60 * 1000 : 0;
+  const probableMs = scheduledMs + delayMs;
+  return formatTime(probableMs);
+}
+
+/**
+ * Formatta il deltaTempo come stringa con segno (es. "+5", "-3", "0")
+ */
+function formatDeltaTempo(delayMinutes) {
+  if (!Number.isFinite(delayMinutes)) return null;
+  if (delayMinutes === 0) return '0';
+  return delayMinutes > 0 ? `+${delayMinutes}` : String(delayMinutes);
+}
+
+/**
+ * Normalizza un nome stazione: Title Case invece di UPPERCASE
+ */
+function normalizeStationName(name) {
+  if (!name) return '';
+  // Converti in title case
+  return name
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/**
+ * Formatta una singola fermata con tutte le info essenziali
+ */
+function formatStop(stop, globalDelay) {
+  if (!stop) return null;
+  
+  const delay = Number.isFinite(globalDelay) ? globalDelay : 0;
+  
+  // Normalizza nome stazione usando stations.json se disponibile
+  const stationId = stop.id || '';
+  const normalizedName = stationsMap[stationId] || normalizeStationName(stop.stazione) || '';
+  
+  // Orari programmati
+  const orarioArrivoProgrammato = formatTime(stop.arrivo_teorico || stop.arrivo_teorica || stop.arrivoTeorica || stop.arrivoProgrammata);
+  const orarioPartenzaProgrammato = formatTime(stop.partenza_teorica || stop.partenzaTeorica || stop.partenzaProgrammata);
+  
+  // Orari reali (quando disponibili)
+  const orarioArrivoReale = formatTime(stop.arrivoReale);
+  const orarioPartenzaReale = formatTime(stop.partenzaReale);
+  
+  // Orari probabili: solo se NON c'è il reale
+  const orarioArrivoProbabile = orarioArrivoReale ? null : computeProbableTime(stop.arrivo_teorico || stop.arrivo_teorica || stop.arrivoTeorica || stop.arrivoProgrammata, delay);
+  const orarioPartenzaProbabile = orarioPartenzaReale ? null : computeProbableTime(stop.partenza_teorica || stop.partenzaTeorica || stop.partenzaProgrammata, delay);
+  
+  return {
+    stazione: normalizedName,
+    id: stationId,
+    progressivo: stop.progressivo != null ? stop.progressivo : null,
+    
+    orarioArrivoProgrammato,
+    orarioPartenzaProgrammato,
+    orarioArrivoProbabile,
+    orarioPartenzaProbabile,
+    orarioArrivoReale,
+    orarioPartenzaReale,
+    
+    // Binari
+    binarioProgrammato: stop.binarioProgrammatoArrivoDescrizione || stop.binarioProgrammatoPartenzaDescrizione || null,
+    binarioReale: stop.binarioEffettivoArrivoDescrizione || stop.binarioEffettivoPartenzaDescrizione || null,
+    binarioVariato: stop.binarioEffettivoArrivoDescrizione !== stop.binarioProgrammatoArrivoDescrizione ||
+                     stop.binarioEffettivoPartenzaDescrizione !== stop.binarioProgrammatoPartenzaDescrizione,
+    
+    // Stato fermata
+    soppressa: stop.tipoFermata === 'S' || stop.soppresso === true || false,
+    
+    // Info aggiuntive
+    actualFermataType: stop.actualFermataType || null,
+    tipoFermata: stop.tipoFermata || null,
+  };
+}
+
+/**
+ * Estrae il messaggio RFI (es. "treno soppresso da A a B")
+ */
+function extractRfiMessage(data) {
+  if (!data) return null;
+  
+  // Possibili campi per messaggi RFI
+  const messages = [];
+  
+  if (data.subTitle) messages.push(data.subTitle);
+  if (data.motivoRitardo) messages.push(data.motivoRitardo);
+  if (data.descrizioneTreno) messages.push(data.descrizioneTreno);
+  
+  // Messaggi da compRitardoAndamento
+  if (Array.isArray(data.compRitardoAndamento)) {
+    data.compRitardoAndamento.forEach(msg => {
+      if (msg && typeof msg === 'string') messages.push(msg);
+    });
+  }
+  
+  // Informazioni sulla soppressione
+  if (data.trenoSoppresso) {
+    if (Array.isArray(data.fermateSoppresse) && data.fermateSoppresse.length > 0) {
+      const first = data.fermateSoppresse[0];
+      const last = data.fermateSoppresse[data.fermateSoppresse.length - 1];
+      messages.unshift(`Treno soppresso da ${first} a ${last}`);
+    } else {
+      messages.unshift('Treno completamente soppresso');
+    }
+  }
+  
+  return messages.filter(Boolean).join(' • ') || null;
+}
+
+/**
+ * Estrae info aggiuntive (es. "carrozza business in testa al treno")
+ */
+function extractAdditionalInfo(data) {
+  if (!data) return null;
+  
+  const info = [];
+  
+  // SubTitle (info generali sul treno)
+  if (data.subTitle && typeof data.subTitle === 'string' && data.subTitle.trim()) {
+    info.push(data.subTitle.trim());
+  }
+  
+  // Info composizione treno
+  if (data.compImgCambiNumero && Array.isArray(data.compImgCambiNumero)) {
+    info.push(...data.compImgCambiNumero.filter(Boolean));
+  }
+  
+  // Info orientamento treno (es. "Executive in testa")
+  if (Array.isArray(data.compOrientamento) && data.compOrientamento.length > 0) {
+    // Prendi solo la prima lingua (italiano)
+    const orientamento = data.compOrientamento[0];
+    if (orientamento && typeof orientamento === 'string') {
+      info.push(orientamento);
+    }
+  } else if (Array.isArray(data.descOrientamento) && data.descOrientamento.length > 0) {
+    // Fallback su descOrientamento
+    const orientamento = data.descOrientamento[0];
+    if (orientamento && typeof orientamento === 'string') {
+      info.push(orientamento);
+    }
+  }
+  
+  // Info orari speciali
+  if (Array.isArray(data.compOrarioPartenzaZeroEffettivo)) {
+    info.push(...data.compOrarioPartenzaZeroEffettivo.filter(Boolean));
+  }
+  
+  // Info servizi e provvedimenti
+  if (data.provvedimento && data.provvedimento !== 0 && typeof data.provvedimento === 'string') {
+    info.push(data.provvedimento);
+  }
+  if (data.circolante === false) {
+    info.push('Non circolante');
+  }
+  
+  return info.filter(Boolean).join(' • ') || null;
+}
+
+/**
+ * Arricchisce i dati RFI con campi computati e formattati.
  * Restituisce un oggetto con:
- * - trainKind: tipo treno { code, label, category }
- * - globalDelay: ritardo globale in minuti (number o null)
- * - journeyState: stato corsa { state, label }
- * - currentStop: fermata attuale { stationName, stationCode, index, timestamp } o null
+ * - tipologiaTreno: REG, IC, FR, FA, ecc.
+ * - numeroTreno: 18828
+ * - orarioPartenzaProg: "19:20"
+ * - orarioArrivoProg: "22:30"
+ * - deltaTempo: "+5" o "-3" o "0"
+ * - fermate: array con info formattate
+ * - messaggioRfi: "treno soppresso da A a B"
+ * - infoAgg: "carrozza business in testa al treno"
  */
 function enrichTrainData(data) {
   if (!data) return null;
@@ -563,19 +870,83 @@ function enrichTrainData(data) {
   const globalDelay = computeGlobalDelay(data);
   const journeyState = computeJourneyState(data);
   const currentStop = computeCurrentStop(data);
+  
+  // Estrai numero treno
+  const numeroTreno = String(data.numeroTreno || data.numeroTrenoEsteso || '').trim();
+  
+  // Calcola orari programmati di partenza e arrivo
+  const fermate = Array.isArray(data.fermate) ? data.fermate : [];
+  const primaFermata = fermate[0];
+  const ultimaFermata = fermate[fermate.length - 1];
+  
+  // Usa compOrarioPartenza come fallback se non c'è nella prima fermata
+  let orarioPartenzaProg = primaFermata 
+    ? formatTime(primaFermata.partenza_teorica || primaFermata.partenzaTeorica || primaFermata.partenzaProgrammata)
+    : null;
+  if (!orarioPartenzaProg && data.compOrarioPartenza) {
+    orarioPartenzaProg = String(data.compOrarioPartenza).trim();
+  }
+    
+  // Usa compOrarioArrivo come fallback se non c'è nell'ultima fermata
+  let orarioArrivoProg = ultimaFermata
+    ? formatTime(ultimaFermata.arrivo_teorico || ultimaFermata.arrivo_teorica || ultimaFermata.arrivoTeorica || ultimaFermata.arrivoProgrammata)
+    : null;
+  if (!orarioArrivoProg && data.compOrarioArrivo) {
+    orarioArrivoProg = String(data.compOrarioArrivo).trim();
+  }
+  
+  // Orari reali (effettivi) di partenza e arrivo
+  const orarioPartenzaReale = primaFermata ? formatTime(primaFermata.partenzaReale) : null;
+  const orarioArrivoReale = ultimaFermata ? formatTime(ultimaFermata.arrivoReale) : null;
+  
+  // Formatta le fermate
+  const fermateFormattate = fermate.map(stop => formatStop(stop, globalDelay));
+  
+  // Estrai messaggi e info aggiuntive
+  const messaggioRfi = extractRfiMessage(data);
+  const infoAgg = extractAdditionalInfo(data);
+  
+  // Calcola prossima fermata e formato rilevamento
+  const prossimaFermata = computeNextStop(data, currentStop);
+  const oraLuogoRilevamento = formatLastDetection(data);
+  const statoTreno = getSimpleTrainState(journeyState);
 
   return {
+    // Campi originali (mantenuti per compatibilità)
     trainKind,
     globalDelay,
     journeyState,
     currentStop,
+    
+    // Nuovi campi formattati
+    tipologiaTreno: trainKind.code,
+    numeroTreno,
+    origine: primaFermata ? (stationsMap[primaFermata.id] || normalizeStationName(data.origine) || null) : (normalizeStationName(data.origine) || null),
+    destinazione: ultimaFermata ? (stationsMap[ultimaFermata.id] || normalizeStationName(data.destinazione) || null) : (normalizeStationName(data.destinazione) || null),
+    orarioPartenzaProg,
+    orarioArrivoProg,
+    orarioPartenzaReale,
+    orarioArrivoReale,
+    deltaTempo: formatDeltaTempo(globalDelay),
+    fermate: fermateFormattate,
+    messaggioRfi,
+    infoAgg,
+    
+    // Campi stato e posizione
+    statoTreno,
+    prossimaFermata,
+    oraLuogoRilevamento,
   };
 }
 
-// ----------------- ROUTE API -----------------
+// ============================================================================
+// API Routes
+// ============================================================================
 
-// Autocomplete stazioni (ViaggiaTreno) - Per "Cerca Stazione"
+// ----------------------------------------------------------------------------
+// Autocomplete stazioni (ViaggiaTreno)
 // GET /api/viaggiatreno/autocomplete?query=FIREN
+// ----------------------------------------------------------------------------
 app.get('/api/viaggiatreno/autocomplete', async (req, res) => {
   const query = (req.query.query || '').trim();
   if (query.length < 2) {
@@ -607,8 +978,10 @@ app.get('/api/viaggiatreno/autocomplete', async (req, res) => {
   }
 });
 
-// Autocomplete stazioni (LeFrecce) - Per "Cerca Viaggio"
+// ----------------------------------------------------------------------------
+// Autocomplete stazioni (LeFrecce)
 // GET /api/lefrecce/autocomplete?query=FIREN
+// ----------------------------------------------------------------------------
 app.get('/api/lefrecce/autocomplete', async (req, res) => {
   const query = (req.query.query || '').trim();
   if (query.length < 2) {
@@ -646,22 +1019,31 @@ app.get('/api/lefrecce/autocomplete', async (req, res) => {
   }
 });
 
-// Manteniamo la vecchia route per compatibilità (o la redirezioniamo)
-// In questo caso la facciamo puntare a ViaggiaTreno per default, o la rimuoviamo se aggiorniamo il frontend
+// ----------------------------------------------------------------------------
+// Autocomplete stazioni (Route di compatibilità)
+// GET /api/stations/autocomplete?query=FIREN
+// Reindirizza a /api/viaggiatreno/autocomplete per retrocompatibilità
+// ----------------------------------------------------------------------------
 app.get('/api/stations/autocomplete', async (req, res) => {
-   // Fallback a ViaggiaTreno per default se non specificato
-   res.redirect(307, `/api/viaggiatreno/autocomplete?query=${encodeURIComponent(req.query.query || '')}`);
+  res.redirect(307, `/api/viaggiatreno/autocomplete?query=${encodeURIComponent(req.query.query || '')}`);
 });
 
+// ----------------------------------------------------------------------------
+// Helper: Resolve Location ID per LeFrecce
+// ----------------------------------------------------------------------------
+
+// Override per stazioni con regione non standard
 const STATION_REGION_OVERRIDES = {
   S06957: 'TOSCANA', // Firenze Le Cure (linea Faentina)
   S06950: 'TOSCANA', // Firenze San Marco Vecchio
 };
 
-// Risolve il locationId di LeFrecce partendo da un nome stazione (es. "Pontassieve")
-// usando l'endpoint ufficiale di ricerca stazioni:
-// GET https://www.lefrecce.it/Channels.Website.BFF.WEB/website/locations/search?name=[NAME]&limit=[LIMIT]
-// Ritorna un intero (id) oppure null se non trova niente.
+/**
+ * Risolve il locationId di LeFrecce partendo da un nome stazione.
+ * Usa l'endpoint: GET /website/locations/search?name=[NAME]&limit=[LIMIT]
+ * @param {string} stationName - Nome della stazione
+ * @returns {number|null} Location ID o null se non trovato
+ */
 async function resolveLocationIdByName(stationName) {
   const name = (stationName || '').trim();
   if (!name) return null;
@@ -725,7 +1107,10 @@ async function resolveLocationIdByName(stationName) {
 }
 
 
+// ----------------------------------------------------------------------------
 // Ricerca soluzioni di viaggio Trenitalia (LeFrecce)
+// GET /api/solutions?from=...&to=...&date=...&time=...
+// ----------------------------------------------------------------------------
 app.get('/api/solutions', async (req, res) => {
   console.log('GET /api/solutions called with query:', req.query);
   try {
@@ -859,9 +1244,103 @@ app.get('/api/solutions', async (req, res) => {
   }
 });
 
+// POST endpoint per /api/lefrecce/solutions (usato dal frontend)
+app.post('/api/lefrecce/solutions', async (req, res) => {
+  try {
+    const { origin, destination, departureDate, departureTime } = req.body;
 
+    if (!origin || !destination) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Parametri obbligatori: origin, destination',
+      });
+    }
+
+    // Usa departureDate o data corrente
+    const date = departureDate || new Date().toISOString().split('T')[0];
+    const time = departureTime || '00:00';
+
+    // Risolvi gli ID delle stazioni
+    let depId = isNaN(origin) ? await resolveLocationIdByName(origin) : Number(origin);
+    let arrId = isNaN(destination) ? await resolveLocationIdByName(destination) : Number(destination);
+
+    if (!depId || !arrId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Impossibile risolvere origin/destination in locationId validi',
+      });
+    }
+
+    const [hh = '00', mm = '00'] = time.split(':');
+    const departureTimeFormatted = `${date}T${hh.padStart(2, '0')}:${mm.padStart(2, '0')}:00.000`;
+
+    const body = {
+      cartId: null,
+      departureLocationId: depId,
+      arrivalLocationId: arrId,
+      departureTime: departureTimeFormatted,
+      adults: 1,
+      children: 0,
+      criteria: {
+        frecceOnly: false,
+        regionalOnly: false,
+        intercityOnly: false,
+        tourismOnly: false,
+        noChanges: false,
+        order: 'DEPARTURE_DATE',
+        offset: 0,
+        limit: 10,
+      },
+      advancedSearchRequest: {
+        bestFare: false,
+        bikeFilter: false,
+        forwardDiscountCodes: [],
+      },
+    };
+
+    const vtResp = await fetchWithTimeout(`${LEFRECCE_BASE}/website/ticket/solutions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!vtResp.ok) {
+      return res.status(vtResp.status).json({
+        ok: false,
+        error: `LeFrecce API error: ${vtResp.status}`,
+      });
+    }
+
+    const data = await vtResp.json();
+
+    return res.json({
+      ok: true,
+      data: {
+        searchId: data.searchId,
+        cartId: data.cartId,
+        solutions: data.solutions || [],
+        minimumPrices: data.minimumPrices || null,
+      },
+    });
+  } catch (err) {
+    console.error('Errore /api/lefrecce/solutions:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Errore interno',
+      details: err.message,
+    });
+  }
+});
+
+
+// ----------------------------------------------------------------------------
 // Info stazione (dettagli + meteo regione)
 // GET /api/stations/info?stationCode=S06904
+// ----------------------------------------------------------------------------
 app.get('/api/stations/info', async (req, res) => {
   const stationCode = (req.query.stationCode || '').trim();
 
@@ -941,9 +1420,11 @@ app.get('/api/stations/info', async (req, res) => {
 });
 
 
+// ----------------------------------------------------------------------------
 // Partenze da stazione
 // GET /api/stations/departures?stationCode=S06904&when=now
-// opzionale: &when=2025-11-28T10:30:00
+// Parametri opzionali: &when=2025-11-28T10:30:00
+// ----------------------------------------------------------------------------
 app.get('/api/stations/departures', async (req, res) => {
   const stationCode = (req.query.stationCode || '').trim();
   const when = (req.query.when || 'now').trim();
@@ -1010,8 +1491,11 @@ app.get('/api/stations/departures', async (req, res) => {
 });
 
 
+// ----------------------------------------------------------------------------
 // Arrivi in stazione
 // GET /api/stations/arrivals?stationCode=S06904&when=now
+// Parametri opzionali: &when=2025-11-28T10:30:00
+// ----------------------------------------------------------------------------
 app.get('/api/stations/arrivals', async (req, res) => {
   const stationCode = (req.query.stationCode || '').trim();
   const when = (req.query.when || 'now').trim();
@@ -1040,22 +1524,13 @@ app.get('/api/stations/arrivals', async (req, res) => {
 
     const data = await vtResp.json();
 
-    // Arricchisci ogni elemento con dati computati
+    // Arricchisci ogni elemento con dati computati e formattati
     const enrichedData = Array.isArray(data)
       ? data.map((entry) => {
-          const trainKind = resolveTrainKind(
-            entry.categoriaDescrizione,
-            entry.categoria,
-            entry.tipoTreno,
-            entry.compNumeroTreno
-          );
-          const delay = entry.ritardo != null && !Number.isNaN(Number(entry.ritardo)) ? Number(entry.ritardo) : null;
+          const enriched = enrichTrainData(entry);
           return {
             ...entry,
-            _computed: {
-              trainKind,
-              delay,
-            },
+            _computed: enriched,
           };
         })
       : data;
@@ -1077,8 +1552,10 @@ app.get('/api/stations/arrivals', async (req, res) => {
 });
 
 
+// ----------------------------------------------------------------------------
 // Stato treno per numero
-// GET /api/trains/status?trainNumber=666
+// GET /api/trains/status?trainNumber=666&originCode=S06904&technical=...&epochMs=...
+// ----------------------------------------------------------------------------
 app.get('/api/trains/status', async (req, res) => {
   const trainNumber = (req.query.trainNumber || '').trim();
   const originCodeHint = (req.query.originCode || '').trim();
@@ -1264,7 +1741,7 @@ app.get('/api/trains/status', async (req, res) => {
       });
     }
 
-    // Arricchisci la risposta con dati computati
+    // Arricchisci la risposta con dati computati e formattati
     const enriched = enrichTrainData(finalSnapshot.data);
 
     res.json({
@@ -1274,13 +1751,8 @@ app.get('/api/trains/status', async (req, res) => {
       technical: selected.technical,
       referenceTimestamp: finalSnapshot.referenceTimestamp,
       data: finalSnapshot.data,
-      // Dati arricchiti/computati dal backend
-      computed: {
-        trainKind: enriched.trainKind,
-        globalDelay: enriched.globalDelay,
-        journeyState: enriched.journeyState,
-        currentStop: enriched.currentStop,
-      },
+      // Dati arricchiti/computati dal backend (tutti i campi formattati)
+      computed: enriched,
     });
   } catch (err) {
     console.error('Errore trains/status backend:', err);
@@ -1294,8 +1766,72 @@ app.get('/api/trains/status', async (req, res) => {
   }
 });
 
-// TODO: endpoint tabellone HTML (attualmente ritorna HTML grezzo; tenuto per debug)
+// ----------------------------------------------------------------------------
+// Tabellone stazione (partenze + arrivi in JSON)
+// GET /api/viaggiatreno/station-board?stationCode=S06904
+// ----------------------------------------------------------------------------
+app.get('/api/viaggiatreno/station-board', async (req, res) => {
+  const stationCode = (req.query.stationCode || '').trim();
+
+  if (!stationCode) {
+    return res.status(400).json({ 
+      ok: false, 
+      error: 'Parametro "stationCode" obbligatorio' 
+    });
+  }
+
+  try {
+    const now = new Date();
+    const dateStr = now.toString();
+
+    // Chiamate parallele per partenze e arrivi
+    const [departuresResp, arrivalsResp] = await Promise.all([
+      fetchWithTimeout(`${BASE_URL}/partenze/${encodeURIComponent(stationCode)}/${encodeURIComponent(dateStr)}`).catch(() => null),
+      fetchWithTimeout(`${BASE_URL}/arrivi/${encodeURIComponent(stationCode)}/${encodeURIComponent(dateStr)}`).catch(() => null)
+    ]);
+
+    let departures = [];
+    let arrivals = [];
+
+    if (departuresResp && departuresResp.ok) {
+      try {
+        departures = await departuresResp.json();
+      } catch (e) {
+        console.warn('Errore parsing partenze:', e);
+      }
+    }
+
+    if (arrivalsResp && arrivalsResp.ok) {
+      try {
+        arrivals = await arrivalsResp.json();
+      } catch (e) {
+        console.warn('Errore parsing arrivi:', e);
+      }
+    }
+
+    return res.json({
+      ok: true,
+      stationCode,
+      data: {
+        departures: Array.isArray(departures) ? departures : [],
+        arrivals: Array.isArray(arrivals) ? arrivals : []
+      }
+    });
+  } catch (err) {
+    console.error('Errore /api/viaggiatreno/station-board:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Errore interno',
+      details: err.message,
+    });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// Tabellone HTML grezzo (per debug)
 // GET /api/stations/board?stationCode=S06000
+// TODO: Endpoint legacy, ritorna HTML grezzo dalla versione "new" di ViaggiaTreno
+// ----------------------------------------------------------------------------
 app.get('/api/stations/board', async (req, res) => {
   const stationCode = (req.query.stationCode || '').trim();
 
@@ -1325,8 +1861,11 @@ app.get('/api/stations/board', async (req, res) => {
   }
 });
 
-// News ViaggiaTreno (endpoint legacy, può risultare datato)
+// ----------------------------------------------------------------------------
+// News ViaggiaTreno
 // GET /api/news
+// Endpoint legacy, può risultare datato
+// ----------------------------------------------------------------------------
 app.get('/api/news', async (_req, res) => {
   try {
     const url = `${BASE_URL}/news/0/it`;
@@ -1349,7 +1888,11 @@ app.get('/api/news', async (_req, res) => {
 
 
 
-// Fallback 404, così se sbagli path lo vedi nel log
+// ============================================================================
+// 404 Handler & Module Export
+// ============================================================================
+
+// Gestione route non trovate
 app.use((req, res) => {
   console.warn('404 Express su path:', req.path);
   res.status(404).json({ ok: false, error: 'Route non trovata', path: req.path });
@@ -1357,9 +1900,12 @@ app.use((req, res) => {
 
 module.exports = app;
 
+// ============================================================================
+// Server Standalone (opzionale, per test locali)
+// ============================================================================
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
-    console.log(`Backend Treninfo attivo su http://localhost:${PORT}`);
+    console.log(`✅ Backend Treninfo attivo su http://localhost:${PORT}`);
   });
 }
