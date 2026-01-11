@@ -277,6 +277,14 @@ function toIsoOrNow(when = 'now') {
   return Number.isNaN(ms) ? new Date().toISOString() : d.toISOString();
 }
 
+function parseEpochMsOrSeconds(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  if (n > 1e11 && n < 1e13) return n; // epoch ms
+  if (n > 1e9 && n < 1e10) return n * 1000; // epoch seconds
+  return null;
+}
+
 function parseBool(val, defaultVal = false) {
   if (val === undefined || val === null) return defaultVal;
   if (typeof val === 'boolean') return val;
@@ -431,7 +439,9 @@ function mapDepartureEntry(entry) {
     entry?.tipoTreno,
     entry?.compNumeroTreno
   );
-  const partenzaMs = pickEpochMs(entry, ['partenzaTreno', 'orarioPartenza', 'partenza', 'dataPartenzaTreno']);
+  // NB: su ViaggiaTreno "partenzaTreno" è spesso la partenza dal capolinea origine,
+  // mentre "orarioPartenza" è l'evento (partenza) riferito alla stazione richiesta.
+  const partenzaMs = pickEpochMs(entry, ['orarioPartenza', 'partenza', 'partenzaTreno', 'dataPartenzaTreno']);
   const { binarioProgrammato, binarioEffettivo } = buildPlatformsForDeparture(entry);
   const ritardo =
     entry && entry.ritardo != null && Number.isFinite(Number(entry.ritardo)) ? Number(entry.ritardo) : 0;
@@ -465,7 +475,8 @@ function mapArrivalEntry(entry) {
     entry?.tipoTreno,
     entry?.compNumeroTreno
   );
-  const arrivoMs = pickEpochMs(entry, ['arrivoTreno', 'orarioArrivo', 'arrivo', 'dataArrivoTreno']);
+  // NB: su ViaggiaTreno "arrivoTreno" può riferirsi al capolinea, mentre "orarioArrivo" è relativo alla stazione.
+  const arrivoMs = pickEpochMs(entry, ['orarioArrivo', 'arrivo', 'arrivoTreno', 'dataArrivoTreno']);
   const { binarioProgrammato, binarioEffettivo } = buildPlatformsForArrival(entry);
   const ritardo =
     entry && entry.ritardo != null && Number.isFinite(Number(entry.ritardo)) ? Number(entry.ritardo) : 0;
@@ -590,6 +601,83 @@ function buildStopTimes(stop, globalDelay) {
         probabile: formatHHmmFromMs(probablePartenzaMs),
       },
     },
+  };
+}
+
+// ============================================================================
+// Helpers: stato treno / prossima fermata
+// ============================================================================
+function isSuppressedStop(stop) {
+  const tipo = stop?.tipoFermata != null ? String(stop.tipoFermata).trim().toUpperCase() : '';
+  return tipo === 'S' || stop?.soppresso === true;
+}
+
+function getLastRealStopIndex(fermateRaw) {
+  if (!Array.isArray(fermateRaw) || fermateRaw.length === 0) return -1;
+  for (let i = fermateRaw.length - 1; i >= 0; i -= 1) {
+    const stop = fermateRaw[i];
+    const realArrivoMs = pickEpochMs(stop, ['arrivoReale', 'arrivo_reale', 'arrivoEffettivo', 'effettiva']);
+    const realPartenzaMs = pickEpochMs(stop, ['partenzaReale', 'partenza_reale', 'partenzaEffettiva', 'effettiva']);
+    if (realArrivoMs != null || realPartenzaMs != null) return i;
+  }
+  return -1;
+}
+
+function isTrainVaried(snapshot, fermateRaw) {
+  const provvedimento = snapshot?.provvedimento != null ? Number(snapshot.provvedimento) : null;
+  if (Number.isFinite(provvedimento) && provvedimento !== 0) return true;
+
+  const riprogrammazione = snapshot?.riprogrammazione != null ? String(snapshot.riprogrammazione).trim().toUpperCase() : '';
+  if (riprogrammazione && riprogrammazione !== 'N') return true;
+
+  if (Array.isArray(fermateRaw) && fermateRaw.some(isSuppressedStop)) return true;
+  return false;
+}
+
+function resolveTrainStatus(snapshot) {
+  if (!snapshot) return null;
+
+  const isSuppressed =
+    snapshot?.soppresso === true || snapshot?.circolante === false || snapshot?.cancellato === true || snapshot?.cancellata === true;
+  if (isSuppressed) return 'soppresso';
+
+  const fermateRaw = Array.isArray(snapshot.fermate) ? snapshot.fermate : [];
+  const last = fermateRaw.length ? fermateRaw[fermateRaw.length - 1] : null;
+  const lastRealArrivalMs = last ? pickEpochMs(last, ['arrivoReale', 'arrivo_reale', 'arrivoEffettivo', 'effettiva']) : null;
+  const isConcluded = snapshot?.arrivato === true || lastRealArrivalMs != null;
+  if (isConcluded) return 'concluso';
+
+  const hasAnyRealStop = getLastRealStopIndex(fermateRaw) >= 0;
+  const hasMovementSignals = snapshot?.inStazione === true || snapshot?.oraUltimoRilevamento != null;
+  const hasStarted = hasAnyRealStop || hasMovementSignals || snapshot?.nonPartito === false;
+  const varied = isTrainVaried(snapshot, fermateRaw);
+
+  if (!hasStarted) return varied ? 'variato' : 'programmato';
+  return varied ? 'variato' : 'in viaggio';
+}
+
+function computeNextStopIndex(snapshot, fermateRaw) {
+  if (!snapshot || !Array.isArray(fermateRaw) || fermateRaw.length === 0) return null;
+  const stato = resolveTrainStatus(snapshot);
+  if (stato === 'soppresso' || stato === 'concluso') return null;
+
+  const lastRealIdx = getLastRealStopIndex(fermateRaw);
+  const startIdx = lastRealIdx >= 0 ? lastRealIdx + 1 : 0;
+  for (let i = startIdx; i < fermateRaw.length; i += 1) {
+    if (!isSuppressedStop(fermateRaw[i])) return i;
+  }
+  return null;
+}
+
+function buildNextStopSummary(nextStop, index, globalDelay) {
+  if (!nextStop || index == null) return null;
+  const times = buildStopTimes(nextStop, globalDelay);
+  const stazione = stationNameById(nextStop?.id) || stationPublicNameFromIdOrName(nextStop?.stazione) || null;
+  return {
+    indice: index,
+    stazione,
+    arrivo: times?.arrivo?.hhmm?.probabile || times?.arrivo?.hhmm?.programmato || null,
+    partenza: times?.partenza?.hhmm?.probabile || times?.partenza?.hhmm?.programmato || null,
   };
 }
 
@@ -902,13 +990,14 @@ app.get('/api/trains/status', async (req, res) => {
           ? { codice: 'FR', nome: 'FR', categoria: 'high-speed' }
           : tipoTreno;
 
-    const lastDetectionMs =
-      snapshot?.oraUltimoRilevamento != null && Number.isFinite(Number(snapshot.oraUltimoRilevamento))
-        ? Number(snapshot.oraUltimoRilevamento)
-        : null;
+    const lastDetectionMs = parseEpochMsOrSeconds(snapshot?.oraUltimoRilevamento) ?? parseEpochMsOrSeconds(snapshot?.ultimoRilev);
     const lastDetectionStation = snapshot?.stazioneUltimoRilevamento
       ? String(snapshot.stazioneUltimoRilevamento)
       : null;
+    const lastDetectionStationPublic = stationPublicNameFromIdOrName(lastDetectionStation);
+    const lastDetectionOrario = formatHHmmFromMs(lastDetectionMs);
+    const lastDetectionText =
+      [lastDetectionOrario, lastDetectionStationPublic].filter(Boolean).join(' - ').trim() || null;
 
     const firstSchedDepartureMs = pickEpochMs(first, [
       'partenza_teorica',
@@ -928,6 +1017,11 @@ app.get('/api/trains/status', async (req, res) => {
     const probableDepartureMs = computeProbableMs(firstSchedDepartureMs, firstRealDepartureMs, globalDelay);
     const probableArrivalMs = computeProbableMs(lastSchedArrivalMs, lastRealArrivalMs, globalDelay);
 
+    const statoTreno = resolveTrainStatus(snapshot);
+    const nextStopIdx = computeNextStopIndex(snapshot, fermateRaw);
+    const prossimaFermata =
+      nextStopIdx != null && fermateRaw[nextStopIdx] ? buildNextStopSummary(fermateRaw[nextStopIdx], nextStopIdx, globalDelay) : null;
+
     const principali = {
       numeroTreno: String(snapshot.numeroTreno || selected.trainNumber || trainNumber),
       codiceTreno: tipoTrenoFinal.codice,
@@ -936,6 +1030,8 @@ app.get('/api/trains/status', async (req, res) => {
         origine: stationNameById(first.id),
         destinazione: stationNameById(last.id),
       },
+      stato: statoTreno,
+      prossimaFermata,
       orari: {
         partenza: {
           programmato: formatHHmmFromMs(firstSchedDepartureMs),
@@ -951,8 +1047,9 @@ app.get('/api/trains/status', async (req, res) => {
       ritardoMinuti: globalDelay ?? (fermate.find((f) => typeof f.ritardo === 'number')?.ritardo ?? null),
       ultimoRilevamento: {
         timestamp: lastDetectionMs,
-        orario: formatHHmmFromMs(lastDetectionMs),
-        stazione: stationPublicNameFromIdOrName(lastDetectionStation),
+        orario: lastDetectionOrario,
+        stazione: lastDetectionStationPublic,
+        testo: lastDetectionText,
       },
       aggiornamentoRfi:
         snapshot?.subTitle != null && String(snapshot.subTitle).trim()
@@ -1281,6 +1378,17 @@ app.get('/api/news', async (_req, res) => {
 app.use((req, res) => {
   res.status(404).json({ ok: false, error: 'Route non trovata', path: req.path });
 });
+
+// Espone alcune funzioni pure per test locali (non usate dall'app).
+app.locals.__internals = {
+  pickEpochMs,
+  formatHHmmFromMs,
+  mapDepartureEntry,
+  mapArrivalEntry,
+  resolveTrainStatus,
+  computeNextStopIndex,
+  buildNextStopSummary,
+};
 
 module.exports = app;
 

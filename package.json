@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "netlify dev",
     "start": "netlify dev",
-    "test": "node test/test-train-kind.js"
+    "test": "node test/test-train-kind.js && node test/test-time-mapping.js"
   },
   "keywords": [],
   "author": "",

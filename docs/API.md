@@ -99,6 +99,16 @@ Selezione:
 curl "https://treninfo.netlify.app/api/trains/status?trainNumber=9544&choice=0"
 ```
 
+Campi aggiuntivi (principali):
+```json
+{
+  "principali": {
+    "stato": "programmato",
+    "prossimaFermata": { "indice": 3, "stazione": "Pisa Centrale", "arrivo": "23:17", "partenza": "23:20" }
+  }
+}
+```
+
 ### 6) Soluzioni viaggio
 
 `GET /api/solutions?fromName=...&toName=...&date=YYYY-MM-DD&time=HH:mm`
@@ -111,4 +121,3 @@ curl "https://treninfo.netlify.app/api/solutions?fromName=Firenze%20S.M.Novella&
 ## Debug (solo per sviluppo)
 
 - `GET /api/health` → verifica caricamento DB stazioni (`stationDb.count`)
-
