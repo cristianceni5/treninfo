@@ -680,46 +680,116 @@ function buildStopPlatforms(stop) {
   return { arrivo: arr, partenza: dep };
 }
 
+const MIN_DWELL_TO_ASSUME_DEPARTURE_MS = 30 * 1000;
+
+function getStopScheduledArrivalMs(stop) {
+  if (!stop || isOriginStop(stop)) return null;
+  return pickEpochMs(stop, [
+    'arrivo_teorico',
+    'arrivoTeorico',
+    'arrivo_teorica',
+    'arrivoTeorica',
+    'arrivoProgrammato',
+    'arrivoProgrammata',
+    'programmata',
+    'programmataZero',
+  ]);
+}
+
+function getStopScheduledDepartureMs(stop) {
+  if (!stop || isDestinationStop(stop)) return null;
+  return pickEpochMs(stop, [
+    'partenza_teorica',
+    'partenzaTeorica',
+    'partenzaProgrammato',
+    'partenzaProgrammata',
+    'programmata',
+    'programmataZero',
+  ]);
+}
+
+function getStopEffettivaMs(stop) {
+  return stop ? pickEpochMs(stop, ['effettiva', 'effettivaZero', 'effettiva_zero']) : null;
+}
+
+function getStopExplicitRealArrivalMs(stop) {
+  return stop
+    ? pickEpochMs(stop, ['arrivoReale', 'arrivo_reale', 'arrivoEffettivo', 'arrivoEffettiva', 'arrivo_effettivo'])
+    : null;
+}
+
+function getStopExplicitRealDepartureMs(stop) {
+  return stop
+    ? pickEpochMs(stop, [
+        'partenzaReale',
+        'partenza_reale',
+        'partenzaEffettiva',
+        'partenzaEffettivo',
+        'partenzaEffettiva',
+        'partenza_effettiva',
+      ])
+    : null;
+}
+
+function getStopRealTimes(stop, scheduled = null) {
+  if (!stop) return { arrivoMs: null, partenzaMs: null };
+
+  const isOrigin = isOriginStop(stop);
+  const isDestination = isDestinationStop(stop);
+
+  const schedArrivoMs = scheduled?.arrivoMs ?? getStopScheduledArrivalMs(stop);
+  const schedPartenzaMs = scheduled?.partenzaMs ?? getStopScheduledDepartureMs(stop);
+
+  const effettivaMs = getStopEffettivaMs(stop);
+
+  let arrivoMs = isOrigin ? null : getStopExplicitRealArrivalMs(stop);
+  let partenzaMs = isDestination ? null : getStopExplicitRealDepartureMs(stop);
+
+  // Su VT "effettiva" non è univoca:
+  // - origine: coincide con la partenza reale
+  // - fermate intermedie: spesso coincide con la partenza reale (arrivoReale separato)
+  // - destinazione: coincide con l'arrivo reale
+  if (arrivoMs == null && !isOrigin) {
+    if (isDestination) arrivoMs = effettivaMs;
+  }
+
+  if (partenzaMs == null && !isDestination) {
+    if (isOrigin) {
+      partenzaMs = effettivaMs;
+    } else if (effettivaMs != null) {
+      // Non usare "effettiva" come partenza se sembra essere l'arrivo (treno fermo in stazione).
+      if (arrivoMs != null) {
+        if (effettivaMs - arrivoMs >= MIN_DWELL_TO_ASSUME_DEPARTURE_MS) partenzaMs = effettivaMs;
+      } else if (schedPartenzaMs != null) {
+        // Fallback: se non abbiamo arrivoReale, considera "effettiva" come partenza solo se più vicina alla partenza teorica.
+        const dDep = Math.abs(effettivaMs - schedPartenzaMs);
+        const dArr = schedArrivoMs != null ? Math.abs(effettivaMs - schedArrivoMs) : Number.POSITIVE_INFINITY;
+        if (dDep + MIN_DWELL_TO_ASSUME_DEPARTURE_MS <= dArr) partenzaMs = effettivaMs;
+      }
+    }
+  }
+
+  // Sanity: mai partenza < arrivo per la stessa fermata.
+  if (arrivoMs != null && partenzaMs != null && partenzaMs < arrivoMs) partenzaMs = null;
+
+  return { arrivoMs, partenzaMs };
+}
+
 function buildStopTimes(stop, globalDelay) {
-  const tipoFermata = stop && stop.tipoFermata != null ? String(stop.tipoFermata).trim().toUpperCase() : '';
-  const isOrigin = tipoFermata === 'P';
-  const isDestination = tipoFermata === 'A';
+  const isOrigin = isOriginStop(stop);
+  const isDestination = isDestinationStop(stop);
 
   const delayArrivo = parseDelayMinutes(stop?.ritardoArrivo) ?? parseDelayMinutes(stop?.ritardo) ?? parseDelayMinutes(globalDelay);
   const delayPartenza =
     parseDelayMinutes(stop?.ritardoPartenza) ?? parseDelayMinutes(stop?.ritardo) ?? parseDelayMinutes(globalDelay);
   const globalDelayMin = parseDelayMinutes(globalDelay);
 
-  const schedArrivoMs = isOrigin
-    ? null
-    : pickEpochMs(stop, [
-        'arrivo_teorico',
-        'arrivoTeorico',
-        'arrivo_teorica',
-        'arrivoTeorica',
-        'arrivoProgrammato',
-        'arrivoProgrammata',
-        'programmata',
-        'programmataZero',
-      ]);
-
-  const schedPartenzaMs = isDestination
-    ? null
-    : pickEpochMs(stop, [
-        'partenza_teorica',
-        'partenzaTeorica',
-        'partenzaProgrammato',
-        'partenzaProgrammata',
-        'programmata',
-        'programmataZero',
-      ]);
-
-  const realArrivoMs = isOrigin
-    ? null
-    : pickEpochMs(stop, ['arrivoReale', 'arrivo_reale', 'arrivoEffettivo', 'effettiva']);
-  const realPartenzaMs = isDestination
-    ? null
-    : pickEpochMs(stop, ['partenzaReale', 'partenza_reale', 'partenzaEffettiva', 'effettiva']);
+  const schedArrivoMs = getStopScheduledArrivalMs(stop);
+  const schedPartenzaMs = getStopScheduledDepartureMs(stop);
+  const { arrivoMs: realArrivoMs, partenzaMs: realPartenzaMs } = getStopRealTimes(stop, {
+    arrivoMs: schedArrivoMs,
+    partenzaMs: schedPartenzaMs,
+  });
 
   const predictedArrivoMs = isOrigin
     ? null
@@ -813,8 +883,8 @@ function getLastRealStopIndex(fermateRaw) {
   if (!Array.isArray(fermateRaw) || fermateRaw.length === 0) return -1;
   for (let i = fermateRaw.length - 1; i >= 0; i -= 1) {
     const stop = fermateRaw[i];
-    const realArrivoMs = pickEpochMs(stop, ['arrivoReale', 'arrivo_reale', 'arrivoEffettivo', 'effettiva']);
-    const realPartenzaMs = pickEpochMs(stop, ['partenzaReale', 'partenza_reale', 'partenzaEffettiva', 'effettiva']);
+    const sched = { arrivoMs: getStopScheduledArrivalMs(stop), partenzaMs: getStopScheduledDepartureMs(stop) };
+    const { arrivoMs: realArrivoMs, partenzaMs: realPartenzaMs } = getStopRealTimes(stop, sched);
     if (realArrivoMs != null || realPartenzaMs != null) return i;
   }
   return -1;
@@ -831,16 +901,59 @@ function isTrainVaried(snapshot, fermateRaw) {
   return false;
 }
 
+function flattenToStrings(value) {
+  if (value == null) return [];
+  if (Array.isArray(value)) return value.flatMap(flattenToStrings);
+  if (typeof value === 'string') return [value];
+  if (typeof value === 'number' || typeof value === 'boolean') return [String(value)];
+  return [];
+}
+
+function looksLikeSuppressedTrain(snapshot) {
+  if (!snapshot) return false;
+
+  if (snapshot?.soppresso === true) return true;
+  if (snapshot?.circolante === false) return true;
+  if (snapshot?.cancellato === true || snapshot?.cancellata === true) return true;
+
+  const hay = [
+    snapshot?.subTitle,
+    snapshot?.statoTreno,
+    snapshot?.descrizioneVCO,
+    snapshot?.motivoRitardoPrevalente,
+    snapshot?.compClassRitardoTxt,
+    snapshot?.compRitardo,
+    snapshot?.compRitardoAndamento,
+  ]
+    .flatMap(flattenToStrings)
+    .join(' ')
+    .toLowerCase()
+    .replace(/&[a-z]+;/g, ' ');
+
+  if (!hay.trim()) return false;
+  return (
+    hay.includes('cancellat') ||
+    hay.includes('soppress') ||
+    hay.includes('soppres') ||
+    hay.includes('annull') ||
+    hay.includes('canceled') ||
+    hay.includes('cancelled') ||
+    hay.includes('cancelado') ||
+    hay.includes('storniert') ||
+    hay.includes('annul')
+  );
+}
+
 function resolveTrainStatus(snapshot) {
   if (!snapshot) return null;
 
-  const isSuppressed =
-    snapshot?.soppresso === true || snapshot?.circolante === false || snapshot?.cancellato === true || snapshot?.cancellata === true;
+  const fermateRaw = Array.isArray(snapshot.fermate) ? snapshot.fermate : [];
+
+  const isSuppressed = looksLikeSuppressedTrain(snapshot);
   if (isSuppressed) return 'soppresso';
 
-  const fermateRaw = Array.isArray(snapshot.fermate) ? snapshot.fermate : [];
   const last = fermateRaw.length ? fermateRaw[fermateRaw.length - 1] : null;
-  const lastRealArrivalMs = last ? pickEpochMs(last, ['arrivoReale', 'arrivo_reale', 'arrivoEffettivo', 'effettiva']) : null;
+  const lastRealArrivalMs = last ? getStopRealTimes(last).arrivoMs : null;
   const isConcluded = snapshot?.arrivato === true || lastRealArrivalMs != null;
   if (isConcluded) return 'concluso';
 
@@ -849,7 +962,21 @@ function resolveTrainStatus(snapshot) {
   const hasStarted = hasAnyRealStop || snapshot?.nonPartito === false;
   const varied = isTrainVaried(snapshot, fermateRaw);
 
-  if (!hasStarted) return varied ? 'variato' : 'programmato';
+  if (!hasStarted) {
+    const originIdx = getOriginStopIndex(fermateRaw);
+    const originStop = originIdx != null ? fermateRaw[originIdx] : null;
+    const readyAtOrigin = !!(originStop && hasEffectiveDeparturePlatform(originStop));
+    if (snapshot?.inStazione === true && readyAtOrigin) return 'in stazione';
+    return varied ? 'variato' : 'programmato';
+  }
+
+  const lastRealIdx = getLastRealStopIndex(fermateRaw);
+  const lastRealStop = lastRealIdx >= 0 ? fermateRaw[lastRealIdx] : null;
+  const lastRealTimes = lastRealStop ? getStopRealTimes(lastRealStop) : { arrivoMs: null, partenzaMs: null };
+  const derivedInStation =
+    lastRealStop && !isDestinationStop(lastRealStop) && lastRealTimes.arrivoMs != null && lastRealTimes.partenzaMs == null;
+
+  if (snapshot?.inStazione === true || derivedInStation) return 'in stazione';
   return varied ? 'variato' : 'in viaggio';
 }
 
@@ -891,8 +1018,8 @@ function buildNextStopSummary(nextStop, index, globalDelay) {
 function buildPreviousStopSummary(prevStop, index) {
   if (!prevStop || index == null) return null;
   const stazione = stationNameById(prevStop?.id) || stationPublicNameFromIdOrName(prevStop?.stazione) || null;
-  const realArrivoMs = pickEpochMs(prevStop, ['arrivoReale', 'arrivo_reale', 'arrivoEffettivo', 'effettiva']);
-  const realPartenzaMs = pickEpochMs(prevStop, ['partenzaReale', 'partenza_reale', 'partenzaEffettiva', 'effettiva']);
+  const sched = { arrivoMs: getStopScheduledArrivalMs(prevStop), partenzaMs: getStopScheduledDepartureMs(prevStop) };
+  const { arrivoMs: realArrivoMs, partenzaMs: realPartenzaMs } = getStopRealTimes(prevStop, sched);
   return {
     indice: index,
     stazione,
@@ -1293,7 +1420,7 @@ app.get('/api/trains/status', async (req, res) => {
       const firstStop = stops[0] || null;
       const startMs =
         pickEpochMs(firstStop, ['partenza_teorica', 'partenzaTeorica', 'programmata', 'programmataZero']) ??
-        pickEpochMs(firstStop, ['partenzaReale', 'partenza_reale', 'effettiva']);
+        getStopRealTimes(firstStop).partenzaMs;
       if (startMs == null) return false;
       return startMs - nowMs > 30 * 60 * 1000;
     }
@@ -1303,7 +1430,7 @@ app.get('/api/trains/status', async (req, res) => {
       const lastStop = stops[stops.length - 1] || null;
       const endMs =
         pickEpochMs(lastStop, ['arrivo_teorico', 'arrivoTeorica', 'programmata', 'programmataZero']) ??
-        pickEpochMs(lastStop, ['arrivoReale', 'arrivo_reale', 'effettiva']);
+        getStopRealTimes(lastStop).arrivoMs;
       if (endMs == null) return false;
       return nowMs <= endMs + 2 * 60 * 60 * 1000;
     }
@@ -1471,20 +1598,22 @@ app.get('/api/trains/status', async (req, res) => {
       'programmata',
       'programmataZero',
     ]);
-    const firstRealDepartureMs = pickEpochMs(first, ['partenzaReale', 'partenza_reale', 'effettiva']);
+    const firstRealDepartureMs = getStopRealTimes(first).partenzaMs;
     const lastSchedArrivalMs = pickEpochMs(last, [
       'arrivo_teorico',
       'arrivoTeorica',
       'programmata',
       'programmataZero',
     ]);
-    const lastRealArrivalMs = pickEpochMs(last, ['arrivoReale', 'arrivo_reale', 'effettiva']);
+    const lastRealArrivalMs = getStopRealTimes(last).arrivoMs;
 
     const probableDepartureMs = computeProbableMs(firstSchedDepartureMs, firstRealDepartureMs, globalDelay);
     const probableArrivalMs = computeProbableMs(lastSchedArrivalMs, lastRealArrivalMs, globalDelay);
 
     const statoRaw = resolveTrainStatus(snapshot);
     const statoTreno = stoppedAtDestination && statoRaw !== 'soppresso' ? 'concluso' : statoRaw;
+    const isSoppresso = looksLikeSuppressedTrain(snapshot);
+    const isVariato = isTrainVaried(snapshot, fermateRaw);
 
     // Se il treno è ancora pianificato, non esporre "prossima fermata" e "ultimo rilevamento"
     // finché dalla stazione di partenza non arriva il binario effettivo (treno in stazione e pronto a partire).
@@ -1508,6 +1637,10 @@ app.get('/api/trains/status', async (req, res) => {
         destinazione: stationNameById(last.id),
       },
       stato: statoTreno,
+      isSoppresso,
+      isVariato,
+      inStazione: statoTreno === 'in stazione',
+      stazioneCorrente: statoTreno === 'in stazione' ? lastDetectionStationPublic : null,
       prossimaFermata,
       orari: {
         partenza: {
