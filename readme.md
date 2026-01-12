@@ -21,7 +21,8 @@ Backend leggero (Netlify Functions) che normalizza i dati di **ViaggiaTreno (RFI
 
 - `GET /api/trains/status?trainNumber=...`  
   Stato treno normalizzato + fermate.  
-  Se il numero è ambiguo ritorna `needsSelection` (usa `choice`/`originName`/`date`/`timestampRiferimento`).
+  Se il numero è ambiguo ritorna `needsSelection` (usa `choice`/`originName`/`date`/`timestampRiferimento`).  
+  Per treni che attraversano la mezzanotte espone `principali.giorniCoperti` e `principali.fermatePerGiorno`.
 
 - `GET /api/solutions?fromName=...&toName=...&date=YYYY-MM-DD&time=HH:mm`  
   Soluzioni viaggio LeFrecce (include `prezzo` quando disponibile).
@@ -43,4 +44,3 @@ Nota: la pagina di test chiamate (`test-chiamate.html`) non è esposta in produz
 - Runtime: Node.js, Express, Netlify Functions
 
 ### Sviluppato da Cristian Ceni
-

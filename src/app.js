@@ -344,6 +344,64 @@ function formatYYYYMMDDFromMs(ms) {
   return `${y}-${m}-${day}`;
 }
 
+let APP_TZ_PARTS_FORMATTER = null;
+function getAppTzPartsFormatter() {
+  if (APP_TZ_PARTS_FORMATTER) return APP_TZ_PARTS_FORMATTER;
+  try {
+    APP_TZ_PARTS_FORMATTER = new Intl.DateTimeFormat('en-US', {
+      timeZone: APP_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      hourCycle: 'h23',
+    });
+  } catch {
+    APP_TZ_PARTS_FORMATTER = null;
+  }
+  return APP_TZ_PARTS_FORMATTER;
+}
+
+function getAppTimeZoneOffsetMs(utcMs) {
+  const fmt = getAppTzPartsFormatter();
+  if (!fmt) return 0;
+  const d = new Date(utcMs);
+  if (Number.isNaN(d.getTime())) return 0;
+  const parts = fmt.formatToParts(d);
+  const bag = {};
+  for (const p of parts) {
+    if (p.type === 'literal') continue;
+    bag[p.type] = p.value;
+  }
+  const year = Number(bag.year);
+  const month = Number(bag.month);
+  const day = Number(bag.day);
+  const hour = Number(bag.hour);
+  const minute = Number(bag.minute);
+  const second = Number(bag.second);
+  if (![year, month, day, hour, minute, second].every(Number.isFinite)) return 0;
+  const asUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+  return asUtc - utcMs;
+}
+
+function appTzMidnightMsFromYMD(year, month, day) {
+  if (![year, month, day].every(Number.isFinite)) return null;
+  const utcMid = Date.UTC(year, month - 1, day, 0, 0, 0, 0);
+  if (Number.isNaN(utcMid)) return null;
+  let candidate = utcMid;
+  for (let i = 0; i < 3; i += 1) {
+    const offset = getAppTimeZoneOffsetMs(candidate);
+    const next = utcMid - offset;
+    if (!Number.isFinite(next)) break;
+    if (Math.abs(next - candidate) < 1000) return next;
+    candidate = next;
+  }
+  return candidate;
+}
+
 function parseIsoDateToLocalMidnightMs(isoDate) {
   const s = String(isoDate || '').trim();
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -352,27 +410,96 @@ function parseIsoDateToLocalMidnightMs(isoDate) {
   const month = Number(m[2]);
   const day = Number(m[3]);
   if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
-  const d = new Date(year, month - 1, day, 0, 0, 0, 0);
-  const ms = d.getTime();
-  return Number.isNaN(ms) ? null : ms;
+  return appTzMidnightMsFromYMD(year, month, day);
 }
 
 function toLocalDayStartMs(ms) {
   if (ms == null) return null;
-  const d = new Date(ms);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
+  const iso = formatYYYYMMDDFromMs(ms);
+  if (!iso) return null;
+  return parseIsoDateToLocalMidnightMs(iso);
 }
 
 function addDaysFromLocalDayStartMs(dayStartMs, days) {
   if (!Number.isFinite(dayStartMs) || !Number.isFinite(days)) return null;
-  const d = new Date(dayStartMs);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setDate(d.getDate() + days);
-  d.setHours(0, 0, 0, 0);
-  const ms = d.getTime();
-  return Number.isNaN(ms) ? null : ms;
+  const iso = formatYYYYMMDDFromMs(dayStartMs);
+  if (!iso) return null;
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (![year, month, day].every(Number.isFinite)) return null;
+
+  // Aggiungi giorni in modo deterministico (UTC noon -> evita edge case DST).
+  const base = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+  if (Number.isNaN(base.getTime())) return null;
+  base.setUTCDate(base.getUTCDate() + days);
+  const y2 = base.getUTCFullYear();
+  const m2 = base.getUTCMonth() + 1;
+  const d2 = base.getUTCDate();
+  return appTzMidnightMsFromYMD(y2, m2, d2);
+}
+
+function buildCoveredDaysFromRange(startMs, endMs) {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return [];
+  const startDay = toLocalDayStartMs(startMs);
+  const endDay = toLocalDayStartMs(endMs);
+  if (!Number.isFinite(startDay) || !Number.isFinite(endDay)) return [];
+  if (endDay < startDay) return [];
+
+  const days = [];
+  let cur = startDay;
+  for (let i = 0; i < 10 && cur <= endDay; i += 1) {
+    days.push({ data: formatYYYYMMDDFromMs(cur), timestamp: cur });
+    const next = addDaysFromLocalDayStartMs(cur, 1);
+    if (!Number.isFinite(next) || next === cur) break;
+    cur = next;
+  }
+  return days.filter((d) => d && d.data && Number.isFinite(d.timestamp));
+}
+
+function extractStopTimesMs(fermata) {
+  const arr = fermata?.orari?.arrivo || null;
+  const dep = fermata?.orari?.partenza || null;
+  const cand = [
+    arr?.programmato,
+    arr?.reale,
+    arr?.probabile,
+    dep?.programmato,
+    dep?.reale,
+    dep?.probabile,
+  ];
+  return cand.filter((n) => typeof n === 'number' && Number.isFinite(n));
+}
+
+function buildFermatePerGiorno(fermate, allowedDayStarts = null) {
+  const allow = Array.isArray(allowedDayStarts) && allowedDayStarts.length ? new Set(allowedDayStarts) : null;
+  const map = new Map(); // dayStartMs -> Set<idx>
+
+  for (let i = 0; i < (Array.isArray(fermate) ? fermate.length : 0); i += 1) {
+    const times = extractStopTimesMs(fermate[i]);
+    const days = new Set();
+    for (const ms of times) {
+      const ds = toLocalDayStartMs(ms);
+      if (!Number.isFinite(ds)) continue;
+      if (allow && !allow.has(ds)) continue;
+      days.add(ds);
+    }
+    for (const ds of days) {
+      if (!map.has(ds)) map.set(ds, new Set());
+      map.get(ds).add(i);
+    }
+  }
+
+  return Array.from(map.entries())
+    .map(([timestamp, set]) => ({
+      data: formatYYYYMMDDFromMs(timestamp),
+      timestamp,
+      indiciFermate: Array.from(set).sort((a, b) => a - b),
+    }))
+    .filter((x) => x && x.data && Number.isFinite(x.timestamp) && Array.isArray(x.indiciFermate))
+    .sort((a, b) => Number(a.timestamp) - Number(b.timestamp));
 }
 
 function normalizeTrainTypeCode(code) {
@@ -966,7 +1093,8 @@ function resolveTrainStatus(snapshot) {
     const originIdx = getOriginStopIndex(fermateRaw);
     const originStop = originIdx != null ? fermateRaw[originIdx] : null;
     const readyAtOrigin = !!(originStop && hasEffectiveDeparturePlatform(originStop));
-    if (snapshot?.inStazione === true && readyAtOrigin) return 'in stazione';
+    // Se arriva il binario effettivo alla prima fermata (origine), per l'app significa treno in stazione.
+    if (readyAtOrigin || snapshot?.inStazione === true) return 'in stazione';
     return varied ? 'variato' : 'programmato';
   }
 
@@ -1610,6 +1738,10 @@ app.get('/api/trains/status', async (req, res) => {
     const probableDepartureMs = computeProbableMs(firstSchedDepartureMs, firstRealDepartureMs, globalDelay);
     const probableArrivalMs = computeProbableMs(lastSchedArrivalMs, lastRealArrivalMs, globalDelay);
 
+    const runStartMs = firstRealDepartureMs ?? probableDepartureMs ?? firstSchedDepartureMs;
+    const runEndMs = lastRealArrivalMs ?? probableArrivalMs ?? lastSchedArrivalMs;
+    const giorniCoperti = buildCoveredDaysFromRange(runStartMs, runEndMs);
+
     const statoRaw = resolveTrainStatus(snapshot);
     const statoTreno = stoppedAtDestination && statoRaw !== 'soppresso' ? 'concluso' : statoRaw;
     const isSoppresso = looksLikeSuppressedTrain(snapshot);
@@ -1628,6 +1760,9 @@ app.get('/api/trains/status', async (req, res) => {
       if (!next) return null;
       return { ...next, precedente: precedenteFermata };
     })();
+
+    const fermatePerGiorno =
+      giorniCoperti.length > 1 ? buildFermatePerGiorno(fermate, giorniCoperti.map((d) => d.timestamp)) : [];
 
     const principali = {
       numeroTreno: String(snapshot.numeroTreno || selected.trainNumber || trainNumber),
@@ -1669,6 +1804,7 @@ app.get('/api/trains/status', async (req, res) => {
           ? String(snapshot.subTitle).trim()
           : null,
       fermate,
+      ...(giorniCoperti.length > 1 ? { giorniCoperti, fermatePerGiorno } : {}),
     };
 
     const dateDisponibiliFinal = hasUniqueOrigin

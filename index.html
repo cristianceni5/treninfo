@@ -23,7 +23,7 @@
     <li><code>GET /api/stations/arrivals?stationName=...&amp;when=now</code> — Arrivi normalizzati.</li>
     <li>
       <code>GET /api/trains/status?trainNumber=...</code> — Stato treno normalizzato + fermate
-      (se il numero è ambiguo ritorna <code>needsSelection</code>).
+      (se il numero è ambiguo ritorna <code>needsSelection</code>; per treni che attraversano la mezzanotte include <code>principali.giorniCoperti</code> e <code>principali.fermatePerGiorno</code>).
     </li>
     <li><code>GET /api/solutions?fromName=...&amp;toName=...&amp;date=YYYY-MM-DD&amp;time=HH:mm</code> — Soluzioni viaggio LeFrecce (include <code>prezzo</code> quando disponibile).</li>
   </ul>
