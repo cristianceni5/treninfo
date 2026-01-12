@@ -1,41 +1,46 @@
 # Treninfo Server
 
-Server (Netlify Functions) che espone una API **semplice e coerente** per la tua app, con risposte JSON già normalizzate.
+Backend leggero (Netlify Functions) che normalizza i dati di **ViaggiaTreno (RFI)** e **LeFrecce (Trenitalia)** e restituisce JSON “puliti” per l'app mobile Treninfo. Il riuso è **consentito** a patto di **menzionare** la fonte.
 
-Questa documentazione descrive **solo l’uso di Treninfo** (non come chiamare servizi esterni).
+## Chiamate API (base path: `/api`)
 
-## URL
+- `GET /api/health`  
+  Check rapido: DB stazioni caricato.
 
-- Produzione: `https://treninfo.netlify.app`
-- Locale (Netlify Dev): `http://localhost:8888`
+- `GET /api/stations/autocomplete?query=...`  
+  Autocomplete locale usando `stations-viaggiatreno.json`.
 
-## Avvio in locale
+- `GET /api/stations/info?stationName=...`  
+  Info stazione + meteo (se disponibile).
+
+- `GET /api/stations/departures?stationName=...&when=now`  
+  Partenze normalizzate (stazioni canoniche, `tipoTreno`, orari, binari, ritardo).
+
+- `GET /api/stations/arrivals?stationName=...&when=now`  
+  Arrivi normalizzati.
+
+- `GET /api/trains/status?trainNumber=...`  
+  Stato treno normalizzato + fermate.  
+  Se il numero è ambiguo ritorna `needsSelection` (usa `choice`/`originName`/`date`/`timestampRiferimento`).
+
+- `GET /api/solutions?fromName=...&toName=...&date=YYYY-MM-DD&time=HH:mm`  
+  Soluzioni viaggio LeFrecce (include `prezzo` quando disponibile).
+
+## Esempi (curl)
 
 ```bash
-npm install
-npm run dev
-```
-
-Pagine utili:
-- `http://localhost:8888/` (home)
-- `http://localhost:8888/test-rfi.html` (pagina test chiamate)
-
-## Documentazione
-
-- API (unificata): `docs/API.md`
-- Guida rapida: `docs/SERVER-TRENINFO.md`
-
-## Esempi (solo Treninfo)
-
-```bash
-curl "https://treninfo.netlify.app/api/stations/autocomplete?query=firen"
-curl "https://treninfo.netlify.app/api/stations/info?stationName=Firenze%20S.M.Novella"
-curl "https://treninfo.netlify.app/api/stations/departures?stationName=Firenze%20S.M.Novella&when=now"
+curl "http://localhost:8888/api/stations/autocomplete?query=firen"
+curl "https://treninfo.netlify.app/api/stations/departures?stationName=Firenze%20S.%20M.%20Novella&when=now"
 curl "https://treninfo.netlify.app/api/trains/status?trainNumber=9544"
-curl "https://treninfo.netlify.app/api/solutions?fromName=Firenze%20S.M.Novella&toName=Milano%20Centrale&date=2026-01-15&time=10:00"
+curl "https://treninfo.netlify.app/api/solutions?fromName=Firenze%20S.%20M.%20Novella&toName=Roma%20Termini&date=2026-01-13&time=10:00"
 ```
 
-## Note
+Nota: la pagina di test chiamate (`test-chiamate.html`) non è esposta in produzione.
 
-- Nelle risposte, le stazioni sono **stringhe** (nomi canonici). Non vengono esposti codici/ID interni.
-- Usa `CORS_ORIGINS` per limitare i domini autorizzati (opzionale).
+## Crediti
+
+- Upstream dati: ViaggiaTreno (RFI) e LeFrecce (Trenitalia)
+- Runtime: Node.js, Express, Netlify Functions
+
+### Sviluppato da Cristian Ceni
+

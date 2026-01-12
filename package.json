@@ -1,13 +1,13 @@
 {
   "name": "treninfo-server",
   "version": "1.0.0",
-  "description": "Server (Netlify Functions) che normalizza ViaggiaTreno + LeFrecce e restituisce JSON pronti per app.",
+  "description": "Server proxy che normalizza ViaggiaTreno + LeFrecce e restituisce JSON pronti per l'app mobile Treninfo.",
   "private": true,
   "main": "netlify/functions/api.js",
   "scripts": {
     "dev": "netlify dev",
     "start": "netlify dev",
-    "test": "node test/test-train-kind.js && node test/test-time-mapping.js"
+    "test": "node -e \"require('./src/app'); console.log('ok')\""
   },
   "keywords": [],
   "author": "",

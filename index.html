@@ -7,125 +7,51 @@
 </head>
 <body>
   <h1>Treninfo Server</h1>
-  <p>Backend API (Netlify Functions) che normalizza i dati e restituisce JSON pronti per l'app Treninfo.</p>
+
+  <p>
+    Backend leggero (Netlify Functions) che normalizza i dati di <b>ViaggiaTreno</b> e <b>LeFrecce</b>
+    e restituisce JSON “puliti” per l'app mobile Treninfo. Il riuso è <b>consentito</b> a patto di <b>menzionare la fonte.</b>
+  </p>
+
+  <h2>Chiamate API</h2>
+  <p>Base path: <code>/api</code></p>
   <ul>
-    <li><a href="/test-rfi.html">Pagina di test chiamate API</a></li>
-    <li><a href="/docs/SERVER-TRENINFO.md">Guida rapida (repo)</a></li>
-    <li><a href="/docs/API.md">Documentazione API</a></li>
+    <li><code>GET /api/health</code> — Check rapido: DB stazioni caricato.</li>
+    <li><code>GET /api/stations/autocomplete?query=...</code> — Autocomplete locale usando <code>stations-viaggiatreno.json</code>.</li>
+    <li><code>GET /api/stations/info?stationName=...</code> — Info stazione + meteo (se disponibile).</li>
+    <li><code>GET /api/stations/departures?stationName=...&amp;when=now</code> — Partenze normalizzate.</li>
+    <li><code>GET /api/stations/arrivals?stationName=...&amp;when=now</code> — Arrivi normalizzati.</li>
+    <li>
+      <code>GET /api/trains/status?trainNumber=...</code> — Stato treno normalizzato + fermate
+      (se il numero è ambiguo ritorna <code>needsSelection</code>).
+    </li>
+    <li><code>GET /api/solutions?fromName=...&amp;toName=...&amp;date=YYYY-MM-DD&amp;time=HH:mm</code> — Soluzioni viaggio LeFrecce (include <code>prezzo</code> quando disponibile).</li>
   </ul>
-  <p>Base path API: <code>/api</code></p>
 
-  <hr />
+  <h2>Esempi (curl)</h2>
+  <ul>
+    <li><code>curl "<a href="/api/stations/autocomplete?query=firen">/api/stations/autocomplete?query=firen</a>"</code></li>
+    <li>
+      <code>curl "<a href="/api/stations/departures?stationName=Firenze%20S.%20M.%20Novella&amp;when=now">/api/stations/departures?stationName=Firenze%20S.%20M.%20Novella&amp;when=now</a>"</code>
+    </li>
+    <li><code>curl "<a href="/api/trains/status?trainNumber=9544">/api/trains/status?trainNumber=9544</a>"</code></li>
+    <li>
+      <code>curl "<a href="/api/solutions?fromName=Firenze%20S.%20M.%20Novella&amp;toName=Roma%20Termini&amp;date=2026-01-13&amp;time=10:00">/api/solutions?fromName=Firenze%20S.%20M.%20Novella&amp;toName=Roma%20Termini&amp;date=2026-01-13&amp;time=10:00</a>"</code>
+    </li>
+  </ul>
 
-  <section>
-    <h2>Come funziona (stazioni e treni)</h2>
+  <h2>Crediti</h2>
+  <ul>
+    <li>Upstream dati: ViaggiaTreno e LeFrecce (RFI)</li>
+    <li>Runtime: Node.js, Express, Netlify Functions</li>
+  </ul>
 
-    <h3>Stazioni</h3>
-    <table border="1" cellpadding="6" cellspacing="0">
-      <thead>
-        <tr>
-          <th>Cosa</th>
-          <th>Come funziona</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Output API</td>
-          <td>Le stazioni nelle risposte sono <b>stringhe</b> (nome canonico).</td>
-        </tr>
-        <tr>
-          <td>ID esposti</td>
-          <td>Non vengono restituiti codici RFI (<code>Sxxxxx</code>) né <code>lefrecceId</code>.</td>
-        </tr>
-        <tr>
-          <td>Input consigliato</td>
-          <td>Usa <code>stationName</code> negli endpoint stazione.</td>
-        </tr>
-        <tr>
-          <td>Autocomplete</td>
-          <td><code>/api/viaggiatreno/autocomplete</code> restituisce direttamente una lista di nomi stazione.</td>
-        </tr>
-        <tr>
-          <td>Normalizzazione</td>
-          <td>Il backend mappa/normalizza i nomi usando il DB interno e fa matching “tollerante” (sigle, punti, ecc.).</td>
-        </tr>
-      </tbody>
-    </table>
+  <br>
 
-    <h3>Tipi treno (normalizzazione)</h3>
-    <p>Il backend riconosce e normalizza la sigla <code>categoria</code> e il blocco <code>tipoTreno</code>.</p>
-    <table border="1" cellpadding="6" cellspacing="0">
-      <thead>
-        <tr>
-          <th>Input (rilevato)</th>
-          <th>Output <code>categoria</code></th>
-          <th><code>tipoTreno.categoria</code></th>
-          <th>Note</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>FRECCIAROSSA</code>, <code>FR</code></td>
-          <td><code>FR</code></td>
-          <td><code>high-speed</code></td>
-          <td>Frecciarossa</td>
-        </tr>
-        <tr>
-          <td><code>FRECCIARGENTO</code>, <code>FA</code></td>
-          <td><code>FA</code></td>
-          <td><code>high-speed</code></td>
-          <td>Frecciargento</td>
-        </tr>
-        <tr>
-          <td><code>ITALO</code>, <code>NTV</code>, <code>ITA</code></td>
-          <td><code>ITA</code></td>
-          <td><code>high-speed</code></td>
-          <td>Italo</td>
-        </tr>
-        <tr>
-          <td><code>INTERCITY</code>, <code>IC</code></td>
-          <td><code>IC</code></td>
-          <td><code>intercity</code></td>
-          <td>Intercity</td>
-        </tr>
-        <tr>
-          <td><code>INTERCITY NOTTE</code>, <code>ICN</code></td>
-          <td><code>ICN</code></td>
-          <td><code>intercity</code></td>
-          <td>Intercity Notte</td>
-        </tr>
-        <tr>
-          <td><code>EUROCITY</code>, <code>EC</code></td>
-          <td><code>EC</code></td>
-          <td><code>intercity</code></td>
-          <td>Eurocity (fa parte degli intercity)</td>
-        </tr>
-        <tr>
-          <td><code>FRECCIABIANCA</code>, <code>FB</code></td>
-          <td><code>FB</code></td>
-          <td><code>intercity</code></td>
-          <td>Frecciabianca</td>
-        </tr>
-        <tr>
-          <td><code>REGIONALE</code>, <code>REG</code>, <code>RV</code>, <code>R</code>, <code>RE</code></td>
-          <td><code>REG</code></td>
-          <td><code>regional</code></td>
-          <td>Tutte le varianti regionali vengono normalizzate a <code>REG</code></td>
-        </tr>
-        <tr>
-          <td><code>BUS</code>, <code>SOSTITUTIVO</code></td>
-          <td><code>BUS</code></td>
-          <td><code>bus</code></td>
-          <td>Bus sostitutivi</td>
-        </tr>
-        <tr>
-          <td>(altro)</td>
-          <td><code>?</code></td>
-          <td><code>unknown</code></td>
-          <td>Non riconosciuto</td>
-        </tr>
-      </tbody>
-    </table>
-  </section>
+  <h2>Developed by:</h2>
+  <p>
+    <a href="https://cristianceni.netlify.app" target="_blank" rel="noopener noreferrer">Cristian Ceni</a>
+  </p>
+
 </body>
 </html>

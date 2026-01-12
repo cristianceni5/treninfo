@@ -19,9 +19,16 @@
   status = 200
 
 [[redirects]]
-  from = "/test-rfi"
-  to = "/test-rfi.html"
-  status = 200
+  from = "/test-chiamate"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/test-chiamate.html"
+  to = "/404"
+  status = 404
+  force = true
 
 # Non esporre il DB stazioni completo (contiene id interni usati solo dal backend)
 [[redirects]]

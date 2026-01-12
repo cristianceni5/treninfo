@@ -17,6 +17,7 @@ const LEFRECCE_BASE_URL = 'https://www.lefrecce.it/Channels.Website.BFF.WEB';
 
 const FETCH_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 12000);
 const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 5 * 60 * 1000);
+const CACHE_MAX_ENTRIES = Number(process.env.CACHE_MAX_ENTRIES || 2000);
 const APP_TIME_ZONE = process.env.APP_TIME_ZONE || 'Europe/Rome';
 const ENABLE_RAW_UPSTREAM = process.env.ENABLE_RAW_UPSTREAM === '1';
 const ENABLE_DEBUG_RAW = process.env.ENABLE_DEBUG_RAW === '1';
@@ -41,6 +42,7 @@ app.use(
 );
 
 app.use(express.json());
+app.disable('x-powered-by');
 
 // ============================================================================
 // Netlify path normalization
@@ -72,6 +74,13 @@ function cacheGet(key) {
 }
 
 function cacheSet(key, value, ttlMs = CACHE_TTL_MS) {
+  // Evita crescita illimitata della cache (funzioni serverless possono restare "warm").
+  if (cache.has(key)) cache.delete(key); // refresh LRU order
+  while (cache.size >= CACHE_MAX_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey == null) break;
+    cache.delete(oldestKey);
+  }
   cache.set(key, { value, expiresAt: Date.now() + ttlMs });
   return value;
 }
@@ -104,6 +113,47 @@ function addStationNameVariant(id, name) {
   const key = normalizeStationNameKey(name);
   if (!key) return;
   if (!stationIdByKey.has(key)) stationIdByKey.set(key, id);
+}
+
+function expandCommonStationAbbreviations(name) {
+  const raw = name != null ? String(name).trim() : '';
+  if (!raw) return '';
+  const letter = 'A-Za-zÀ-ÿ';
+  return raw
+    .replace(/\bC\.?\s*T\.?\b/gi, 'Chianciano Terme')
+    .replace(/\bP\.?\s*TA\.?\b/gi, 'Porta')
+    .replace(/\bP\.?\s*LE\.?\b/gi, 'Piazzale')
+    .replace(/\bP\.?\s*ZZA\.?\b/gi, 'Piazza')
+    .replace(/\bC\.?\s*LE\.?\b/gi, 'Centrale')
+    // Gestisci anche casi attaccati tipo "S.M.Novella"
+    .replace(new RegExp(`\\bS\\.?\\s*M\\.?(?=[${letter}])`, 'gi'), 'Santa Maria ')
+    .replace(/\bS\.?\s*M\.?\b/gi, 'Santa Maria')
+    .replace(/\bS\.?\s*TA\.?\b/gi, 'Santa')
+    .replace(/\bS\.?\s*TO\.?\b/gi, 'Santo')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function addStationNameVariants(id, name) {
+  const base = name != null ? String(name).trim() : '';
+  if (!base) return;
+  addStationNameVariant(id, base);
+
+  const variants = new Set([base]);
+  // Espandi abbreviazioni "S." sia verso "San" che "Santa" per migliorare il match con VT.
+  if (/\bS\.\s+[A-Za-zÀ-ÿ]/.test(base)) {
+    variants.add(base.replace(/\bS\.\s+/g, 'San '));
+    variants.add(base.replace(/\bS\.\s+/g, 'Santa '));
+  }
+
+  for (const v of Array.from(variants)) {
+    const expanded = expandCommonStationAbbreviations(v);
+    if (expanded && expanded !== v) variants.add(expanded);
+  }
+
+  for (const v of variants) {
+    if (v && v !== base) addStationNameVariant(id, v);
+  }
 }
 
 try {
@@ -145,7 +195,7 @@ try {
         stationList.push(rec);
         if (!stationsById.has(id)) stationsById.set(id, rec);
         if (name) {
-          addStationNameVariant(id, name);
+          addStationNameVariants(id, name);
         }
         if (Number.isFinite(rec.lefrecceId)) {
           if (!lefrecceIdByStationId.has(id)) lefrecceIdByStationId.set(id, rec.lefrecceId);
@@ -264,6 +314,104 @@ function formatHHmmFromMs(ms) {
 function formatHHmmFromIso(iso) {
   const ms = Date.parse(String(iso || ''));
   return Number.isNaN(ms) ? null : formatHHmmFromMs(ms);
+}
+
+let IT_DATE_FORMATTER = null;
+function getItDateFormatter() {
+  if (IT_DATE_FORMATTER) return IT_DATE_FORMATTER;
+  try {
+    IT_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+      timeZone: APP_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  } catch {
+    IT_DATE_FORMATTER = null;
+  }
+  return IT_DATE_FORMATTER;
+}
+
+function formatYYYYMMDDFromMs(ms) {
+  if (ms == null) return null;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return null;
+  const fmt = getItDateFormatter();
+  if (fmt) return fmt.format(d);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function parseIsoDateToLocalMidnightMs(isoDate) {
+  const s = String(isoDate || '').trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  const d = new Date(year, month - 1, day, 0, 0, 0, 0);
+  const ms = d.getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function toLocalDayStartMs(ms) {
+  if (ms == null) return null;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function addDaysFromLocalDayStartMs(dayStartMs, days) {
+  if (!Number.isFinite(dayStartMs) || !Number.isFinite(days)) return null;
+  const d = new Date(dayStartMs);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + days);
+  d.setHours(0, 0, 0, 0);
+  const ms = d.getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function normalizeTrainTypeCode(code) {
+  const c = String(code || '').trim().toUpperCase();
+  if (!c || c === '?') return '?';
+  if (c === 'ICN' || c === 'EC') return 'IC';
+  if (c === 'RE' || c === 'R' || c === 'RV' || c === 'REG' || c === 'REX') return 'REG';
+  if (c === 'FR' || c === 'FA' || c === 'FB' || c === 'IC') return c;
+  return c;
+}
+
+function trainTypeNameFromCode(code) {
+  const c = normalizeTrainTypeCode(code);
+  if (c === 'FR') return 'Frecciarossa';
+  if (c === 'FA') return 'Frecciargento';
+  if (c === 'FB') return 'Frecciabianca';
+  if (c === 'IC') return 'InterCity';
+  if (c === 'REG') return 'Regionale';
+  return null;
+}
+
+function trainTypeInfoFromCode(code) {
+  const sigla = normalizeTrainTypeCode(code);
+  const siglaFinal = sigla === 'FR' || sigla === 'FA' ? `${sigla} AV` : sigla;
+  return { sigla: siglaFinal, nome: trainTypeNameFromCode(sigla) };
+}
+
+function parseExecutivePositionFromText(text) {
+  const s = String(text || '').toLowerCase();
+  if (!s) return null;
+  if (s.includes('coda')) return 'coda';
+  if (s.includes('testa')) return 'testa';
+  return null;
+}
+
+function flipHeadTail(pos) {
+  if (pos === 'coda') return 'testa';
+  if (pos === 'testa') return 'coda';
+  return null;
 }
 
 function encodeDateString(when = 'now') {
@@ -433,12 +581,13 @@ function pickEpochMs(entry, keys) {
 }
 
 function mapDepartureEntry(entry) {
-  const tipoTreno = resolveTrainKind(
+  const tipoTrenoRaw = resolveTrainKind(
     entry?.categoriaDescrizione,
     entry?.categoria,
     entry?.tipoTreno,
     entry?.compNumeroTreno
   );
+  const tipoTreno = trainTypeInfoFromCode(tipoTrenoRaw.codice);
   // NB: su ViaggiaTreno "partenzaTreno" è spesso la partenza dal capolinea origine,
   // mentre "orarioPartenza" è l'evento (partenza) riferito alla stazione richiesta.
   const partenzaMs = pickEpochMs(entry, ['orarioPartenza', 'partenza', 'partenzaTreno', 'dataPartenzaTreno']);
@@ -453,8 +602,7 @@ function mapDepartureEntry(entry) {
         : true;
 
   return {
-    numeroTreno: entry && entry.numeroTreno != null ? Number(entry.numeroTreno) : null,
-    categoria: tipoTreno.codice,
+    numeroTreno: entry && entry.numeroTreno != null ? String(entry.numeroTreno) : null,
     origine: stationPublicNameFromIdOrName(entry?.codOrigine) || stationPublicNameFromIdOrName(entry?.origine),
     destinazione:
       stationPublicNameFromIdOrName(entry?.codDestinazione) || stationPublicNameFromIdOrName(entry?.destinazione),
@@ -469,12 +617,13 @@ function mapDepartureEntry(entry) {
 }
 
 function mapArrivalEntry(entry) {
-  const tipoTreno = resolveTrainKind(
+  const tipoTrenoRaw = resolveTrainKind(
     entry?.categoriaDescrizione,
     entry?.categoria,
     entry?.tipoTreno,
     entry?.compNumeroTreno
   );
+  const tipoTreno = trainTypeInfoFromCode(tipoTrenoRaw.codice);
   // NB: su ViaggiaTreno "arrivoTreno" può riferirsi al capolinea, mentre "orarioArrivo" è relativo alla stazione.
   const arrivoMs = pickEpochMs(entry, ['orarioArrivo', 'arrivo', 'arrivoTreno', 'dataArrivoTreno']);
   const { binarioProgrammato, binarioEffettivo } = buildPlatformsForArrival(entry);
@@ -488,8 +637,7 @@ function mapArrivalEntry(entry) {
         : true;
 
   return {
-    numeroTreno: entry && entry.numeroTreno != null ? Number(entry.numeroTreno) : null,
-    categoria: tipoTreno.codice,
+    numeroTreno: entry && entry.numeroTreno != null ? String(entry.numeroTreno) : null,
     origine: stationPublicNameFromIdOrName(entry?.codOrigine) || stationPublicNameFromIdOrName(entry?.origine),
     destinazione:
       stationPublicNameFromIdOrName(entry?.codDestinazione) || stationPublicNameFromIdOrName(entry?.destinazione),
@@ -671,13 +819,21 @@ function computeNextStopIndex(snapshot, fermateRaw) {
 
 function buildNextStopSummary(nextStop, index, globalDelay) {
   if (!nextStop || index == null) return null;
-  const times = buildStopTimes(nextStop, globalDelay);
   const stazione = stationNameById(nextStop?.id) || stationPublicNameFromIdOrName(nextStop?.stazione) || null;
+  const schedArrivalMs = pickEpochMs(nextStop, [
+    'arrivo_teorico',
+    'arrivoTeorica',
+    'programmata',
+    'programmataZero',
+    'orarioArrivo',
+    'arrivo',
+  ]);
+  const arrivoPrevistoMs =
+    schedArrivalMs != null && Number.isFinite(Number(globalDelay)) ? schedArrivalMs + Number(globalDelay) * 60 * 1000 : null;
   return {
     indice: index,
     stazione,
-    arrivo: times?.arrivo?.hhmm?.probabile || times?.arrivo?.hhmm?.programmato || null,
-    partenza: times?.partenza?.hhmm?.probabile || times?.partenza?.hhmm?.programmato || null,
+    arrivoPrevisto: formatHHmmFromMs(arrivoPrevistoMs),
   };
 }
 
@@ -843,15 +999,61 @@ app.get('/api/trains/status', async (req, res) => {
   const trainNumber = (req.query.numeroTreno || req.query.trainNumber || '').trim();
   const originCodeHint = (req.query.codiceOrigine || req.query.originCode || '').trim().toUpperCase();
   const originNameHint = (req.query.originName || '').trim();
+  const serviceDateHint = (req.query.data || req.query.date || req.query.serviceDate || '').trim();
+  const technicalHint = (req.query.technical || req.query.id || '').trim();
   const choiceHintRaw = req.query.choice;
   const choiceHint = choiceHintRaw != null && choiceHintRaw !== '' ? Number(choiceHintRaw) : null;
-  const epochMsHintRaw = req.query.timestampRiferimento || req.query.epochMs || null;
-  const epochMsHint = epochMsHintRaw != null ? Number(epochMsHintRaw) : null;
+  const epochMsHintRaw = req.query.timestampRiferimento ?? req.query.epochMs ?? null;
+  const epochMsHintExplicit = epochMsHintRaw != null ? Number(epochMsHintRaw) : null;
+  const epochMsHintFromDate = serviceDateHint ? parseIsoDateToLocalMidnightMs(serviceDateHint) : null;
+  let epochMsHint =
+    Number.isFinite(epochMsHintExplicit) ? epochMsHintExplicit : Number.isFinite(epochMsHintFromDate) ? epochMsHintFromDate : null;
   const debug = ENABLE_DEBUG_RAW && parseBool(req.query.debug, false);
 
   if (!trainNumber) return res.status(400).json({ ok: false, error: 'numeroTreno obbligatorio' });
 
   try {
+    function parseEpochFromDisplay(displayStr) {
+      const s = String(displayStr || '').trim();
+      if (!s) return null;
+
+      // Cerca data italiana: dd/mm[/yyyy] (a volte senza anno)
+      const dm = s.match(/\b(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?\b/);
+      if (!dm) return null;
+
+      const day = Number(dm[1]);
+      const month = Number(dm[2]);
+      let year = dm[3] ? Number(dm[3]) : new Date().getFullYear();
+      if (year < 100) year += 2000;
+      if (!day || !month || !year) return null;
+
+      // Ora HH:mm se presente; altrimenti mezzogiorno (più robusto di 00:00)
+      const tm = s.match(/\b(\d{1,2}):(\d{2})\b/);
+      const hour = tm ? Number(tm[1]) : 12;
+      const minute = tm ? Number(tm[2]) : 0;
+
+      const d = new Date(year, month - 1, day, hour, minute, 0, 0);
+      const ms = d.getTime();
+      return Number.isNaN(ms) ? null : ms;
+    }
+
+    function buildDateDisponibiliFromEpochs(epochList) {
+      const map = new Map();
+      for (const ms of epochList) {
+        const dayStart = toLocalDayStartMs(ms);
+        if (!Number.isFinite(dayStart)) continue;
+        if (map.has(dayStart)) continue;
+        map.set(dayStart, { data: formatYYYYMMDDFromMs(dayStart), timestamp: dayStart });
+      }
+      return Array.from(map.values()).sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
+    }
+
+    function buildDateSuggeriteFromBase(baseMs) {
+      const baseDay = toLocalDayStartMs(baseMs);
+      const prevDay = addDaysFromLocalDayStartMs(baseDay, -1);
+      return buildDateDisponibiliFromEpochs([baseDay, prevDay]);
+    }
+
     const textSearch = await fetchText(
       `${VT_BASE_URL}/cercaNumeroTrenoTrenoAutocomplete/${encodeURIComponent(trainNumber)}`
     );
@@ -867,43 +1069,147 @@ app.get('/api/trains/status', async (req, res) => {
     const candidates = lines
       .map((rawLine) => {
         const parts = String(rawLine).split('|');
-        const technical = (parts[1] || '').trim(); // es: "8527-S02430"
-        const [numFromTechnical, originCode] = technical.split('-');
+        const display = (parts[0] || '').trim();
+        const technical = (parts[1] || '').trim(); // es: "9544-S09818-1768172400000"
+        const techParts = technical.split('-');
+        const numFromTechnical = (techParts[0] || trainNumber).trim();
+        const originCode = (techParts[1] || '').trim().toUpperCase();
+        const epochMsFromTechnical = techParts[2] ? parseEpochMsOrSeconds(techParts[2]) : null;
+        const epochMsFromDisplay = parseEpochFromDisplay(display);
+        const epochMs = epochMsFromTechnical ?? epochMsFromDisplay ?? null;
         return {
           rawLine,
+          display,
           technical,
-          trainNumber: (numFromTechnical || trainNumber).trim(),
-          originCode: (originCode || '').trim().toUpperCase(),
+          trainNumber: numFromTechnical,
+          originCode,
+          epochMs,
+          data: epochMs != null ? formatYYYYMMDDFromMs(epochMs) : null,
         };
       })
-      .filter((c) => c.originCode);
+      .filter((c) => c.originCode)
+      .filter((c, idx, arr) => {
+        const key = c.technical || `${c.trainNumber}-${c.originCode}-${c.epochMs ?? ''}`;
+        return arr.findIndex((x) => (x.technical || `${x.trainNumber}-${x.originCode}-${x.epochMs ?? ''}`) === key) === idx;
+      });
 
     const originCodeFromName = originNameHint ? resolveStationIdByName(originNameHint) : null;
-    const selectedByChoice =
-      Number.isFinite(choiceHint) && choiceHint >= 0 && choiceHint < candidates.length ? candidates[choiceHint] : null;
+    function pickClosestByEpoch(cList, targetEpochMs) {
+      if (!Number.isFinite(targetEpochMs)) return null;
+      const withEpoch = cList.filter((c) => Number.isFinite(c.epochMs));
+      if (!withEpoch.length) return null;
+      withEpoch.sort((a, b) => Math.abs(a.epochMs - targetEpochMs) - Math.abs(b.epochMs - targetEpochMs));
+      return Math.abs(withEpoch[0].epochMs - targetEpochMs) <= 36 * 60 * 60 * 1000 ? withEpoch[0] : null;
+    }
 
-    if (!originCodeHint && !originCodeFromName && !selectedByChoice && candidates.length > 1) {
+    const candidatesByOrigin = new Map();
+    for (const c of candidates) {
+      if (!candidatesByOrigin.has(c.originCode)) candidatesByOrigin.set(c.originCode, []);
+      candidatesByOrigin.get(c.originCode).push(c);
+    }
+
+    const originGroups = Array.from(candidatesByOrigin.entries()).map(([originCode, list]) => {
+      const bestByEpoch = list
+        .slice()
+        .sort((a, b) => (Number(b.epochMs) || 0) - (Number(a.epochMs) || 0))[0];
+      return {
+        originCode,
+        candidates: list,
+        best: bestByEpoch || list[0] || null,
+      };
+    });
+
+    const hasUniqueOrigin = originGroups.length === 1;
+    const uniqueOriginGroup = hasUniqueOrigin ? originGroups[0] : null;
+
+    function serializeOriginChoice(group, idx) {
+      return { choice: idx, origine: stationNameById(group.originCode) };
+    }
+
+    function serializeDateChoice(dateItem, idx) {
+      return { choice: idx, data: dateItem.data, timestampRiferimento: dateItem.timestamp };
+    }
+
+    function buildDateDisponibiliForGroup(group) {
+      if (!group) return [];
+      return buildDateDisponibiliFromEpochs(group.candidates.map((c) => c.epochMs).filter((x) => x != null));
+    }
+
+    const dateDisponibiliUnique = hasUniqueOrigin ? buildDateDisponibiliForGroup(uniqueOriginGroup) : [];
+
+    // Quando il numero è ambiguo (origini diverse), chiediamo solo la scelta dell'origine.
+    // La scelta per data (oggi/ieri o giorni diversi) è riservata ai casi con origine univoca.
+    if (!technicalHint && !originCodeHint && !originCodeFromName && !Number.isFinite(choiceHint) && originGroups.length > 1) {
       return res.json({
         ok: true,
         data: null,
         needsSelection: true,
+        selectionType: 'origin',
         message: 'Più treni trovati con questo numero: specifica choice oppure originName.',
-        choices: candidates.map((c, idx) => ({
-          choice: idx,
-          origine: stationNameById(c.originCode),
-        })),
+        choices: originGroups.map(serializeOriginChoice),
       });
     }
 
+    // Se l'origine è univoca ma ci sono più giorni disponibili, chiedi scelta data/epoch.
+    if (
+      hasUniqueOrigin &&
+      !technicalHint &&
+      epochMsHint == null &&
+      !Number.isFinite(choiceHint) &&
+      dateDisponibiliUnique.length > 1
+    ) {
+      return res.json({
+        ok: true,
+        data: null,
+        needsSelection: true,
+        selectionType: 'date',
+        origine: stationNameById(uniqueOriginGroup.originCode),
+        message: 'Più corse trovate per questo numero (giorni diversi): specifica choice oppure timestampRiferimento/date.',
+        dateDisponibili: dateDisponibiliUnique,
+        dateSuggerite: buildDateSuggeriteFromBase((dateDisponibiliUnique[0] && dateDisponibiliUnique[0].timestamp) || Date.now()),
+        choices: dateDisponibiliUnique.map(serializeDateChoice),
+      });
+    }
+
+    // Interpreta choice:
+    // - se origine ambigua: choice seleziona l'origine
+    // - se origine univoca e ci sono più giorni: choice seleziona il giorno
+    let selectedOriginGroup = null;
+    if (originCodeHint) selectedOriginGroup = originGroups.find((g) => g.originCode === originCodeHint) || null;
+    if (!selectedOriginGroup && originCodeFromName) {
+      const oc = String(originCodeFromName).toUpperCase();
+      selectedOriginGroup = originGroups.find((g) => g.originCode === oc) || null;
+    }
+
+    if (!selectedOriginGroup && Number.isFinite(choiceHint)) {
+      if (originGroups.length > 1) {
+        selectedOriginGroup = choiceHint >= 0 && choiceHint < originGroups.length ? originGroups[choiceHint] : null;
+      } else if (hasUniqueOrigin && dateDisponibiliUnique.length > 1) {
+        const picked = choiceHint >= 0 && choiceHint < dateDisponibiliUnique.length ? dateDisponibiliUnique[choiceHint] : null;
+        if (picked) epochMsHint = picked.timestamp;
+        selectedOriginGroup = uniqueOriginGroup;
+      }
+    }
+
+    if (!selectedOriginGroup && hasUniqueOrigin) selectedOriginGroup = uniqueOriginGroup;
+
+    const technicalSelected = technicalHint ? candidates.find((c) => c.technical === technicalHint) : null;
+    const epochSelected =
+      epochMsHint != null ? pickClosestByEpoch(selectedOriginGroup ? selectedOriginGroup.candidates : candidates, epochMsHint) : null;
+
     const selected =
-      selectedByChoice ||
-      (originCodeHint ? candidates.find((c) => c.originCode === originCodeHint) : null) ||
-      (originCodeFromName ? candidates.find((c) => c.originCode === String(originCodeFromName).toUpperCase()) : null) ||
+      technicalSelected ||
+      epochSelected ||
+      (selectedOriginGroup ? selectedOriginGroup.best : null) ||
       candidates[0] ||
       null;
 
     if (!selected) {
       return res.json({ ok: false, error: 'Impossibile determinare il codice origine del treno' });
+    }
+
+    if (!Number.isFinite(epochMsHint) && technicalHint && Number.isFinite(selected.epochMs)) {
+      epochMsHint = selected.epochMs;
     }
 
     async function fetchSnapshot(ts) {
@@ -918,32 +1224,84 @@ app.get('/api/trains/status', async (req, res) => {
       }
     }
 
-    let referenceTimestamp = Number.isFinite(epochMsHint) ? epochMsHint : Date.now();
+    function runLooksFuture(snap, nowMs) {
+      const stops = Array.isArray(snap?.fermate) ? snap.fermate : [];
+      const firstStop = stops[0] || null;
+      const startMs =
+        pickEpochMs(firstStop, ['partenza_teorica', 'partenzaTeorica', 'programmata', 'programmataZero']) ??
+        pickEpochMs(firstStop, ['partenzaReale', 'partenza_reale', 'effettiva']);
+      if (startMs == null) return false;
+      return startMs - nowMs > 30 * 60 * 1000;
+    }
+
+    function trainStillRunning(snap, nowMs) {
+      const stops = Array.isArray(snap?.fermate) ? snap.fermate : [];
+      const lastStop = stops[stops.length - 1] || null;
+      const endMs =
+        pickEpochMs(lastStop, ['arrivo_teorico', 'arrivoTeorica', 'programmata', 'programmataZero']) ??
+        pickEpochMs(lastStop, ['arrivoReale', 'arrivo_reale', 'effettiva']);
+      if (endMs == null) return false;
+      return nowMs <= endMs + 2 * 60 * 60 * 1000;
+    }
+
+    const nowMs = Date.now();
+    const baseTimestamp = Number.isFinite(epochMsHint) ? epochMsHint : nowMs;
+
+    let referenceTimestamp = baseTimestamp;
     let snapshot = null;
+    const successfulDayStarts = new Set();
 
     if (Number.isFinite(epochMsHint)) {
       const offsetsHours = [0, -6, 6, -12, 12, -24, 24];
       for (const h of offsetsHours) {
-        const ts = epochMsHint + h * 60 * 60 * 1000;
+        const ts = baseTimestamp + h * 60 * 60 * 1000;
         if (ts <= 0) continue;
         const s = await fetchSnapshot(ts);
-        if (s) {
-          snapshot = s;
-          referenceTimestamp = ts;
-          break;
-        }
+        if (!s) continue;
+        const ds = toLocalDayStartMs(ts);
+        if (Number.isFinite(ds)) successfulDayStarts.add(ds);
+        snapshot = s;
+        referenceTimestamp = ts;
+        break;
       }
     } else {
       const offsetsHours = [0, -6, -12, -18, -24];
+      let primary = null;
+      let selectedSnap = null;
+      let backup = null;
+
       for (const h of offsetsHours) {
-        const ts = Date.now() + h * 60 * 60 * 1000;
+        const ts = nowMs + h * 60 * 60 * 1000;
         if (ts <= 0) continue;
         const s = await fetchSnapshot(ts);
-        if (s) {
-          snapshot = s;
-          referenceTimestamp = ts;
+        if (!s) continue;
+
+        const ds = toLocalDayStartMs(ts);
+        if (Number.isFinite(ds)) successfulDayStarts.add(ds);
+
+        const descriptor = { data: s, ts, offset: h };
+
+        if (h === 0) {
+          primary = descriptor;
+          backup = backup || descriptor;
+          if (!runLooksFuture(s, nowMs)) {
+            selectedSnap = descriptor;
+            break;
+          }
+          continue;
+        }
+
+        backup = backup || descriptor;
+        if (trainStillRunning(s, nowMs)) {
+          selectedSnap = descriptor;
           break;
         }
+      }
+
+      const chosen = selectedSnap || primary || backup;
+      if (chosen) {
+        snapshot = chosen.data;
+        referenceTimestamp = chosen.ts;
       }
     }
 
@@ -958,23 +1316,7 @@ app.get('/api/trains/status', async (req, res) => {
     const fermateRaw = Array.isArray(snapshot.fermate) ? snapshot.fermate : [];
     const globalDelay =
       snapshot.ritardo != null && Number.isFinite(Number(snapshot.ritardo)) ? Number(snapshot.ritardo) : null;
-
-    const fermate = fermateRaw.map((stop) => {
-      const id = stop && stop.id != null ? String(stop.id).trim().toUpperCase() : null;
-      const ritardo =
-        stop && stop.ritardo != null && Number.isFinite(Number(stop.ritardo)) ? Number(stop.ritardo) : globalDelay;
-
-      return {
-        stazione: stationNameById(id) || stationPublicNameFromIdOrName(stop?.stazione),
-        tipoFermata: stop?.tipoFermata != null ? String(stop.tipoFermata) : null,
-        ritardo,
-        orari: buildStopTimes(stop, globalDelay),
-        binari: buildStopPlatforms(stop),
-      };
-    });
-
-    const first = fermateRaw[0] || {};
-    const last = fermateRaw[fermateRaw.length - 1] || {};
+    const nextStopIdx = computeNextStopIndex(snapshot, fermateRaw);
 
     const tipoTreno = resolveTrainKind(
       snapshot?.compNumeroTreno,
@@ -990,6 +1332,45 @@ app.get('/api/trains/status', async (req, res) => {
           ? { codice: 'FR', nome: 'FR', categoria: 'high-speed' }
           : tipoTreno;
 
+    const orientamentoCodice =
+      snapshot?.orientamento != null && String(snapshot.orientamento).trim() ? String(snapshot.orientamento).trim().toUpperCase() : null;
+    const orientamentoDescrizione = (() => {
+      const list = Array.isArray(snapshot?.compOrientamento)
+        ? snapshot.compOrientamento
+        : Array.isArray(snapshot?.descOrientamento)
+          ? snapshot.descOrientamento
+          : null;
+      const first = list && list.length ? String(list[0]).trim() : '';
+      return first ? first : null;
+    })();
+    const executiveBase = parseExecutivePositionFromText(orientamentoDescrizione);
+    function computeExecutivePositionForOrient(stopOrientamento) {
+      const stopO = stopOrientamento != null ? String(stopOrientamento).trim().toUpperCase() : null;
+      if (tipoTrenoFinal.codice !== 'FR') return null;
+      if (!executiveBase) return null;
+      if (!orientamentoCodice || !stopO) return null;
+      return stopO !== orientamentoCodice ? flipHeadTail(executiveBase) : executiveBase;
+    }
+
+    const fermate = fermateRaw.map((stop) => {
+      const id = stop && stop.id != null ? String(stop.id).trim().toUpperCase() : null;
+      const ritardo =
+        stop && stop.ritardo != null && Number.isFinite(Number(stop.ritardo)) ? Number(stop.ritardo) : globalDelay;
+      const carrozzaExecutive = tipoTrenoFinal.codice === 'FR' ? computeExecutivePositionForOrient(stop?.orientamento) : null;
+
+      return {
+        stazione: stationNameById(id) || stationPublicNameFromIdOrName(stop?.stazione),
+        tipoFermata: stop?.tipoFermata != null ? String(stop.tipoFermata) : null,
+        ritardo,
+        orari: buildStopTimes(stop, globalDelay),
+        binari: buildStopPlatforms(stop),
+        ...(carrozzaExecutive ? { carrozzaExecutive } : {}),
+      };
+    });
+
+    const first = fermateRaw[0] || {};
+    const last = fermateRaw[fermateRaw.length - 1] || {};
+
     const lastDetectionMs = parseEpochMsOrSeconds(snapshot?.oraUltimoRilevamento) ?? parseEpochMsOrSeconds(snapshot?.ultimoRilev);
     const lastDetectionStation = snapshot?.stazioneUltimoRilevamento
       ? String(snapshot.stazioneUltimoRilevamento)
@@ -998,6 +1379,15 @@ app.get('/api/trains/status', async (req, res) => {
     const lastDetectionOrario = formatHHmmFromMs(lastDetectionMs);
     const lastDetectionText =
       [lastDetectionOrario, lastDetectionStationPublic].filter(Boolean).join(' - ').trim() || null;
+
+    const convoglio =
+      tipoTrenoFinal.codice === 'FR' && orientamentoCodice
+        ? {
+            orientamento: {
+              codice: orientamentoCodice,
+            },
+          }
+        : null;
 
     const firstSchedDepartureMs = pickEpochMs(first, [
       'partenza_teorica',
@@ -1018,14 +1408,12 @@ app.get('/api/trains/status', async (req, res) => {
     const probableArrivalMs = computeProbableMs(lastSchedArrivalMs, lastRealArrivalMs, globalDelay);
 
     const statoTreno = resolveTrainStatus(snapshot);
-    const nextStopIdx = computeNextStopIndex(snapshot, fermateRaw);
     const prossimaFermata =
       nextStopIdx != null && fermateRaw[nextStopIdx] ? buildNextStopSummary(fermateRaw[nextStopIdx], nextStopIdx, globalDelay) : null;
 
     const principali = {
       numeroTreno: String(snapshot.numeroTreno || selected.trainNumber || trainNumber),
-      codiceTreno: tipoTrenoFinal.codice,
-      tipoTreno: tipoTrenoFinal,
+      tipoTreno: trainTypeInfoFromCode(tipoTrenoFinal.codice),
       tratta: {
         origine: stationNameById(first.id),
         destinazione: stationNameById(last.id),
@@ -1051,6 +1439,7 @@ app.get('/api/trains/status', async (req, res) => {
         stazione: lastDetectionStationPublic,
         testo: lastDetectionText,
       },
+      ...(convoglio ? { convoglio } : {}),
       aggiornamentoRfi:
         snapshot?.subTitle != null && String(snapshot.subTitle).trim()
           ? String(snapshot.subTitle).trim()
@@ -1058,17 +1447,31 @@ app.get('/api/trains/status', async (req, res) => {
       fermate,
     };
 
+    const dateDisponibiliFinal = hasUniqueOrigin
+      ? buildDateDisponibiliFromEpochs([
+          ...dateDisponibiliUnique.map((d) => d.timestamp),
+          ...Array.from(successfulDayStarts.values()),
+        ])
+      : [];
+
     const response = {
       ok: true,
       referenceTimestamp,
+      dataRiferimento: formatYYYYMMDDFromMs(referenceTimestamp),
+      ...(hasUniqueOrigin && dateDisponibiliFinal.length ? { dateDisponibili: dateDisponibiliFinal } : {}),
+      ...(hasUniqueOrigin && dateDisponibiliFinal.length > 1
+        ? { dateSuggerite: buildDateSuggeriteFromBase(referenceTimestamp) }
+        : {}),
       principali,
     };
 
     if (debug) {
       response.upstream = snapshot;
       response.choices = candidates.map((c) => ({
+        display: c.display,
         technical: c.technical,
         originCode: c.originCode,
+        epochMs: c.epochMs,
       }));
     }
 
@@ -1155,6 +1558,28 @@ function parseDurationMinutes(durationStr, fallbackStartIso, fallbackEndIso) {
     return Math.round((endMs - startMs) / 60000);
   }
   return null;
+}
+
+function mapLefreccePrice(price) {
+  const p = price && typeof price === 'object' ? price : null;
+  if (!p || p.hideAmount === true) return null;
+  const importo = Number(p.amount);
+  if (!Number.isFinite(importo)) return null;
+  const importoOriginale = p.originalAmount != null ? Number(p.originalAmount) : null;
+  return {
+    valuta: p.currency != null ? String(p.currency).trim() : null,
+    importo,
+    ...(Number.isFinite(importoOriginale) ? { importoOriginale } : {}),
+    ...(p.indicative != null ? { indicativo: !!p.indicative } : {}),
+  };
+}
+
+function extractTrainNumberOnly(value) {
+  const s = value == null ? '' : String(value).trim();
+  if (!s) return null;
+  const matches = s.match(/\d{1,6}/g);
+  if (!matches || matches.length === 0) return null;
+  return matches[matches.length - 1];
 }
 
 app.get('/api/solutions', async (req, res) => {
@@ -1279,8 +1704,8 @@ app.get('/api/solutions', async (req, res) => {
           const lastNode = nodes[nodes.length - 1] || firstNode;
 
           const treni = nodes.map((n) => ({
-            numeroTreno: n?.train?.description || n?.train?.name || null,
-            categoria: n?.train?.acronym || null,
+            numeroTreno: extractTrainNumberOnly(n?.train?.description || n?.train?.name || null),
+            tipoTreno: trainTypeInfoFromCode(n?.train?.acronym || null),
             da: stationPublicNameFromIdOrName(n?.origin),
             a: stationPublicNameFromIdOrName(n?.destination),
             orarioPartenza: formatHHmmFromIso(n?.departureTime),
@@ -1296,6 +1721,7 @@ app.get('/api/solutions', async (req, res) => {
             partenza,
             arrivo,
             cambi: Math.max(0, nodes.length - 1),
+            prezzo: mapLefreccePrice(sol?.price),
             treni,
           };
         })
