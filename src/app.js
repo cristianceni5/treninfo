@@ -14,6 +14,9 @@ const app = express();
 const VT_BASE_URL = 'http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno';
 const VT_BOARD_BASE_URL = 'http://www.viaggiatreno.it/viaggiatrenonew/resteasy/viaggiatreno';
 const LEFRECCE_BASE_URL = 'https://www.lefrecce.it/Channels.Website.BFF.WEB';
+const ITALO_STATIONS_URL = 'https://api-biglietti.italotreno.com/api/v1/stations';
+const ITALO_SEARCH_TRAIN_URL = 'https://italoinviaggio.italotreno.com/api/RicercaTrenoService';
+const ITALO_SEARCH_ROUTE_URL = 'https://italoinviaggio.italotreno.com/api/RicercaTrattaService';
 
 const FETCH_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 12000);
 const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 5 * 60 * 1000);
@@ -2098,10 +2101,87 @@ app.get('/api/solutions', async (req, res) => {
     });
   } catch (err) {
     res.status(err.status || 500).json({ ok: false, error: err.message });
+    }
+});
+
+// ============================================================================ 
+// API: Italo (proxy endpoints)
+// ============================================================================
+app.get('/api/italo/stations', async (req, res) => {
+  const query = (req.query.query || req.query.sn || '').trim();
+  if (!query) return res.status(400).json({ ok: false, error: 'Parametro obbligatorio: query (o sn)' });
+  try {
+    const params = new URLSearchParams({
+      pn: '1',
+      ps: '30',
+      sn: query,
+      culture: 'it-IT',
+      ds: '',
+      onlyitalo: 'true',
+      exb: 'false',
+    });
+    const url = `${ITALO_STATIONS_URL}?${params.toString()}`;
+    const payload = await fetchJson(url);
+    const data = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload?.stations)
+          ? payload.stations
+          : [];
+    res.json({ ok: true, data });
+  } catch (err) {
+    res.status(err.status || 500).json({ ok: false, error: err.message });
   }
 });
 
-// ============================================================================
+function respondWithItaloUpstream(res, response) {
+  return res.json({ ok: response.ok === undefined ? true : response.ok, data: response.data, raw: response.raw });
+}
+
+async function handleItaloQuery(url) {
+  const upstream = await fetchWithTimeout(url);
+  const text = await upstream.text();
+  try {
+    const parsed = JSON.parse(text);
+    return { ok: upstream.ok, data: parsed };
+  } catch {
+    return { ok: upstream.ok, data: null, raw: text };
+  }
+}
+
+app.get('/api/italo/train', async (req, res) => {
+  const trainNumber = (req.query.trainNumber || req.query.TrainNumber || '').trim();
+  if (!trainNumber) return res.status(400).json({ ok: false, error: 'Parametro obbligatorio: trainNumber' });
+  try {
+    const url = `${ITALO_SEARCH_TRAIN_URL}?TrainNumber=${encodeURIComponent(trainNumber)}`;
+    const result = await handleItaloQuery(url);
+    return respondWithItaloUpstream(res, result);
+  } catch (err) {
+    res.status(err.status || 500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/api/italo/tratta', async (req, res) => {
+  const departure = (req.query.departure || req.query.Departure || '').trim();
+  const arrival = (req.query.arrival || req.query.Arrival || '').trim();
+  if (!departure || !arrival) {
+    return res
+      .status(400)
+      .json({ ok: false, error: 'Parametri obbligatori: departure e arrival (sigle delle stazioni)' });
+  }
+  try {
+    const url = `${ITALO_SEARCH_ROUTE_URL}?Departure=${encodeURIComponent(departure)}&Arrival=${encodeURIComponent(
+      arrival
+    )}`;
+    const result = await handleItaloQuery(url);
+    return respondWithItaloUpstream(res, result);
+  } catch (err) {
+    res.status(err.status || 500).json({ ok: false, error: err.message });
+  }
+});
+
+// ============================================================================ 
 // Extra endpoint utili
 // ============================================================================
 app.get('/api/health', (_req, res) => {

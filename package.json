@@ -5,8 +5,9 @@
   "private": true,
   "main": "netlify/functions/api.js",
   "scripts": {
-    "dev": "netlify dev",
-    "start": "netlify dev",
+    "dev": "node src/app.js",
+    "dev:netlify": "netlify dev",
+    "start": "node src/app.js",
     "test": "node -e \"require('./src/app'); console.log('ok')\""
   },
   "keywords": [],
