@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Treninfo Server</title>
+</head>
+<body>
+  <h1>Treninfo Server</h1>
+
+  <p>
+    Backend leggero (Netlify Functions) che normalizza i dati di <b>ViaggiaTreno</b> e <b>LeFrecce</b>
+    e restituisce JSON “puliti” per l'app mobile Treninfo. Il riuso è <b>consentito</b> a patto di <b>menzionare la fonte.</b>
+  </p>
+
+  <h2>Chiamate API</h2>
+  <p>Base path: <code>/api</code></p>
+  <ul>
+    <li><code>GET /api/health</code> — Check rapido: DB stazioni caricato.</li>
+    <li><code>GET /api/stations/autocomplete?query=...</code> — Autocomplete locale usando <code>stations-viaggiatreno.json</code>.</li>
+    <li><code>GET /api/stations/info?stationName=...</code> — Info stazione + meteo (se disponibile).</li>
+    <li><code>GET /api/stations/departures?stationName=...&amp;when=now</code> — Partenze normalizzate.</li>
+    <li><code>GET /api/stations/arrivals?stationName=...&amp;when=now</code> — Arrivi normalizzati.</li>
+    <li>
+      <code>GET /api/trains/status?trainNumber=...</code> — Stato treno normalizzato + fermate
+      (se il numero è ambiguo ritorna <code>needsSelection</code>; per treni che attraversano la mezzanotte include <code>principali.giorniCoperti</code> e <code>principali.fermatePerGiorno</code>).
+    </li>
+    <li><code>GET /api/solutions?fromName=...&amp;toName=...&amp;date=YYYY-MM-DD&amp;time=HH:mm</code> — Soluzioni viaggio LeFrecce (include <code>prezzo</code> quando disponibile).</li>
+  </ul>
+
+  <h2>Esempi (curl)</h2>
+  <ul>
+    <li><code>curl "<a href="/api/stations/autocomplete?query=firen">/api/stations/autocomplete?query=firen</a>"</code></li>
+    <li>
+      <code>curl "<a href="/api/stations/departures?stationName=Firenze%20S.%20M.%20Novella&amp;when=now">/api/stations/departures?stationName=Firenze%20S.%20M.%20Novella&amp;when=now</a>"</code>
+    </li>
+    <li><code>curl "<a href="/api/trains/status?trainNumber=9544">/api/trains/status?trainNumber=9544</a>"</code></li>
+    <li>
+      <code>curl "<a href="/api/solutions?fromName=Firenze%20S.%20M.%20Novella&amp;toName=Roma%20Termini&amp;date=2026-01-13&amp;time=10:00">/api/solutions?fromName=Firenze%20S.%20M.%20Novella&amp;toName=Roma%20Termini&amp;date=2026-01-13&amp;time=10:00</a>"</code>
+    </li>
+  </ul>
+
+  <h2>Crediti</h2>
+  <ul>
+    <li>Upstream dati: ViaggiaTreno e LeFrecce (RFI)</li>
+    <li>Runtime: Node.js, Express, Netlify Functions</li>
+  </ul>
+
+  <br>
+
+  <h2>Developed by:</h2>
+  <p>
+    <a href="https://cristianceni.netlify.app" target="_blank" rel="noopener noreferrer">Cristian Ceni</a>
+  </p>
+
+</body>
+</html>

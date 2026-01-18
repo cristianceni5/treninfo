@@ -5,9 +5,8 @@
   "private": true,
   "main": "netlify/functions/api.js",
   "scripts": {
-    "dev": "node src/app.js",
-    "dev:netlify": "netlify dev",
-    "start": "node src/app.js",
+    "dev": "netlify dev",
+    "start": "netlify dev",
     "test": "node -e \"require('./src/app'); console.log('ok')\""
   },
   "keywords": [],
@@ -23,6 +22,6 @@
     "serverless-http": "^4.0.0"
   },
   "devDependencies": {
-    "netlify-cli": "^23.12.1"
+    "netlify-cli": "^23.13.4"
   }
 }

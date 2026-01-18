@@ -10,7 +10,7 @@
   functionsPort = 9999
 
 [functions]
-  included_files = ["stations-viaggiatreno.json"]
+  included_files = ["stazioni.json"]
 
 # /api/* → /.netlify/functions/api (la function api gestisce già /api/...)
 [[redirects]]
@@ -18,9 +18,21 @@
   to   = "/.netlify/functions/api/:splat"
   status = 200
 
+[[redirects]]
+  from = "/test-chiamate"
+  to = "/404"
+  status = 404
+  force = false
+
+[[redirects]]
+  from = "/test-chiamate.html"
+  to = "/404"
+  status = 404
+  force = false
+
 # Non esporre il DB stazioni completo (contiene id interni usati solo dal backend)
 [[redirects]]
-  from = "/stations-viaggiatreno.json"
+  from = "/stazioni.json"
   to = "/404"
   status = 404
   force = true

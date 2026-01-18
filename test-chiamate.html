@@ -1,270 +1,454 @@
+<!--Developed by Cristian Ceni-->
 <!DOCTYPE html>
-<html lang="it">
+<html lang="it" class="dark">
 <head>
-  <meta charset="UTF-8" />
-  <title>Treninfo Server - Test API</title>
+    <meta charset="UTF-8">
+    <link rel="shortcut icon" href="./iconTreninfo-iOS-ClearDark-1024x1024@1x.png" type="png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Treninfo Server - Test API (Server)</title>
+
+    <!-- Tailwind CSS with Configuration -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['TikTok Sans', 'Google Sans', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        systemBlue: '#6B7280',
+                        systemPurple: '#6B7280',
+                        systemGray: '#8E8E93',
+                        systemGray6Light: '#F2F2F7',
+                        systemGray6Dark: '#1C1C1E',
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Import User's Custom Font Link (TikTok Sans & Google Sans) */
+        @import url('https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&family=TikTok+Sans:opsz,wght@12..36,300..900&display=swap');
+
+        /* Keep JetBrains Mono for technical details */
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+        body {
+            font-family: 'TikTok Sans', 'Google Sans', sans-serif;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        ::-webkit-scrollbar {
+            width: 0px;
+            background: transparent;
+        }
+    </style>
 </head>
-<body>
-  <h1>Treninfo Server - Test API</h1>
-  <p><a href="/">Home</a></p>
-  <p>Regole di normalizzazione (stazioni/tipi treno) in <a href="/">Home</a>.</p>
+<body class="bg-white text-zinc-900 dark:bg-black dark:text-zinc-100 antialiased selection:bg-zinc-300 selection:text-zinc-900 dark:selection:bg-zinc-700 dark:selection:text-zinc-100">
+    <div id="root"></div>
 
-  <section>
-    <h2>Ricerca stazione (autocomplete backend)</h2>
-    <input id="stationInput" type="text" placeholder="Nome stazione..." autocomplete="off" />
-    <button id="btnInfo">Info</button>
-    <button id="btnDepartures">Partenze</button>
-    <button id="btnArrivals">Arrivi</button>
-    <div id="stationSuggestions"></div>
-    <p id="stationPicked"></p>
-    <pre id="stationResult"></pre>
-  </section>
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
 
-  <hr />
+        // --- ICONS ---
+        const Icon = ({ name, size = 20, className }) => {
+            const icons = {
+                github: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>,
+                instagram: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg>,
+                download: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15"/><line x1="12" x2="12" y1="3"/></svg>,
+                smartphone: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>,
+                server: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>,
+                code: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>,
+                moon: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>,
+                sun: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>,
+                apple: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" className={className}><path d="M17.8 19.34c-.87 1.25-1.78 2.5-3.15 2.53-1.35.03-1.79-.8-3.34-.8-1.57 0-2.06.78-3.29.83-1.32.06-2.33-1.32-3.17-2.53-1.73-2.5-3.05-7.07-1.27-10.16.89-1.54 2.48-2.51 4.2-2.54 1.33-.03 2.58.9 3.4.9.82 0 2.36-1.11 3.98-0.95 1.36.13 2.57.92 3.25 1.94-.06.04-1.94 1.13-1.92 3.37.03 2.68 2.36 3.6 2.47 3.65-.01.03-.38 1.31-1.16 2.76zM15.48 4.24c.73-.88 1.21-2.11 1.08-3.34-1.04.04-2.3.69-3.05 1.57-.67.79-1.25 2.06-1.09 3.24 1.16.09 2.34-.58 3.06-1.47z"/></svg>,
+                playStore: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" className={className}><path d="M3 3.5L20.5 12 3 20.5V3.5z"/></svg>,
+                sparkles: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M9 3v4"/><path d="M3 5h4"/><path d="M3 9h4"/></svg>,
+                brain: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.97-3.284"/><path d="M17.97 14.716A4 4 0 0 1 16 18"/><path d="M12 18v5"/></svg>,
+                activity: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>,
+                zap: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
+                bell: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>,
+                layers: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>,
+                copy: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>,
+                check: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>
+            };
+            return icons[name] || null;
+        };
 
-  <section>
-    <h2>Ricerca treno</h2>
-    <input id="trainNumber" type="text" placeholder="Numero treno (es. 8527)" />
-    <input id="originName" type="text" placeholder="Origine (opzionale, es. Firenze S.M.Novella)" />
-    <input id="choice" type="number" placeholder="Choice (opzionale, se richiesto)" min="0" step="1" />
-    <button id="btnTrain">Cerca stato treno</button>
-    <pre id="trainResult"></pre>
-  </section>
+        function App() {
+            const [isDarkMode, setIsDarkMode] = useState(true);
+            const [stationInput, setStationInput] = useState('');
+            const [stationSuggestions, setStationSuggestions] = useState([]);
+            const [pickedStationName, setPickedStationName] = useState('');
+            const [stationResult, setStationResult] = useState('');
 
-  <hr />
+            const [trainNumber, setTrainNumber] = useState('');
+            const [originName, setOriginName] = useState('');
+            const [choice, setChoice] = useState('');
+            const [useItalo, setUseItalo] = useState(false);
+            const [trainResult, setTrainResult] = useState('');
 
-  <section>
-    <h2>Cerca soluzioni</h2>
-    <input id="fromName" type="text" placeholder="Da (stazione)..." autocomplete="off" />
-    <div id="fromSuggestions"></div>
-    <p id="fromPicked"></p>
+            const [fromName, setFromName] = useState('');
+            const [toName, setToName] = useState('');
+            const [fromSuggestions, setFromSuggestions] = useState([]);
+            const [toSuggestions, setToSuggestions] = useState([]);
+            const [pickedFrom, setPickedFrom] = useState('');
+            const [pickedTo, setPickedTo] = useState('');
+            const [fromPickedLabel, setFromPickedLabel] = useState('');
+            const [toPickedLabel, setToPickedLabel] = useState('');
+            const [solDate, setSolDate] = useState('');
+            const [solTime, setSolTime] = useState('');
+            const [solutionsResult, setSolutionsResult] = useState('');
 
-    <input id="toName" type="text" placeholder="A (stazione)..." autocomplete="off" />
-    <div id="toSuggestions"></div>
-    <p id="toPicked"></p>
+            const stationAbortRef = useRef(null);
+            const fromAbortRef = useRef(null);
+            const toAbortRef = useRef(null);
 
-    <input id="solDate" type="date" />
-    <input id="solTime" type="time" />
-    <button id="btnSolutions">Cerca soluzioni</button>
-    <pre id="solutionsResult"></pre>
-  </section>
+            useEffect(() => {
+                const html = document.documentElement;
+                if (isDarkMode) {
+                    html.classList.add('dark');
+                } else {
+                    html.classList.remove('dark');
+                }
+            }, [isDarkMode]);
 
-  <script>
-    const stationInput = document.getElementById('stationInput');
-    const suggestionsEl = document.getElementById('stationSuggestions');
-    const stationPickedEl = document.getElementById('stationPicked');
-    const stationResultEl = document.getElementById('stationResult');
-    const trainResultEl = document.getElementById('trainResult');
-    const solutionsResultEl = document.getElementById('solutionsResult');
+            useEffect(() => {
+                const d = new Date();
+                const yyyy = String(d.getFullYear());
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                setSolDate(`${yyyy}-${mm}-${dd}`);
+                setSolTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+            }, []);
 
-    let pickedStationName = null;
-    let abortCtrlStation = null;
+            async function callApi(url) {
+                const resp = await fetch(url);
+                const text = await resp.text();
+                try {
+                    return JSON.stringify(JSON.parse(text), null, 2);
+                } catch {
+                    return text;
+                }
+            }
 
-    function renderSuggestions(list) {
-      if (!list.length) {
-        suggestionsEl.innerHTML = '';
-        return;
-      }
-      suggestionsEl.innerHTML = list
-        .map((name) => `<div data-name="${name}">${name}</div>`)
-        .join('');
-    }
+            async function fetchStationSuggestions(query, abortRef, setSuggestions) {
+                const q = query.trim();
+                if (q.length < 2) {
+                    setSuggestions([]);
+                    return;
+                }
+                if (abortRef.current) abortRef.current.abort();
+                abortRef.current = new AbortController();
+                const resp = await fetch(`/api/stations/autocomplete?query=${encodeURIComponent(q)}`, {
+                    signal: abortRef.current.signal,
+                });
+                const json = await resp.json();
+                const list = json && json.ok && Array.isArray(json.data) ? json.data : [];
+                setSuggestions(list);
+            }
 
-    async function fetchStationSuggestions(query) {
-      const q = query.trim();
-      if (q.length < 2) return [];
-      if (abortCtrlStation) abortCtrlStation.abort();
-      abortCtrlStation = new AbortController();
-      const resp = await fetch(`/api/stations/autocomplete?query=${encodeURIComponent(q)}`, {
-        signal: abortCtrlStation.signal,
-      });
-      const json = await resp.json();
-      return json && json.ok && Array.isArray(json.data) ? json.data : [];
-    }
+            useEffect(() => {
+                fetchStationSuggestions(stationInput, stationAbortRef, setStationSuggestions).catch((err) => {
+                    if (err.name === 'AbortError') return;
+                    setStationSuggestions([]);
+                });
+                setPickedStationName('');
+            }, [stationInput]);
 
-    suggestionsEl.addEventListener('click', (e) => {
-      const target = e.target.closest('div[data-name]');
-      if (!target) return;
-      pickedStationName = target.getAttribute('data-name');
-      stationPickedEl.textContent = `Stazione selezionata: ${pickedStationName}`;
-      stationInput.value = pickedStationName;
-      suggestionsEl.innerHTML = '';
-    });
+            useEffect(() => {
+                fetchStationSuggestions(fromName, fromAbortRef, setFromSuggestions).catch((err) => {
+                    if (err.name === 'AbortError') return;
+                    setFromSuggestions([]);
+                });
+                setPickedFrom('');
+                setFromPickedLabel('');
+            }, [fromName]);
 
-    stationInput.addEventListener('input', async () => {
-      pickedStationName = null;
-      stationPickedEl.textContent = '';
-      try {
-        const list = await fetchStationSuggestions(stationInput.value);
-        renderSuggestions(list);
-      } catch (err) {
-        if (err.name === 'AbortError') return;
-        renderSuggestions([]);
-      }
-    });
+            useEffect(() => {
+                fetchStationSuggestions(toName, toAbortRef, setToSuggestions).catch((err) => {
+                    if (err.name === 'AbortError') return;
+                    setToSuggestions([]);
+                });
+                setPickedTo('');
+                setToPickedLabel('');
+            }, [toName]);
 
-    async function callApi(url) {
-      const resp = await fetch(url);
-      const text = await resp.text();
-      try {
-        return JSON.stringify(JSON.parse(text), null, 2);
-      } catch {
-        return text;
-      }
-    }
+            async function handleInfo(kind) {
+                const stationName = pickedStationName || stationInput.trim();
+                if (!stationName) {
+                    setStationResult("Seleziona una stazione dall'autocomplete.");
+                    return;
+                }
+                let endpoint = '';
+                if (kind === 'info') {
+                    endpoint = `/api/stations/info?stationName=${encodeURIComponent(stationName)}`;
+                } else if (kind === 'departures') {
+                    endpoint = `/api/stations/departures?stationName=${encodeURIComponent(stationName)}`;
+                } else if (kind === 'arrivals') {
+                    endpoint = `/api/stations/arrivals?stationName=${encodeURIComponent(stationName)}`;
+                }
+                setStationResult('Caricamento...');
+                try {
+                    setStationResult(await callApi(endpoint));
+                } catch (err) {
+                    setStationResult(`Errore: ${err.message}`);
+                }
+            }
 
-    async function handleInfo(kind) {
-      const stationName = pickedStationName || stationInput.value.trim();
-      if (!stationName) {
-        stationResultEl.textContent = 'Seleziona una stazione dall\'autocomplete.';
-        return;
-      }
-      let endpoint = '';
-      if (kind === 'info') {
-        endpoint = `/api/stations/info?stationName=${encodeURIComponent(stationName)}`;
-      } else if (kind === 'departures') {
-        endpoint = `/api/stations/departures?stationName=${encodeURIComponent(stationName)}`;
-      } else if (kind === 'arrivals') {
-        endpoint = `/api/stations/arrivals?stationName=${encodeURIComponent(stationName)}`;
-      }
-      stationResultEl.textContent = 'Caricamento...';
-      try {
-        stationResultEl.textContent = await callApi(endpoint);
-      } catch (err) {
-        stationResultEl.textContent = `Errore: ${err.message}`;
-      }
-    }
+            async function handleTrain() {
+                const numero = trainNumber.trim();
+                if (!numero) {
+                    setTrainResult('Inserisci un numero treno.');
+                    return;
+                }
+                const params = new URLSearchParams({ trainNumber: numero });
+                if (originName.trim()) params.set('originName', originName.trim());
+                if (choice !== '') params.set('choice', choice);
+                const url = useItalo ? `/api/italo/trains/status?${params.toString()}` : `/api/trains/status?${params.toString()}`;
+                setTrainResult('Caricamento...');
+                try {
+                    setTrainResult(await callApi(url));
+                } catch (err) {
+                    setTrainResult(`Errore: ${err.message}`);
+                }
+            }
 
-    document.getElementById('btnInfo').addEventListener('click', () => handleInfo('info'));
-    document.getElementById('btnDepartures').addEventListener('click', () => handleInfo('departures'));
-    document.getElementById('btnArrivals').addEventListener('click', () => handleInfo('arrivals'));
+            async function handleSolutions() {
+                const from = pickedFrom || fromName.trim();
+                const to = pickedTo || toName.trim();
+                if (!from || !to) {
+                    setSolutionsResult('Inserisci (o seleziona) stazione di partenza e arrivo.');
+                    return;
+                }
+                if (!solDate) {
+                    setSolutionsResult('Inserisci una data.');
+                    return;
+                }
+                const params = new URLSearchParams({ fromName: from, toName: to, date: solDate });
+                if (solTime) params.set('time', solTime);
+                const url = `/api/solutions?${params.toString()}`;
+                setSolutionsResult('Caricamento...');
+                try {
+                    setSolutionsResult(await callApi(url));
+                } catch (err) {
+                    setSolutionsResult(`Errore: ${err.message}`);
+                }
+            }
 
-    document.getElementById('btnTrain').addEventListener('click', async () => {
-      const trainNumber = document.getElementById('trainNumber').value.trim();
-      const originName = document.getElementById('originName').value.trim();
-      const choice = document.getElementById('choice').value.trim();
-      if (!trainNumber) {
-        trainResultEl.textContent = 'Inserisci un numero treno.';
-        return;
-      }
-      const params = new URLSearchParams({ trainNumber });
-      if (originName) params.set('originName', originName);
-      if (choice !== '') params.set('choice', choice);
-      const url = `/api/trains/status?${params.toString()}`;
-      trainResultEl.textContent = 'Caricamento...';
-      try {
-        trainResultEl.textContent = await callApi(url);
-      } catch (err) {
-        trainResultEl.textContent = `Errore: ${err.message}`;
-      }
-    });
+            const suggestionButton = (name, onSelect) => (
+                <button
+                    key={name}
+                    type="button"
+                    onClick={() => onSelect(name)}
+                    className="w-full text-left px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm hover:border-zinc-400 hover:text-zinc-700 dark:hover:border-zinc-600 dark:hover:text-zinc-300 transition"
+                >
+                    {name}
+                </button>
+            );
 
-    function mountAutocomplete({ inputEl, suggestionsEl, pickedEl }) {
-      let abortCtrl = null;
-      let picked = null;
+            return (
+                <div className="min-h-screen flex flex-col">
+                    <nav className="fixed top-0 w-full z-50 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 transition-colors duration-300">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-zinc-500 to-transparent opacity-50"></div>
 
-      function render(list) {
-        if (!list.length) {
-          suggestionsEl.innerHTML = '';
-          return;
+                        <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between relative">
+                            <div className="flex items-center gap-2">
+                                <img src="iconTreninfo-iOS-ClearDark-1024x1024@1x.png" alt="Treninfo logo" className="w-8 h-8 object-contain" />
+                                <span className="font-bold text-lg tracking-tight text-zinc-900 dark:text-white">Treninfo</span>
+                            </div>
+
+                            <div className="flex items-center gap-2 md:gap-4">
+                                <button
+                                    onClick={() => setIsDarkMode(!isDarkMode)}
+                                    className="p-2 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                >
+                                    <Icon name={isDarkMode ? "sun" : "moon"} size={20} />
+                                </button>
+
+                                <div className="h-4 w-px bg-zinc-300 dark:bg-zinc-700 mx-1"></div>
+
+                                <a href="https://github.com/cristianceni5/treninfoapp" target="_blank" className="p-2 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
+                                    <Icon name="github" size={20} />
+                                </a>
+                                <a href="https://instagram.com/treninfoapp" target="_blank" className="p-2 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
+                                    <Icon name="instagram" size={20} />
+                                </a>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <main className="flex-grow pt-24 sm:pt-28 md:pt-32 pb-16">
+                        <div className="max-w-2xl mx-auto px-6 text-center mb-16">
+                            <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-6 text-zinc-900 dark:text-white">
+                                Treninfo <br />
+                                <span className="text-zinc-500">Test Chiamate API.</span>
+                            </h1>
+                            <p className="text-base md:text-lg text-zinc-600 dark:text-zinc-400 mb-10 leading-relaxed max-w-lg mx-auto">
+                                Ambiente interno per verificare autocomplete, tabelloni e stato treno con output normalizzato.
+                            </p>
+                            <div className="mt-4 flex items-center justify-center gap-2 text-xs font-mono text-zinc-400 dark:text-zinc-600">
+                                <span>versione 1</span>
+                                <span>-</span>
+                                <span>Proxy Status: ONLINE</span>
+                            </div>
+                        </div>
+
+                        <section className="max-w-5xl mx-auto px-6 mb-12">
+                            <div className="grid gap-6">
+                                <div className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                                        <div>
+                                            <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Ricerca stazione</h2>
+                                            <p className="text-sm text-zinc-600 dark:text-zinc-400">Autocomplete + info, partenze e arrivi.</p>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button onClick={() => handleInfo('info')} className="px-4 py-2 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 transition">Info</button>
+                                            <button onClick={() => handleInfo('departures')} className="px-4 py-2 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 transition">Partenze</button>
+                                            <button onClick={() => handleInfo('arrivals')} className="px-4 py-2 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 transition">Arrivi</button>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-6 grid gap-4">
+                                        <input
+                                            value={stationInput}
+                                            onChange={(e) => setStationInput(e.target.value)}
+                                            className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600"
+                                            type="text"
+                                            placeholder="Nome stazione..."
+                                            autoComplete="off"
+                                        />
+                                        <div className="grid gap-2">
+                                            {stationSuggestions.map((name) =>
+                                                suggestionButton(name, (picked) => {
+                                                    setPickedStationName(picked);
+                                                    setStationInput(picked);
+                                                    setStationSuggestions([]);
+                                                })
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-zinc-500 dark:text-zinc-400">{pickedStationName ? `Stazione selezionata: ${pickedStationName}` : ''}</p>
+                                        <pre className="min-h-[120px] max-h-[360px] overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-black text-emerald-200 text-xs p-4 font-mono">{stationResult}</pre>
+                                    </div>
+                                </div>
+
+                                <div className="p-6 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Ricerca treno</h2>
+                                        <p className="text-sm text-zinc-600 dark:text-zinc-400">Stato treno e JSON normalizzato, con opzione Italo.</p>
+                                    </div>
+
+                                    <div className="mt-6 grid gap-4">
+                                        <div className="grid gap-3 md:grid-cols-3">
+                                            <input value={trainNumber} onChange={(e) => setTrainNumber(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="text" placeholder="Numero treno (es. 8527)" />
+                                            <input value={originName} onChange={(e) => setOriginName(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="text" placeholder="Origine (opzionale)" />
+                                            <input value={choice} onChange={(e) => setChoice(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="number" placeholder="Choice (opzionale)" min="0" step="1" />
+                                        </div>
+
+                                        <label className="inline-flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">
+                                            <input checked={useItalo} onChange={(e) => setUseItalo(e.target.checked)} type="checkbox" className="rounded border-zinc-300 dark:border-zinc-700 text-zinc-700 focus:ring-zinc-500" />
+                                            Italo (usa endpoint Italo)
+                                        </label>
+
+                                        <div className="flex flex-wrap gap-3">
+                                            <button onClick={handleTrain} className="px-5 py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 transition">Cerca stato treno</button>
+                                        </div>
+
+                                        <pre className="min-h-[120px] max-h-[360px] overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-black text-emerald-200 text-xs p-4 font-mono">{trainResult}</pre>
+                                    </div>
+                                </div>
+
+                                <div className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Cerca soluzioni</h2>
+                                        <p className="text-sm text-zinc-600 dark:text-zinc-400">Seleziona partenza, arrivo e orario per testare le soluzioni.</p>
+                                    </div>
+
+                                    <div className="mt-6 grid gap-4">
+                                        <div className="grid gap-2">
+                                            <input value={fromName} onChange={(e) => setFromName(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="text" placeholder="Da (stazione)..." autoComplete="off" />
+                                            <div className="grid gap-2">
+                                                {fromSuggestions.map((name) =>
+                                                    suggestionButton(name, (picked) => {
+                                                        setPickedFrom(picked);
+                                                        setFromName(picked);
+                                                        setFromSuggestions([]);
+                                                        setFromPickedLabel(`Selezionato: ${picked}`);
+                                                    })
+                                                )}
+                                            </div>
+                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{fromPickedLabel}</p>
+                                        </div>
+
+                                        <div className="grid gap-2">
+                                            <input value={toName} onChange={(e) => setToName(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="text" placeholder="A (stazione)..." autoComplete="off" />
+                                            <div className="grid gap-2">
+                                                {toSuggestions.map((name) =>
+                                                    suggestionButton(name, (picked) => {
+                                                        setPickedTo(picked);
+                                                        setToName(picked);
+                                                        setToSuggestions([]);
+                                                        setToPickedLabel(`Selezionato: ${picked}`);
+                                                    })
+                                                )}
+                                            </div>
+                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{toPickedLabel}</p>
+                                        </div>
+
+                                        <div className="grid gap-3 md:grid-cols-3">
+                                            <input value={solDate} onChange={(e) => setSolDate(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="date" />
+                                            <input value={solTime} onChange={(e) => setSolTime(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="time" />
+                                            <button onClick={handleSolutions} className="px-5 py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 transition">Cerca soluzioni</button>
+                                        </div>
+
+                                        <pre className="min-h-[120px] max-h-[360px] overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-black text-emerald-200 text-xs p-4 font-mono">{solutionsResult}</pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </main>
+
+                    <footer className="py-10 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-[#0a0a0a]">
+                        <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
+                            <div className="text-center md:text-left">
+                                <div className="font-bold text-zinc-900 dark:text-zinc-100">Treninfo Project</div>
+                                <div className="text-xs text-zinc-500 mt-1 flex gap-2 items-center">
+                                    <span>Dev by Cristian Ceni</span>
+                                    <span>•</span>
+                                    <span>Site powered by open data</span>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-6 text-sm text-zinc-500 dark:text-zinc-400 font-mono">
+                                <a href="https://github.com/cristianceni5/treninfo" className="hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">/repo</a>
+                                <a href="#" className="hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">/api_docs</a>
+                                <a href="#" className="hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">/status</a>
+                            </div>
+                        </div>
+                    </footer>
+                </div>
+            );
         }
-        suggestionsEl.innerHTML = list.map((name) => `<div data-name="${name}">${name}</div>`).join('');
-      }
 
-      async function fetchSuggestions(query) {
-        const q = query.trim();
-        if (q.length < 2) return [];
-        if (abortCtrl) abortCtrl.abort();
-        abortCtrl = new AbortController();
-        const resp = await fetch(`/api/stations/autocomplete?query=${encodeURIComponent(q)}`, {
-          signal: abortCtrl.signal,
-        });
-        const json = await resp.json();
-        return json && json.ok && Array.isArray(json.data) ? json.data : [];
-      }
-
-      suggestionsEl.addEventListener('click', (e) => {
-        const target = e.target.closest('div[data-name]');
-        if (!target) return;
-        picked = target.getAttribute('data-name');
-        inputEl.value = picked;
-        pickedEl.textContent = `Selezionato: ${picked}`;
-        suggestionsEl.innerHTML = '';
-      });
-
-      inputEl.addEventListener('input', async () => {
-        picked = null;
-        pickedEl.textContent = '';
-        try {
-          const list = await fetchSuggestions(inputEl.value);
-          render(list);
-        } catch (err) {
-          if (err.name === 'AbortError') return;
-          render([]);
-        }
-      });
-
-      return {
-        getValue() {
-          return (picked || inputEl.value || '').trim() || null;
-        },
-      };
-    }
-
-    const fromAuto = mountAutocomplete({
-      inputEl: document.getElementById('fromName'),
-      suggestionsEl: document.getElementById('fromSuggestions'),
-      pickedEl: document.getElementById('fromPicked'),
-    });
-    const toAuto = mountAutocomplete({
-      inputEl: document.getElementById('toName'),
-      suggestionsEl: document.getElementById('toSuggestions'),
-      pickedEl: document.getElementById('toPicked'),
-    });
-
-    // Default date/time
-    (function initDateTime() {
-      const d = new Date();
-      const yyyy = String(d.getFullYear());
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      document.getElementById('solDate').value = `${yyyy}-${mm}-${dd}`;
-      document.getElementById('solTime').value = `${String(d.getHours()).padStart(2, '0')}:${String(
-        d.getMinutes()
-      ).padStart(2, '0')}`;
-    })();
-
-    document.getElementById('btnSolutions').addEventListener('click', async () => {
-      const fromName = fromAuto.getValue();
-      const toName = toAuto.getValue();
-      const date = document.getElementById('solDate').value;
-      const time = document.getElementById('solTime').value;
-
-      if (!fromName || !toName) {
-        solutionsResultEl.textContent = 'Inserisci (o seleziona) stazione di partenza e arrivo.';
-        return;
-      }
-      if (!date) {
-        solutionsResultEl.textContent = 'Inserisci una data.';
-        return;
-      }
-
-      const params = new URLSearchParams({
-        fromName,
-        toName,
-        date,
-      });
-      if (time) params.set('time', time);
-
-      const url = `/api/solutions?${params.toString()}`;
-      solutionsResultEl.textContent = 'Caricamento...';
-      try {
-        solutionsResultEl.textContent = await callApi(url);
-      } catch (err) {
-        solutionsResultEl.textContent = `Errore: ${err.message}`;
-      }
-    });
-
-  </script>
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>

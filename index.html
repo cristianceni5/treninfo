@@ -1,9 +1,9 @@
-<!--Developed by Cristian Ceni & Powereb by Gemini - 2026-->
+<!--Developed by Cristian Ceni-->
 <!DOCTYPE html>
 <html lang="it" class="dark"> <!-- Default dark mode forzato all'avvio -->
 <head>
     <meta charset="UTF-8">
-    <link rel="shortcut icon" href="./icons/iconTreninfo-watchOS-Default-1088x1088@1x.png" type="png">
+    <link rel="shortcut icon" href="./iconTreninfo-iOS-Default-1024x1024@1x.png" type="png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Treninfo - Info su Treni semplici e veloci</title>
     
@@ -138,170 +138,7 @@
             return <button onClick={onClick} disabled={disabled} className={`${baseStyle} ${variants[variant]} ${className}`}>{content}</button>;
         };
 
-        const GeminiDemo = () => {
-            const [query, setQuery] = useState("");
-            const [response, setResponse] = useState("");
-            const [loading, setLoading] = useState(false);
-            const [copied, setCopied] = useState(false);
-            const apiKey = ""; // API key managed by environment
-
-            const handleCopy = () => {
-                const textArea = document.createElement("textarea");
-                textArea.value = response;
-                document.body.appendChild(textArea);
-                textArea.select();
-                try {
-                    document.execCommand("copy");
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                } catch (err) {
-                    console.error('Failed to copy', err);
-                }
-                document.body.removeChild(textArea);
-            };
-
-            const handleGenerate = async (preset) => {
-                const textToProcess = preset?.prompt || query;
-                if (!textToProcess) return;
-                
-                setLoading(true);
-                setResponse("");
-                setCopied(false);
-                
-                // --- PROMPT "VINTAGE TECH & NOSTALGIC BUGS" ---
-                const prompt = `
-                Sei un assistente per pendolari cinico e rassegnato. 
-                Il tuo compito è inventare scuse per i ritardi dei treni dando la colpa a tecnologie vecchie e obsolete che tutti conoscono, anche i non tecnici.
-                
-                Target: ${textToProcess}
-                
-                Regole:
-                1. Usa riferimenti a tecnologie "vintage" o famose per i loro bug: Windows 98, schermata blu della morte, Floppy Disk, Modem 56k che fischia, Commodore 64 a cassetta, mouse con la pallina sporca, cavo scart staccato.
-                2. NON usare termini tecnici moderni (API, Cloud, COBOL).
-                3. La scusa deve suonare come: "Il treno non parte perché stanno riavviando Windows 95 sulla motrice" oppure "Il capotreno sta soffiando nella cartuccia del Nintendo per farla partire".
-                4. Salva sempre l'infrastruttura fisica (binari ok), il problema è il computer antidiluviano.
-                
-                Rispondi in italiano. Max 2 frasi.
-                `;
-
-                try {
-                    const res = await fetch(
-                        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
-                        {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                contents: [{ parts: [{ text: prompt }] }]
-                            })
-                        }
-                    );
-                    const data = await res.json();
-                    if (data.candidates && data.candidates[0].content) {
-                        setResponse(data.candidates[0].content.parts[0].text);
-                    } else {
-                        setResponse("Il server sta ancora caricando con il modem 56k. Riprova.");
-                    }
-                } catch (e) {
-                    setResponse("Errore di connessione. Qualcuno ha alzato la cornetta del telefono mentre eravamo su internet.");
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            const presets = [
-                { text: "Scusa per il capo", prompt: "Inventa una scusa sul sistema informatico vecchio (tipo Windows 98) per il capo." },
-                { text: "Scusa per il prof.", prompt: "Inventa una scusa sul server che va a carbone o a pedali." },
-                { text: "Scusa per la donna", prompt: "Inventa una scusa assurda tipo 'il capotreno sta riavviando il modem'." }
-            ];
-
-            return (
-                <div className="w-full max-w-3xl mx-auto bg-zinc-50 dark:bg-[#151517] rounded-3xl border border-zinc-200 dark:border-zinc-800 p-6 md:p-8 relative overflow-hidden group">
-                    
-                    {/* Gradients */}
-                    <div className="absolute -top-32 -right-32 w-80 h-80 bg-purple-500/20 dark:bg-purple-500/10 rounded-full blur-[80px] pointer-events-none group-hover:bg-purple-500/30 transition-all duration-700"></div>
-                    <div className="absolute -bottom-32 -left-32 w-80 h-80 bg-blue-500/20 dark:bg-blue-500/10 rounded-full blur-[80px] pointer-events-none group-hover:bg-blue-500/30 transition-all duration-700"></div>
-
-                    <div className="relative z-10">
-                        <div className="flex items-start md:items-center gap-4 mb-6 flex-col md:flex-row">
-                            <div className="w-12 h-12 shrink-0 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-purple-500/20">
-                                <Icon name="brain" size={24} />
-                            </div>
-                            <div>
-                                <h3 className="text-xl font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-                                    Generatore di cagate
-                                </h3>
-                                <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed max-w-xl">
-                                    Serve una giustificazione creativa? L'AI genera scuse basate su tecnologie giurassiche e PC che vanno a carbonella.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 mb-6">
-                            {presets.map((p, i) => (
-                                <button
-                                    key={i}
-                                    onClick={() => { setQuery(p.prompt); handleGenerate(p); }}
-                                    className="text-xs px-3 py-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-purple-400 dark:hover:border-purple-500 hover:text-purple-600 dark:hover:text-purple-400 transition-all text-zinc-600 dark:text-zinc-300 text-left font-medium"
-                                >
-                                    {p.text}
-                                </button>
-                            ))}
-                        </div>
-
-                        <div className="flex gap-2 mb-6">
-                            <input
-                                type="text"
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                placeholder="A chi dobbiamo mentire?"
-                                className="flex-grow bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-sm font-normal focus:outline-none focus:ring-2 focus:ring-purple-500/50 dark:text-white transition-all shadow-sm"
-                            />
-                            <Button
-                                variant="ai"
-                                onClick={() => handleGenerate()}
-                                disabled={loading || !query}
-                                icon={loading ? "brain" : "sparkles"}
-                                className={loading ? "animate-pulse" : ""}
-                            >
-                                {loading ? "Elaborando..." : "Inventa"}
-                            </Button>
-                        </div>
-
-                        {response && (
-                            <div className="bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm rounded-xl p-5 border border-purple-100 dark:border-purple-900/30 shadow-sm relative overflow-hidden">
-                                <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-indigo-500 to-purple-500"></div>
-                                <div className="flex justify-between items-start mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <Icon name="sparkles" size={14} className="text-purple-600 dark:text-purple-400" />
-                                        <span className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wide">Suggerimento:</span>
-                                    </div>
-                                    <button
-                                        onClick={handleCopy}
-                                        className="text-xs flex items-center gap-1 text-zinc-500 hover:text-systemBlue transition-colors"
-                                        title="Copia scusa"
-                                    >
-                                        {copied ? (
-                                            <>
-                                                <Icon name="check" size={14} className="text-green-500" />
-                                                <span className="text-green-500 font-medium">Copiato</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Icon name="copy" size={14} />
-                                                <span>Copia</span>
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                                <p className="text-zinc-800 dark:text-zinc-200 text-base font-medium leading-relaxed ai-response">
-                                    "{response}"
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-        };
+        // ...existing code...
 
         const Screenshot = ({ label }) => (
             <div className="flex flex-col items-center gap-4 min-w-[220px] sm:min-w-[240px] md:min-w-[260px] snap-center">
@@ -409,7 +246,7 @@
                         
                         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between relative">
                             <div className="flex items-center gap-2">
-                                <img src="icons/iconTreninfo-iOS-Default-1024x1024@1x.png" alt="Treninfo logo" className="w-8 h-8 object-contain" />
+                                <img src="iconTreninfo-iOS-Default-1024x1024@1x.png" alt="Treninfo logo" className="w-8 h-8 object-contain" />
                                 <span className="font-bold text-lg tracking-tight text-zinc-900 dark:text-white">Treninfo</span>
                             </div>
                             
@@ -490,11 +327,7 @@
                             </div>
                         </section>
 
-                        {/* GEMINI AI DEMO SECTION */}
-                        <section className="px-6 mb-24">
-                             {/* REMOVED SECTION TITLE HERE as per logic */}
-                            <GeminiDemo />
-                        </section>
+                        {/* ...sezione Gemini AI rimossa... */}
 
                         {/* Screenshots Carousel */}
                         <section className="border-t border-zinc-200 dark:border-zinc-800 pt-16 bg-zinc-50/50 dark:bg-black/20">
@@ -508,7 +341,6 @@
                                         Scorri per vedere le schermate principali
                                     </div>
                                 </div>
-                                
                                 <div className="flex overflow-x-auto pb-12 gap-8 -mx-6 px-6 md:mx-0 md:px-0 scrollbar-hide snap-x">
                                     <Screenshot label="Ricerca Stazione" />
                                     <Screenshot label="Tabellone Partenze" />
@@ -516,6 +348,45 @@
                                     <Screenshot label="Info Sciopero" />
                                 </div>
                             </div>
+                        </section>
+
+                        {/* SERVER & API FUNCTION SECTION */}
+                        <section className="max-w-5xl mx-auto px-6 py-16">
+                            <hr className="border-zinc-200 dark:border-zinc-700 mb-12" />
+                            <h2 className="text-2xl md:text-3xl font-bold mb-4 text-zinc-900 dark:text-white">Esempi di chiamate API Treninfo</h2>
+                            <div className="bg-zinc-100 dark:bg-zinc-900 rounded-xl p-6 border border-zinc-200 dark:border-zinc-800 text-sm font-mono overflow-x-auto">
+                                <div className="mb-4">
+                                    <span className="font-bold">Autocomplete stazioni:</span><br />
+                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/.netlify/functions/api/api/stations/autocomplete?query=milano"</span><br />
+                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/.netlify/functions/api/api/stations/autocomplete?query=milano" target="_blank">Apri</a>
+                                </div>
+                                <div className="mb-4">
+                                    <span className="font-bold">Tabellone partenze:</span><br />
+                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/.netlify/functions/api/api/stations/departures?stationName=Milano%20Centrale"</span><br />
+                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/.netlify/functions/api/api/stations/departures?stationName=Milano%20Centrale" target="_blank">Apri</a>
+                                </div>
+                                <div className="mb-4">
+                                    <span className="font-bold">Stato treno:</span><br />
+                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/.netlify/functions/api/api/trains/status?trainNumber=9510"</span><br />
+                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/.netlify/functions/api/api/trains/status?trainNumber=9510" target="_blank">Apri</a>
+                                </div>
+                                <div className="mb-4">
+                                    <span className="font-bold">Info stazione (con meteo):</span><br />
+                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/.netlify/functions/api/api/stations/info?stationName=Roma%20Termini"</span><br />
+                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/.netlify/functions/api/api/stations/info?stationName=Roma%20Termini" target="_blank">Apri</a>
+                                </div>
+                                <div className="mb-4">
+                                    <span className="font-bold">News:</span><br />
+                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/.netlify/functions/api/api/news"</span><br />
+                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/.netlify/functions/api/api/news" target="_blank">Apri</a>
+                                </div>
+                                <div>
+                                    <span className="font-bold">Health check:</span><br />
+                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/.netlify/functions/api/api/health"</span><br />
+                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/.netlify/functions/api/api/health" target="_blank">Apri</a>
+                                </div>
+                            </div>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-4">Tutte le API restituiscono JSON e sono accessibili anche da browser. Per testare altre query, modifica i parametri nell’URL.</p>
                         </section>
 
                         {/* SERVER SECTION */}
@@ -530,7 +401,7 @@
                                 <div className="text-xs text-zinc-500 mt-1 flex gap-2 items-center">
                                     <span>Dev by Cristian Ceni</span>
                                     <span>•</span>
-                                    <span>Site powered by Google Gemini</span>
+                                    <span>Site powered by open data</span>
                                 </div>
                             </div>
                             

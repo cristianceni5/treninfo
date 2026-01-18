@@ -8,7 +8,7 @@ Backend leggero (Netlify Functions) che normalizza i dati di **ViaggiaTreno (RFI
   Check rapido: DB stazioni caricato.
 
 - `GET /api/stations/autocomplete?query=...`  
-  Autocomplete locale usando `stations-viaggiatreno.json`.
+  Autocomplete locale usando `stazioni.json`.
 
 - `GET /api/stations/info?stationName=...`  
   Info stazione + meteo (se disponibile).
