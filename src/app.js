@@ -188,20 +188,26 @@ try {
   }
   if (Array.isArray(list)) {
     list
-      .filter((s) => s && s.id)
+      .filter((s) => s && (s.viaggiatrenoId || s.id))
       .forEach((s) => {
-        const id = String(s.id).trim().toUpperCase();
+        const rawId = s.viaggiatrenoId ?? s.id;
+        const id = rawId != null ? String(rawId).trim().toUpperCase() : '';
         if (!id) return;
-        const name = s.name != null ? String(s.name).trim() : null;
+        const rawName = s.nome ?? s.name;
+        const name = rawName != null ? String(rawName).trim() : null;
         const lefrecceId = s.lefrecceId != null ? Number(s.lefrecceId) : null;
+        const rawItalo = s.italoId ?? s.italoCode;
         const italoCode =
-          s.italoCode != null && String(s.italoCode).trim() ? String(s.italoCode).trim().toUpperCase() : null;
+          rawItalo != null && String(rawItalo).trim() ? String(rawItalo).trim().toUpperCase() : null;
         const rec = {
           ...s,
           id,
           name,
           lefrecceId: Number.isFinite(lefrecceId) ? lefrecceId : null,
           italoCode,
+          viaggiatrenoId: id,
+          nome: name,
+          italoId: italoCode,
         };
         stationList.push(rec);
         if (!stationsById.has(id)) stationsById.set(id, rec);
@@ -361,6 +367,34 @@ function formatYYYYMMDDFromMs(ms) {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+let IT_DATE_IT_FORMATTER = null;
+function getItDateItFormatter() {
+  if (IT_DATE_IT_FORMATTER) return IT_DATE_IT_FORMATTER;
+  try {
+    IT_DATE_IT_FORMATTER = new Intl.DateTimeFormat('it-IT', {
+      timeZone: APP_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  } catch {
+    IT_DATE_IT_FORMATTER = null;
+  }
+  return IT_DATE_IT_FORMATTER;
+}
+
+function formatDateItalianFromMs(ms) {
+  if (ms == null) return null;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return null;
+  const fmt = getItDateItFormatter();
+  if (fmt) return fmt.format(d);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${day}/${m}/${y}`;
 }
 
 let APP_TZ_PARTS_FORMATTER = null;
@@ -545,6 +579,114 @@ function trainTypeInfoFromCode(code) {
   const sigla = normalizeTrainTypeCode(code);
   const siglaFinal = sigla === 'FR' || sigla === 'FA' || sigla === 'ITA' ? `${sigla} AV` : sigla;
   return { sigla: siglaFinal, nome: trainTypeNameFromCode(sigla) };
+}
+
+function formatTrainStatusLabel(status) {
+  const s = String(status || '').trim().toLowerCase();
+  if (!s) return null;
+  if (s === 'in viaggio') return 'In viaggio';
+  if (s === 'in stazione') return 'In stazione';
+  if (s === 'soppresso') return 'Soppresso';
+  if (s === 'variato') return 'Modificato';
+  if (s === 'programmato') return 'Pianificato';
+  if (s === 'concluso') return 'Concluso';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function toTrainNumberValue(value) {
+  const n = Number(value);
+  if (Number.isFinite(n)) return n;
+  const s = value != null ? String(value).trim() : '';
+  return s || null;
+}
+
+function buildModelResponse({
+  dataRiferimento,
+  dateDisponibili,
+  compagnia,
+  numeroTreno,
+  tipoTreno,
+  tratta,
+  orari,
+  statoTreno,
+  fermate,
+}) {
+  const tipoTrenoPayload = tipoTreno
+    ? { categoria: tipoTreno.sigla ?? null, nomeCat: tipoTreno.nome ?? null }
+    : { categoria: null, nomeCat: null };
+  const fermateList = Array.isArray(fermate) ? fermate : [];
+  const fermatePulite = fermateList.map((f) => ({
+    stazione: f?.stazione ?? null,
+    tipoFermata: f?.tipoFermata ?? null,
+    orari: {
+      arrivo: {
+        deltaMinuti: f?.orari?.arrivo?.deltaMinuti ?? null,
+        hhmm: {
+          programmato: f?.orari?.arrivo?.hhmm?.programmato ?? null,
+          reale: f?.orari?.arrivo?.hhmm?.reale ?? null,
+          probabile: f?.orari?.arrivo?.hhmm?.probabile ?? null,
+        },
+      },
+      partenza: {
+        deltaMinuti: f?.orari?.partenza?.deltaMinuti ?? null,
+        hhmm: {
+          programmato: f?.orari?.partenza?.hhmm?.programmato ?? null,
+          reale: f?.orari?.partenza?.hhmm?.reale ?? null,
+          probabile: f?.orari?.partenza?.hhmm?.probabile ?? null,
+        },
+      },
+    },
+    binari: {
+      arrivo: {
+        programmato: f?.binari?.arrivo?.programmato ?? null,
+        reale: f?.binari?.arrivo?.reale ?? null,
+      },
+      partenza: {
+        programmato: f?.binari?.partenza?.programmato ?? null,
+        reale: f?.binari?.partenza?.reale ?? null,
+      },
+    },
+    ...(f?.carrozzaExecutive ? { carrozzaExecutive: f.carrozzaExecutive } : {}),
+  }));
+  const dateDisponibiliList = Array.isArray(dateDisponibili) ? dateDisponibili : [];
+  return {
+    ok: true,
+    dataRiferimento,
+    dateDisponibili: dateDisponibiliList,
+    compagnia,
+    numeroTreno: toTrainNumberValue(numeroTreno),
+    tipoTreno: tipoTrenoPayload,
+    tratta: {
+      stazionePartenzaZero: tratta?.origine ?? null,
+      orarioPartenzaZero: orari?.partenza?.programmato ?? null,
+      stazioneArrivoZero: tratta?.destinazione ?? null,
+      orarioArrivoZero: orari?.arrivo?.programmato ?? null,
+    },
+    statoTreno: {
+      deltaTempo: statoTreno?.deltaTempo ?? null,
+      stato: statoTreno?.stato ?? null,
+      stazioneCorrente: statoTreno?.stazioneCorrente ?? null,
+      stazioneSuccessiva: statoTreno?.stazioneSuccessiva ?? null,
+      stazionePrecedente: statoTreno?.stazionePrecedente ?? null,
+      infoIR: statoTreno?.infoIR ?? null,
+      messaggiRfi: statoTreno?.messaggiRfi ?? null,
+    },
+    fermate: {
+      totali: fermatePulite.length,
+      fermate: fermatePulite,
+    },
+  };
+}
+
+function attachCorrispondenza(payload, rfiFound, italoFound) {
+  const corrispondenza = {
+    rfi: { trovato: !!rfiFound },
+    italo: { trovato: !!italoFound },
+  };
+  if (rfiFound && italoFound) {
+    corrispondenza.messaggio = 'Trovati treni sia RFI che Italo con lo stesso numero';
+  }
+  return { ...payload, corrispondenza };
 }
 
 function parseExecutivePositionFromText(text) {
@@ -932,7 +1074,7 @@ function chooseBetterItaloStop(a, b) {
   return score(b) > score(a) ? b : a;
 }
 
-function buildItaloStops(schedule, referenceMs, globalDelay) {
+function buildItaloStops(schedule, referenceMs) {
   const rawStops = [];
   if (schedule?.StazionePartenza) rawStops.push({ ...schedule.StazionePartenza, __source: 'origin' });
   if (Array.isArray(schedule?.StazioniFerme)) {
@@ -958,7 +1100,7 @@ function buildItaloStops(schedule, referenceMs, globalDelay) {
     return 0;
   });
 
-  const delayMin = parseDelayMinutes(globalDelay);
+  const nowMs = referenceMs ?? Date.now();
   let rollingMs = parseItaloTimeMs(schedule?.DepartureDate, referenceMs) ?? referenceMs;
   const stops = ordered.map((stop, index) => {
     const isOrigin = index === 0;
@@ -981,32 +1123,49 @@ function buildItaloStops(schedule, referenceMs, globalDelay) {
     rollingMs = realPartenzaMs ?? schedPartenzaMs ?? realArrivoMs ?? schedArrivoMs ?? rollingMs;
 
     const binario = stop?.ActualArrivalPlatform != null ? String(stop.ActualArrivalPlatform).trim() : null;
+    const arrivoFuture = realArrivoMs != null && realArrivoMs > nowMs + 60 * 1000;
+    const partenzaFuture = realPartenzaMs != null && realPartenzaMs > nowMs + 60 * 1000;
+    const effArrivoMs = arrivoFuture ? null : realArrivoMs;
+    const effPartenzaMs = partenzaFuture ? null : realPartenzaMs;
+    const probArrivoMs = arrivoFuture ? realArrivoMs : null;
+    const probPartenzaMs = partenzaFuture ? realPartenzaMs : null;
+    const delayArrivo =
+      schedArrivoMs != null && effArrivoMs != null
+        ? Math.round((effArrivoMs - schedArrivoMs) / 60000)
+        : schedArrivoMs != null && probArrivoMs != null
+          ? Math.round((probArrivoMs - schedArrivoMs) / 60000)
+          : null;
+    const delayPartenza =
+      schedPartenzaMs != null && effPartenzaMs != null
+        ? Math.round((effPartenzaMs - schedPartenzaMs) / 60000)
+        : schedPartenzaMs != null && probPartenzaMs != null
+          ? Math.round((probPartenzaMs - schedPartenzaMs) / 60000)
+          : null;
 
     return {
       stazione: stop?.LocationDescription != null ? String(stop.LocationDescription).trim() : null,
       tipoFermata: isOrigin ? 'P' : isDestination ? 'A' : 'F',
-      ritardo: delayMin,
       orari: {
         arrivo: {
           programmato: schedArrivoMs,
-          reale: realArrivoMs,
-          probabile: null,
-          delayMinuti: delayMin,
+          reale: effArrivoMs,
+          probabile: probArrivoMs,
+          deltaMinuti: delayArrivo,
           hhmm: {
             programmato: formatHHmmFromMs(schedArrivoMs),
-            reale: formatHHmmFromMs(realArrivoMs),
-            probabile: null,
+            reale: formatHHmmFromMs(effArrivoMs),
+            probabile: formatHHmmFromMs(probArrivoMs),
           },
         },
         partenza: {
           programmato: schedPartenzaMs,
-          reale: realPartenzaMs,
-          probabile: null,
-          delayMinuti: delayMin,
+          reale: effPartenzaMs,
+          probabile: probPartenzaMs,
+          deltaMinuti: delayPartenza,
           hhmm: {
             programmato: formatHHmmFromMs(schedPartenzaMs),
-            reale: formatHHmmFromMs(realPartenzaMs),
-            probabile: null,
+            reale: formatHHmmFromMs(effPartenzaMs),
+            probabile: formatHHmmFromMs(probPartenzaMs),
           },
         },
       },
@@ -1294,7 +1453,7 @@ function buildStopTimes(stop, globalDelay) {
       programmato: schedArrivoMs,
       reale: realArrivoMs,
       probabile: probableArrivoMs,
-      delayMinuti: delayArrivo,
+      deltaMinuti: delayArrivo,
       hhmm: {
         programmato: formatHHmmFromMs(schedArrivoMs),
         reale: formatHHmmFromMs(realArrivoMs),
@@ -1305,7 +1464,7 @@ function buildStopTimes(stop, globalDelay) {
       programmato: schedPartenzaMs,
       reale: realPartenzaMs,
       probabile: probablePartenzaMs,
-      delayMinuti: delayPartenza,
+      deltaMinuti: delayPartenza,
       hhmm: {
         programmato: formatHHmmFromMs(schedPartenzaMs),
         reale: formatHHmmFromMs(realPartenzaMs),
@@ -1692,6 +1851,115 @@ app.get('/api/stations/arrivals', async (req, res) => {
   }
 });
 
+function buildItaloModelPayload(italo, trainNumber) {
+  if (!italo || italo.IsEmpty || !italo.TrainSchedule) return null;
+
+  const schedule = italo.TrainSchedule;
+  const referenceMs = Date.now();
+  const globalDelay = schedule?.Distruption?.DelayAmount;
+  const runningState = schedule?.Distruption?.RunningState;
+  const statoTreno = mapItaloRunningState(runningState);
+
+  const fermate = buildItaloStops(schedule, referenceMs);
+  const firstStop = fermate[0] || null;
+  const lastStop = fermate[fermate.length - 1] || null;
+
+  const firstSchedDepartureMs =
+    parseItaloTimeMs(schedule?.DepartureDate, referenceMs) ??
+    firstStop?.orari?.partenza?.programmato ??
+    null;
+  const lastSchedArrivalMs =
+    alignItaloTimeMs(
+      schedule?.ArrivalDate,
+      firstSchedDepartureMs ?? referenceMs,
+      firstSchedDepartureMs ?? referenceMs
+    ) ??
+    lastStop?.orari?.arrivo?.programmato ??
+    null;
+
+  const firstRealDepartureMs = firstStop?.orari?.partenza?.reale ?? null;
+  const lastRealArrivalMs = lastStop?.orari?.arrivo?.reale ?? null;
+
+  const { previousIdx, nextIdx, currentIdx } = computeItaloStopIndexes(fermate, referenceMs);
+  const precedenteFermata = previousIdx != null ? buildItaloPreviousStopSummary(fermate[previousIdx], previousIdx) : null;
+  const prossimaFermata = (() => {
+    if (nextIdx == null || statoTreno === 'concluso') return null;
+    const next = buildItaloNextStopSummary(fermate[nextIdx], nextIdx);
+    if (!next) return null;
+    return { ...next, precedente: precedenteFermata };
+  })();
+  const stazioneCorrente =
+    statoTreno === 'in stazione' ? fermate[currentIdx]?.stazione ?? precedenteFermata?.stazione ?? null : null;
+
+  const principali = {
+    numeroTreno: String(schedule?.TrainNumber || trainNumber),
+    tipoTreno: trainTypeInfoFromCode('ITA'),
+    tratta: {
+      origine: schedule?.DepartureStationDescription || firstStop?.stazione || null,
+      destinazione: schedule?.ArrivalStationDescription || lastStop?.stazione || null,
+    },
+    stato: statoTreno,
+    isSoppresso: false,
+    isVariato: false,
+    inStazione: statoTreno === 'in stazione',
+    stazioneCorrente,
+    prossimaFermata,
+    orari: {
+      partenza: {
+        programmato: formatHHmmFromMs(firstSchedDepartureMs),
+        reale: formatHHmmFromMs(firstRealDepartureMs),
+        probabile: null,
+      },
+      arrivo: {
+        programmato: formatHHmmFromMs(lastSchedArrivalMs),
+        reale: formatHHmmFromMs(lastRealArrivalMs),
+        probabile: null,
+      },
+    },
+    ritardoMinuti: parseDelayMinutes(globalDelay),
+    ultimoRilevamento: italo?.LastUpdate
+      ? {
+          timestamp: null,
+          orario: String(italo.LastUpdate).trim(),
+          luogo: null,
+          testo: String(italo.LastUpdate).trim(),
+        }
+      : null,
+    fermate,
+  };
+
+  return buildModelResponse({
+    dataRiferimento: formatDateItalianFromMs(referenceMs),
+    dateDisponibili: [],
+    compagnia: 'ntv',
+    numeroTreno: principali.numeroTreno,
+    tipoTreno: principali.tipoTreno,
+    tratta: principali.tratta,
+    orari: principali.orari,
+    statoTreno: {
+      deltaTempo: principali.ritardoMinuti ?? null,
+      stato: formatTrainStatusLabel(principali.stato),
+      stazioneCorrente:
+        principali.stato === 'in stazione'
+          ? stazioneCorrente ?? null
+          : principali.stato === 'concluso'
+            ? lastStop?.stazione ?? null
+            : null,
+      stazioneSuccessiva: principali.stato === 'concluso' ? null : prossimaFermata?.stazione ?? null,
+      stazionePrecedente: principali.stato === 'concluso' ? null : precedenteFermata?.stazione ?? null,
+      infoIR: italo?.LastUpdate
+        ? {
+            ultimoRilevOra: String(italo.LastUpdate).trim(),
+            ultimoRilevLuogo: null,
+            messaggioUltimoRilev: String(italo.LastUpdate).trim(),
+          }
+        : null,
+      messaggiRfi: null,
+    },
+    fermate,
+  });
+}
+
 // Stato treno (raw + campi principali)
 async function handleItaloTrainStatus(req, res) {
   const trainNumber = (req.query.numeroTreno || req.query.trainNumber || '').trim();
@@ -1701,92 +1969,10 @@ async function handleItaloTrainStatus(req, res) {
 
   try {
     const italo = await fetchItaloTrainStatus(trainNumber);
-    if (!italo || italo.IsEmpty || !italo.TrainSchedule) {
+    const payload = buildItaloModelPayload(italo, trainNumber);
+    if (!payload) {
       return res.json({ ok: true, data: null, message: 'Nessun treno Italo trovato per questo numero' });
     }
-
-    const schedule = italo.TrainSchedule;
-    const referenceMs = Date.now();
-    const globalDelay = schedule?.Distruption?.DelayAmount;
-    const runningState = schedule?.Distruption?.RunningState;
-    const statoTreno = mapItaloRunningState(runningState);
-
-    const fermate = buildItaloStops(schedule, referenceMs, globalDelay);
-    const firstStop = fermate[0] || null;
-    const lastStop = fermate[fermate.length - 1] || null;
-
-    const firstSchedDepartureMs =
-      parseItaloTimeMs(schedule?.DepartureDate, referenceMs) ??
-      firstStop?.orari?.partenza?.programmato ??
-      null;
-    const lastSchedArrivalMs =
-      alignItaloTimeMs(
-        schedule?.ArrivalDate,
-        firstSchedDepartureMs ?? referenceMs,
-        firstSchedDepartureMs ?? referenceMs
-      ) ??
-      lastStop?.orari?.arrivo?.programmato ??
-      null;
-
-    const firstRealDepartureMs = firstStop?.orari?.partenza?.reale ?? null;
-    const lastRealArrivalMs = lastStop?.orari?.arrivo?.reale ?? null;
-
-    const { previousIdx, nextIdx, currentIdx } = computeItaloStopIndexes(fermate, referenceMs);
-    const precedenteFermata = previousIdx != null ? buildItaloPreviousStopSummary(fermate[previousIdx], previousIdx) : null;
-    const prossimaFermata = (() => {
-      if (nextIdx == null || statoTreno === 'concluso') return null;
-      const next = buildItaloNextStopSummary(fermate[nextIdx], nextIdx);
-      if (!next) return null;
-      return { ...next, precedente: precedenteFermata };
-    })();
-    const stazioneCorrente =
-      statoTreno === 'in stazione' ? fermate[currentIdx]?.stazione ?? precedenteFermata?.stazione ?? null : null;
-
-    const principali = {
-      numeroTreno: String(schedule?.TrainNumber || trainNumber),
-      tipoTreno: trainTypeInfoFromCode('ITA'),
-      tratta: {
-        origine: schedule?.DepartureStationDescription || firstStop?.stazione || null,
-        destinazione: schedule?.ArrivalStationDescription || lastStop?.stazione || null,
-      },
-      stato: statoTreno,
-      isSoppresso: false,
-      isVariato: false,
-      inStazione: statoTreno === 'in stazione',
-      stazioneCorrente,
-      prossimaFermata,
-      orari: {
-        partenza: {
-          programmato: formatHHmmFromMs(firstSchedDepartureMs),
-          reale: formatHHmmFromMs(firstRealDepartureMs),
-          probabile: null,
-        },
-        arrivo: {
-          programmato: formatHHmmFromMs(lastSchedArrivalMs),
-          reale: formatHHmmFromMs(lastRealArrivalMs),
-          probabile: null,
-        },
-      },
-      ritardoMinuti: parseDelayMinutes(globalDelay),
-      ultimoRilevamento: italo?.LastUpdate
-        ? {
-            timestamp: null,
-            orario: String(italo.LastUpdate).trim(),
-            luogo: null,
-            testo: String(italo.LastUpdate).trim(),
-          }
-        : null,
-      fermate,
-    };
-
-    const payload = {
-      ok: true,
-      provider: 'italo',
-      referenceTimestamp: referenceMs,
-      dataRiferimento: formatYYYYMMDDFromMs(referenceMs),
-      principali,
-    };
-
     if (raw) payload.raw = italo;
     res.json(payload);
   } catch (err) {
@@ -1796,13 +1982,7 @@ async function handleItaloTrainStatus(req, res) {
 
 app.get('/api/italo/trains/status', handleItaloTrainStatus);
 
-app.get('/api/trains/status', async (req, res) => {
-  const provider = (req.query.provider || '').trim().toLowerCase();
-  const useItalo = provider === 'italo' || parseBool(req.query.italo, false);
-  if (useItalo) {
-    return handleItaloTrainStatus(req, res);
-  }
-
+const handleTrainStatus = async (req, res) => {
   const trainNumber = (req.query.numeroTreno || req.query.trainNumber || '').trim();
   const originCodeHint = (req.query.codiceOrigine || req.query.originCode || '').trim().toUpperCase();
   const originNameHint = (req.query.originName || '').trim();
@@ -1820,6 +2000,10 @@ app.get('/api/trains/status', async (req, res) => {
   if (!trainNumber) return res.status(400).json({ ok: false, error: 'numeroTreno obbligatorio' });
 
   try {
+    const italoPromise = fetchItaloTrainStatus(trainNumber)
+      .then((italo) => buildItaloModelPayload(italo, trainNumber))
+      .catch(() => null);
+
     function parseEpochFromDisplay(displayStr) {
       const s = String(displayStr || '').trim();
       if (!s) return null;
@@ -1864,13 +2048,20 @@ app.get('/api/trains/status', async (req, res) => {
     const textSearch = await fetchText(
       `${VT_BASE_URL}/cercaNumeroTrenoTrenoAutocomplete/${encodeURIComponent(trainNumber)}`
     );
+    const italoPayload = await italoPromise;
+    const italoFound = !!italoPayload;
     const lines = textSearch
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean);
 
     if (!lines.length) {
-      return res.json({ ok: true, data: null, message: 'Nessun treno trovato per questo numero' });
+      if (italoPayload) {
+        return res.json(attachCorrispondenza(italoPayload, false, true));
+      }
+      return res.json(
+        attachCorrispondenza({ ok: true, data: null, message: 'Nessun treno trovato per questo numero' }, false, false)
+      );
     }
 
     const candidates = lines
@@ -1947,14 +2138,20 @@ app.get('/api/trains/status', async (req, res) => {
     // Quando il numero è ambiguo (origini diverse), chiediamo solo la scelta dell'origine.
     // La scelta per data (oggi/ieri o giorni diversi) è riservata ai casi con origine univoca.
     if (!technicalHint && !originCodeHint && !originCodeFromName && !Number.isFinite(choiceHint) && originGroups.length > 1) {
-      return res.json({
-        ok: true,
-        data: null,
-        needsSelection: true,
-        selectionType: 'origin',
-        message: 'Più treni trovati con questo numero: specifica choice oppure originName.',
-        choices: originGroups.map(serializeOriginChoice),
-      });
+      return res.json(
+        attachCorrispondenza(
+          {
+            ok: true,
+            data: null,
+            needsSelection: true,
+            selectionType: 'origin',
+            message: 'Più treni trovati con questo numero: specifica choice oppure originName.',
+            choices: originGroups.map(serializeOriginChoice),
+          },
+          true,
+          italoFound
+        )
+      );
     }
 
     // Se l'origine è univoca ma ci sono più giorni disponibili, chiedi scelta data/epoch.
@@ -1965,17 +2162,26 @@ app.get('/api/trains/status', async (req, res) => {
       !Number.isFinite(choiceHint) &&
       dateDisponibiliUnique.length > 1
     ) {
-      return res.json({
-        ok: true,
-        data: null,
-        needsSelection: true,
-        selectionType: 'date',
-        origine: stationNameById(uniqueOriginGroup.originCode),
-        message: 'Più corse trovate per questo numero (giorni diversi): specifica choice oppure timestampRiferimento/date.',
-        dateDisponibili: dateDisponibiliUnique,
-        dateSuggerite: buildDateSuggeriteFromBase((dateDisponibiliUnique[0] && dateDisponibiliUnique[0].timestamp) || Date.now()),
-        choices: dateDisponibiliUnique.map(serializeDateChoice),
-      });
+      return res.json(
+        attachCorrispondenza(
+          {
+            ok: true,
+            data: null,
+            needsSelection: true,
+            selectionType: 'date',
+            origine: stationNameById(uniqueOriginGroup.originCode),
+            message:
+              'Più corse trovate per questo numero (giorni diversi): specifica choice oppure timestampRiferimento/date.',
+            dateDisponibili: dateDisponibiliUnique,
+            dateSuggerite: buildDateSuggeriteFromBase(
+              (dateDisponibiliUnique[0] && dateDisponibiliUnique[0].timestamp) || Date.now()
+            ),
+            choices: dateDisponibiliUnique.map(serializeDateChoice),
+          },
+          true,
+          italoFound
+        )
+      );
     }
 
     // Interpreta choice:
@@ -2012,7 +2218,9 @@ app.get('/api/trains/status', async (req, res) => {
       null;
 
     if (!selected) {
-      return res.json({ ok: false, error: 'Impossibile determinare il codice origine del treno' });
+      return res.json(
+        attachCorrispondenza({ ok: false, error: 'Impossibile determinare il codice origine del treno' }, true, italoFound)
+      );
     }
 
     if (!Number.isFinite(epochMsHint) && technicalHint && Number.isFinite(selected.epochMs)) {
@@ -2113,11 +2321,20 @@ app.get('/api/trains/status', async (req, res) => {
     }
 
     if (!snapshot) {
-      return res.json({
-        ok: true,
-        data: null,
-        message: 'Nessuna informazione di andamento disponibile per il numero fornito.',
-      });
+      if (italoPayload) {
+        return res.json(attachCorrispondenza(italoPayload, true, true));
+      }
+      return res.json(
+        attachCorrispondenza(
+          {
+            ok: true,
+            data: null,
+            message: 'Nessuna informazione di andamento disponibile per il numero fornito.',
+          },
+          true,
+          false
+        )
+      );
     }
 
     const fermateRaw = Array.isArray(snapshot.fermate) ? snapshot.fermate : [];
@@ -2248,6 +2465,18 @@ app.get('/api/trains/status', async (req, res) => {
       if (!next) return null;
       return { ...next, precedente: precedenteFermata };
     })();
+    const plannedNextStopName = (() => {
+      if (!Number.isFinite(originIdx)) return null;
+      for (let i = originIdx + 1; i < fermateRaw.length; i += 1) {
+        if (isSuppressedStop(fermateRaw[i])) continue;
+        return (
+          stationNameById(fermateRaw[i]?.id) ||
+          stationPublicNameFromIdOrName(fermateRaw[i]?.stazione) ||
+          null
+        );
+      }
+      return null;
+    })();
 
     const fermatePerGiorno =
       giorniCoperti.length > 1 ? buildFermatePerGiorno(fermate, giorniCoperti.map((d) => d.timestamp)) : [];
@@ -2302,32 +2531,68 @@ app.get('/api/trains/status', async (req, res) => {
         ])
       : [];
 
-    const response = {
-      ok: true,
-      referenceTimestamp,
-      dataRiferimento: formatYYYYMMDDFromMs(referenceTimestamp),
-      ...(hasUniqueOrigin && dateDisponibiliFinal.length ? { dateDisponibili: dateDisponibiliFinal } : {}),
-      ...(hasUniqueOrigin && dateDisponibiliFinal.length > 1
-        ? { dateSuggerite: buildDateSuggeriteFromBase(referenceTimestamp) }
-        : {}),
-      principali,
-    };
+    const responseStateRaw = statoTreno === 'programmato' && readyAtOrigin ? 'in stazione' : statoTreno;
+    const stazioneCorrente =
+      responseStateRaw === 'in stazione'
+        ? statoTreno === 'programmato' && readyAtOrigin
+          ? stationNameById(first.id) || stationPublicNameFromIdOrName(first?.stazione) || null
+          : lastDetectionStationPublic ?? stationNameById(first.id) ?? null
+        : responseStateRaw === 'concluso'
+          ? stationNameById(last.id) || stationPublicNameFromIdOrName(last?.stazione) || null
+          : null;
+    const messaggiRfiBase =
+      snapshot?.subTitle != null && String(snapshot.subTitle).trim() ? String(snapshot.subTitle).trim() : null;
+    const messaggiRfiPlanned =
+      statoTreno === 'programmato' && readyAtOrigin
+        ? messaggiRfiBase
+          ? `${messaggiRfiBase} - Stazione di partenza`
+          : 'Stazione di partenza'
+        : messaggiRfiBase;
+    const response = buildModelResponse({
+      dataRiferimento: formatDateItalianFromMs(referenceTimestamp),
+      dateDisponibili: hasUniqueOrigin
+        ? dateDisponibiliFinal
+            .map((d) => formatDateItalianFromMs(d.timestamp) ?? d.data)
+            .filter(Boolean)
+        : [],
+      compagnia: 'rfi',
+      numeroTreno: principali.numeroTreno,
+      tipoTreno: principali.tipoTreno,
+      tratta: principali.tratta,
+      orari: principali.orari,
+      statoTreno: {
+        deltaTempo: globalDelay ?? null,
+        stato: formatTrainStatusLabel(responseStateRaw),
+        stazioneCorrente,
+        stazioneSuccessiva:
+          statoTreno === 'concluso'
+            ? null
+            : statoTreno === 'programmato'
+              ? plannedNextStopName
+              : prossimaFermata?.stazione ?? null,
+        stazionePrecedente:
+          statoTreno === 'concluso' ? null : statoTreno === 'programmato' ? null : precedenteFermata?.stazione ?? null,
+        infoIR:
+          lastDetectionOrario || lastDetectionStationPublic
+            ? {
+                ultimoRilevOra: lastDetectionOrario ?? null,
+                ultimoRilevLuogo: lastDetectionStationPublic ?? null,
+                messaggioUltimoRilev: lastDetectionText ?? null,
+              }
+            : null,
+        messaggiRfi: messaggiRfiPlanned,
+      },
+      fermate,
+    });
 
-    if (debug) {
-      response.upstream = snapshot;
-      response.choices = candidates.map((c) => ({
-        display: c.display,
-        technical: c.technical,
-        originCode: c.originCode,
-        epochMs: c.epochMs,
-      }));
-    }
-
-    res.json(response);
+    if (debug) response.debug = { dataRiferimento: formatDateItalianFromMs(referenceTimestamp) };
+    res.json(attachCorrispondenza(response, true, italoFound));
   } catch (err) {
     res.status(err.status || 500).json({ ok: false, error: err.message });
   }
-});
+};
+
+app.get('/api/trains/status', handleTrainStatus);
 
 // ============================================================================
 // API: LeFrecce
