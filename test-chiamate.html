@@ -177,6 +177,30 @@
                 setSuggestions(cleaned);
             }
 
+            async function fetchLefrecceSuggestions(query, abortRef, setSuggestions) {
+                const q = query.trim();
+                if (q.length < 2) {
+                    setSuggestions([]);
+                    return;
+                }
+                if (abortRef.current) abortRef.current.abort();
+                abortRef.current = new AbortController();
+                const url = `/api/lefrecce/autocomplete?query=${encodeURIComponent(q)}&includeIds=1`;
+                const resp = await fetch(url, {
+                    signal: abortRef.current.signal,
+                });
+                const json = await resp.json();
+                const list = json && json.ok && Array.isArray(json.data) ? json.data : [];
+                const cleaned = list
+                    .map((item) => ({
+                        name: item?.stazione || item?.name || '',
+                        lefrecceId: item?.lefrecceId ?? null,
+                        stationCode: item?.stationCode ?? null,
+                    }))
+                    .filter((item) => item.name);
+                setSuggestions(cleaned);
+            }
+
             useEffect(() => {
                 fetchStationSuggestions(stationInput, stationAbortRef, setStationSuggestions).catch((err) => {
                     if (err.name === 'AbortError') return;
@@ -188,7 +212,7 @@
             }, [stationInput, pickedStationName]);
 
             useEffect(() => {
-                fetchStationSuggestions(fromName, fromAbortRef, setFromSuggestions, true).catch((err) => {
+                fetchLefrecceSuggestions(fromName, fromAbortRef, setFromSuggestions).catch((err) => {
                     if (err.name === 'AbortError') return;
                     setFromSuggestions([]);
                 });
@@ -200,7 +224,7 @@
             }, [fromName, pickedFrom]);
 
             useEffect(() => {
-                fetchStationSuggestions(toName, toAbortRef, setToSuggestions, true).catch((err) => {
+                fetchLefrecceSuggestions(toName, toAbortRef, setToSuggestions).catch((err) => {
                     if (err.name === 'AbortError') return;
                     setToSuggestions([]);
                 });

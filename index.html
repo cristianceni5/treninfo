@@ -159,21 +159,35 @@
             </div>
         );
 
-        const ServerSection = () => (
-            <section className="py-16 px-6 border-t border-zinc-200 dark:border-zinc-800">
-                <div className="max-w-3xl mx-auto text-left">
-                    <h2 className="text-2xl md:text-3xl font-bold text-zinc-900 dark:text-white mb-4">
-                        Server & Test
-                    </h2>
-                    <p className="text-zinc-500 dark:text-zinc-400 mb-6 text-sm leading-relaxed">
-                        Proxy attivo con treni RFI e Italo ora disponibili. Strumenti di verifica in pagina dedicata.
-                    </p>
-                    <Button variant="primary" href="test-chiamate.html" icon="server">
-                        Vai alla pagina test
-                    </Button>
-                </div>
-            </section>
-        );
+        const ServerSection = () => {
+            const isLocalhost =
+                typeof window !== 'undefined' &&
+                (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+            return (
+                <section className="py-16 px-6 border-t border-zinc-200 dark:border-zinc-800">
+                    <div className="max-w-3xl mx-auto text-left">
+                        <h2 className="text-2xl md:text-3xl font-bold text-zinc-900 dark:text-white mb-4">
+                            Server & Test
+                        </h2>
+                        <p className="text-zinc-500 dark:text-zinc-400 mb-6 text-sm leading-relaxed">
+                            Proxy attivo con treni RFI e Italo ora disponibili. Pagina test disponibile solo in locale.
+                        </p>
+                        <div className="flex flex-wrap gap-3">
+                            {isLocalhost ? (
+                                <Button variant="primary" href="test-chiamate.html" icon="server">
+                                    Vai alla pagina test
+                                </Button>
+                            ) : (
+                                <Button variant="primary" href="/api/health" icon="server">
+                                    Verifica stato API
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+                </section>
+            );
+        };
 
         function App() {
             // CONFIGURAZIONE STATO
@@ -310,37 +324,42 @@
                             <h2 className="text-2xl md:text-3xl font-bold mb-4 text-zinc-900 dark:text-white">Esempi di chiamate API Treninfo</h2>
                             <div className="bg-zinc-100 dark:bg-zinc-900 rounded-xl p-6 border border-zinc-200 dark:border-zinc-800 text-sm font-mono overflow-x-auto divide-y divide-zinc-200 dark:divide-zinc-800">
                                 <div className="py-4 first:pt-0">
-                                    <span className="font-bold">Autocomplete stazioni:</span><br />
-                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/.netlify/functions/api/api/stations/autocomplete?query=milano"</span><br />
-                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/.netlify/functions/api/api/stations/autocomplete?query=milano" target="_blank">Apri</a>
+                                    <span className="font-bold">Autocomplete stazioni (locale + lefrecceId):</span><br />
+                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/api/stations/autocomplete?query=milano&amp;includeIds=1"</span><br />
+                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/api/stations/autocomplete?query=milano&amp;includeIds=1" target="_blank">Apri</a>
+                                </div>
+                                <div className="py-4">
+                                    <span className="font-bold">Soluzioni viaggio (LeFrecce ID):</span><br />
+                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/api/solutions?fromLefrecceId=830001700&amp;toLefrecceId=830008409&amp;date=2026-01-13&amp;time=10:00"</span><br />
+                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/api/solutions?fromLefrecceId=830001700&amp;toLefrecceId=830008409&amp;date=2026-01-13&amp;time=10:00" target="_blank">Apri</a>
                                 </div>
                                 <div className="py-4">
                                     <span className="font-bold">Tabellone partenze:</span><br />
-                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/.netlify/functions/api/api/stations/departures?stationName=Milano%20Centrale"</span><br />
-                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/.netlify/functions/api/api/stations/departures?stationName=Milano%20Centrale" target="_blank">Apri</a>
+                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/api/stations/departures?stationName=Milano%20Centrale"</span><br />
+                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/api/stations/departures?stationName=Milano%20Centrale" target="_blank">Apri</a>
                                 </div>
                                 <div className="py-4">
                                     <span className="font-bold">Stato treno:</span><br />
-                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/.netlify/functions/api/api/trains/status?trainNumber=9510"</span><br />
-                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/.netlify/functions/api/api/trains/status?trainNumber=9510" target="_blank">Apri</a>
+                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/api/trains/status?trainNumber=9510"</span><br />
+                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/api/trains/status?trainNumber=9510" target="_blank">Apri</a>
                                 </div>
                                 <div className="py-4">
                                     <span className="font-bold">Info stazione (con meteo):</span><br />
-                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/.netlify/functions/api/api/stations/info?stationName=Roma%20Termini"</span><br />
-                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/.netlify/functions/api/api/stations/info?stationName=Roma%20Termini" target="_blank">Apri</a>
+                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/api/stations/info?stationName=Roma%20Termini"</span><br />
+                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/api/stations/info?stationName=Roma%20Termini" target="_blank">Apri</a>
                                 </div>
                                 <div className="py-4">
                                     <span className="font-bold">News:</span><br />
-                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/.netlify/functions/api/api/news"</span><br />
-                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/.netlify/functions/api/api/news" target="_blank">Apri</a>
+                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/api/news"</span><br />
+                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/api/news" target="_blank">Apri</a>
                                 </div>
                                 <div className="py-4 last:pb-0">
                                     <span className="font-bold">Health check:</span><br />
-                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/.netlify/functions/api/api/health"</span><br />
-                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/.netlify/functions/api/api/health" target="_blank">Apri</a>
+                                    <span className="text-zinc-500">curl:</span> <span className="select-all">curl "https://treninfo.netlify.app/api/health"</span><br />
+                                    <span className="text-zinc-500">browser:</span> <a className="text-systemBlue underline" href="https://treninfo.netlify.app/api/health" target="_blank">Apri</a>
                                 </div>
                             </div>
-                            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-4">Tutte le API restituiscono JSON e sono accessibili anche da browser. Per testare altre query, modifica i parametri nell’URL.</p>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-4">Per le soluzioni usa i lefrecceId dell’autocomplete locale: se `lefrecceId` è null, la stazione non è supportata da LeFrecce. Tutte le API restituiscono JSON e sono accessibili anche da browser.</p>
                         </section>
 
                         {/* SERVER SECTION */}

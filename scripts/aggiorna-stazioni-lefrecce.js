@@ -15,6 +15,7 @@ function parseArgs(argv) {
     delayMs: DEFAULT_DELAY_MS,
     minScore: DEFAULT_MIN_SCORE,
     acceptSingle: true,
+    onlyMissing: false,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -40,6 +41,8 @@ function parseArgs(argv) {
       i += 1;
     } else if (arg === '--no-accept-single') {
       options.acceptSingle = false;
+    } else if (arg === '--only-missing') {
+      options.onlyMissing = true;
     } else if (arg === '--dry-run') {
       options.dryRun = true;
     }
@@ -91,17 +94,19 @@ function normalizeStationRecord(record) {
 function scoreCandidate(targetNorm, candidateNorm) {
   if (!targetNorm || !candidateNorm) return 0;
   if (candidateNorm === targetNorm) return 4;
-  if (candidateNorm.includes(targetNorm) || targetNorm.includes(candidateNorm)) return 3;
+  if (candidateNorm.includes(targetNorm)) return 3;
 
   const targetTokens = targetNorm.split(' ').filter(Boolean);
-  const candidateTokens = new Set(candidateNorm.split(' ').filter(Boolean));
-  if (!targetTokens.length || candidateTokens.size === 0) return 0;
+  const candidateTokens = candidateNorm.split(' ').filter(Boolean);
+  if (!targetTokens.length || candidateTokens.length === 0) return 0;
+  const candidateSet = new Set(candidateTokens);
   let hits = 0;
   for (const token of targetTokens) {
-    if (candidateTokens.has(token)) hits += 1;
+    if (candidateSet.has(token)) hits += 1;
   }
-  if (hits === targetTokens.length) return 2;
-  if (hits / targetTokens.length >= 0.7) return 1;
+  const hitRatio = hits / targetTokens.length;
+  if (hitRatio === 1 && candidateTokens.length >= targetTokens.length) return 2;
+  if (hitRatio >= 0.7 && candidateTokens.length >= Math.max(1, targetTokens.length - 1)) return 1;
   return 0;
 }
 
@@ -114,9 +119,9 @@ function pickBestLocation(stationName, locations, minScore, acceptSingle) {
   for (const loc of locations) {
     const candidates = [loc?.name, loc?.displayName].filter(Boolean);
     for (const candidate of candidates) {
-      const candidateNorm = normalizeName(candidate);
+      const candidateNorm = normalizeNameForMatch(candidate);
       const score = scoreCandidate(targetNorm, candidateNorm);
-      if (!best || score > best.score || (score === best.score && candidateNorm.length < best.norm.length)) {
+      if (!best || score > best.score || (score === best.score && candidateNorm.length > best.norm.length)) {
         best = {
           score,
           norm: candidateNorm,
@@ -191,7 +196,7 @@ async function main() {
   }
 
   const normalized = original.map((s) => normalizeStationRecord(s));
-  const targets = normalized.filter((s) => s && s.nome && s.lefrecceId == null);
+  const targets = normalized.filter((s) => s && s.nome && (!options.onlyMissing || s.lefrecceId == null));
   const limitedTargets =
     Number.isFinite(options.limit) && options.limit > 0 ? targets.slice(0, options.limit) : targets;
 
@@ -199,11 +204,17 @@ async function main() {
   const locationsByQuery = new Map();
   let processed = 0;
   let resolved = 0;
+  let added = 0;
+  let updated = 0;
+  let cleared = 0;
+  let unchanged = 0;
+  let unresolved = 0;
   let skipped = 0;
   let errors = 0;
 
   await runWithConcurrency(limitedTargets, options.concurrency, async (station) => {
     const key = normalizeName(station.nome);
+    const originalId = station.lefrecceId;
     processed += 1;
     if (!key) {
       skipped += 1;
@@ -212,10 +223,14 @@ async function main() {
 
     if (resolvedByName.has(key)) {
       const cached = resolvedByName.get(key);
-      if (cached && Number.isFinite(cached.id)) {
-        station.lefrecceId = cached.id;
-        resolved += 1;
-      }
+      const nextId = cached && Number.isFinite(cached.id) ? cached.id : null;
+      station.lefrecceId = nextId;
+      if (nextId != null) resolved += 1;
+      if (originalId == null && nextId != null) added += 1;
+      else if (originalId != null && nextId == null) cleared += 1;
+      else if (originalId != null && nextId != null && originalId !== nextId) updated += 1;
+      else unchanged += 1;
+      if (nextId == null) unresolved += 1;
       return;
     }
 
@@ -237,10 +252,14 @@ async function main() {
       }
 
       resolvedByName.set(key, best);
-      if (best && Number.isFinite(best.id)) {
-        station.lefrecceId = best.id;
-        resolved += 1;
-      }
+      const nextId = best && Number.isFinite(best.id) ? best.id : null;
+      station.lefrecceId = nextId;
+      if (nextId != null) resolved += 1;
+      if (originalId == null && nextId != null) added += 1;
+      else if (originalId != null && nextId == null) cleared += 1;
+      else if (originalId != null && nextId != null && originalId !== nextId) updated += 1;
+      else unchanged += 1;
+      if (nextId == null) unresolved += 1;
     } catch (err) {
       errors += 1;
       console.warn(`Errore LeFrecce per "${station.nome}":`, err.message);
@@ -261,7 +280,7 @@ async function main() {
     lon: s.lon,
     lefrecceId: s.lefrecceId,
     italoId: s.italoId,
-    disuso: s.disuso || (!s.lefrecceId && !s.italoId),
+    disuso: s.disuso,
   }));
 
   if (options.dryRun) {
@@ -273,6 +292,11 @@ async function main() {
 
   console.log(`Totale target: ${targets.length}`);
   console.log(`Risolti: ${resolved}`);
+  console.log(`Aggiunti: ${added}`);
+  console.log(`Aggiornati: ${updated}`);
+  console.log(`Rimossi: ${cleared}`);
+  console.log(`Invariati: ${unchanged}`);
+  console.log(`Non risolti: ${unresolved}`);
   console.log(`Saltati: ${skipped}`);
   console.log(`Errori: ${errors}`);
 }

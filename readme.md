@@ -1,48 +1,237 @@
-# Treninfo Server
+# Treninfo API
 
-Backend leggero (Netlify Functions) che normalizza i dati di **ViaggiaTreno (RFI)** e **LeFrecce (Trenitalia)** e restituisce JSON “puliti” per l'app mobile Treninfo. Il riuso è **consentito** a patto di **menzionare** la fonte.
+Backend (Netlify Functions) che normalizza i dati di ViaggiaTreno (RFI) e LeFrecce (Trenitalia) per l'app Treninfo.
 
-## Chiamate API (base path: `/api`)
+Base URL: `https://treninfo.netlify.app/api`
 
-- `GET /api/health`  
-  Check rapido: DB stazioni caricato.
+Nota: gli autocomplete usano solo `stazioni.json` locale. Se `lefrecceId` e null, la stazione non e supportata da LeFrecce.
 
-- `GET /api/stations/autocomplete?query=...`  
-  Autocomplete locale usando `stazioni.json`.  
-  Opzionale: `includeIds=1` per ottenere oggetti con `name`, `stationCode`, `lefrecceId`, `italoCode`.
+## Endpoints
 
-- `GET /api/stations/info?stationName=...`  
-  Info stazione + meteo (se disponibile).
+### GET /health
+Request:
+- Nessun parametro.
 
-- `GET /api/stations/departures?stationName=...&when=now`  
-  Partenze normalizzate (stazioni canoniche, `tipoTreno`, orari, binari, ritardo).
-
-- `GET /api/stations/arrivals?stationName=...&when=now`  
-  Arrivi normalizzati.
-
-- `GET /api/trains/status?trainNumber=...`  
-  Stato treno normalizzato + fermate.  
-  Se il numero è ambiguo ritorna `needsSelection` (usa `choice`/`originName`/`date`/`timestampRiferimento`).  
-  Per treni che attraversano la mezzanotte espone `principali.giorniCoperti` e `principali.fermatePerGiorno`.
-
-- `GET /api/solutions?fromName=...&toName=...&date=YYYY-MM-DD&time=HH:mm`  
-  Soluzioni viaggio LeFrecce (include `prezzo` quando disponibile).  
-  Alternative: `fromLefrecceId`/`toLefrecceId` o `departureLocationId`/`arrivalLocationId`, oppure `fromStationCode`/`toStationCode`.
-
-## Esempi (curl)
-
-```bash
-curl "http://localhost:8888/api/stations/autocomplete?query=firen"
-curl "https://treninfo.netlify.app/api/stations/departures?stationName=Firenze%20S.%20M.%20Novella&when=now"
-curl "https://treninfo.netlify.app/api/trains/status?trainNumber=9544"
-curl "https://treninfo.netlify.app/api/solutions?fromName=Firenze%20S.%20M.%20Novella&toName=Roma%20Termini&date=2026-01-13&time=10:00"
+Response (esempio):
+```json
+{
+  "ok": true,
+  "stationDb": {
+    "loaded": true,
+    "count": 3253
+  }
+}
 ```
 
-Nota: la pagina di test chiamate (`test-chiamate.html`) non è esposta in produzione.
+### GET /stations/autocomplete
+Request (query string):
+- `query` (obbligatorio, min 2 caratteri)
+- `limit` (opzionale, max 50)
+- `includeIds` (opzionale, `1` per oggetti con id)
 
-## Crediti
+Response (esempio, includeIds=0):
+```json
+{
+  "ok": true,
+  "data": ["Milano Centrale", "Milano Rogoredo"]
+}
+```
 
-- Upstream dati: ViaggiaTreno (RFI) e LeFrecce (Trenitalia)
-- Runtime: Node.js, Express, Netlify Functions
+Response (esempio, includeIds=1):
+```json
+{
+  "ok": true,
+  "data": [
+    {
+      "name": "Milano Centrale",
+      "stationCode": "S01700",
+      "lefrecceId": 830001700,
+      "italoCode": "MC_"
+    }
+  ]
+}
+```
 
-### Sviluppato da Cristian Ceni
+### GET /lefrecce/autocomplete
+Autocomplete locale filtrato sulle stazioni con `lefrecceId`.
+
+Request (query string):
+- `query` (obbligatorio, min 2 caratteri)
+- `limit` (opzionale, max 50)
+- `includeIds` (opzionale, `1` per oggetti con id)
+
+Response (esempio, includeIds=1):
+```json
+{
+  "ok": true,
+  "data": [
+    {
+      "stazione": "Roma (Tutte le stazioni)",
+      "multistation": true,
+      "lefrecceId": 830008349,
+      "stationCode": "LF830008349"
+    }
+  ]
+}
+```
+
+### GET /stations/info
+Request (query string):
+- `stationName` oppure `stationCode`
+
+Response (esempio):
+```json
+{
+  "ok": true,
+  "stazione": "Roma Termini",
+  "latitudine": 41.900636,
+  "longitudine": 12.502026,
+  "regione": "5",
+  "meteo": {"temperature": 18}
+}
+```
+
+### GET /stations/departures
+### GET /stations/arrivals
+Request (query string):
+- `stationName` oppure `stationCode`
+- `when` (opzionale, default `now`)
+
+Response (esempio):
+```json
+{
+  "ok": true,
+  "stazione": "Milano Centrale",
+  "data": "2026-01-27T10:00:00.000Z",
+  "treni": [
+    {
+      "numeroTreno": "9510",
+      "origine": "Milano Centrale",
+      "destinazione": "Roma Termini",
+      "orarioPartenza": 1769510400000,
+      "orarioPartenzaLeggibile": "10:00",
+      "ritardo": 0,
+      "binarioProgrammato": "7",
+      "binarioEffettivo": "7",
+      "circolante": true,
+      "tipoTreno": {"sigla": "FR AV", "nome": "Frecciarossa"}
+    }
+  ]
+}
+```
+
+### GET /trains/status
+Stato treno normalizzato (RFI + Italo quando disponibile).
+
+Request (query string):
+- `trainNumber` (o `numeroTreno`)
+- opzionali: `choice`, `originName`, `date`, `timestampRiferimento`
+
+Response (esempio sintetico):
+```json
+{
+  "ok": true,
+  "dataRiferimento": "27/01/2026",
+  "compagnia": "rfi",
+  "numeroTreno": 9510,
+  "tipoTreno": {"categoria": "FR AV", "nomeCat": "Frecciarossa"},
+  "tratta": {
+    "stazionePartenzaZero": "Milano Centrale",
+    "orarioPartenzaZero": "10:00",
+    "stazioneArrivoZero": "Roma Termini",
+    "orarioArrivoZero": "13:59"
+  },
+  "statoTreno": {
+    "deltaTempo": 0,
+    "stato": "In viaggio",
+    "stazioneCorrente": null
+  },
+  "fermate": {"totali": 8, "fermate": []}
+}
+```
+
+### GET /italo/trains/status
+Come `/trains/status` ma solo Italo.
+
+Request (query string):
+- `trainNumber` (o `numeroTreno`)
+
+Response: stesso schema di `/trains/status`.
+
+### GET /solutions
+Soluzioni viaggio LeFrecce.
+
+Request (query string):
+- `fromLefrecceId` (obbligatorio)
+- `toLefrecceId` (obbligatorio)
+- `date` (obbligatorio, `YYYY-MM-DD`)
+- `time` (opzionale, `HH:mm`)
+- opzionali: `adults`, `children`, `frecceOnly`, `regionalOnly`, `intercityOnly`, `tourismOnly`, `noChanges`, `order`, `offset`, `limit`, `bestFare`, `bikeFilter`
+
+Response (esempio):
+```json
+{
+  "ok": true,
+  "idRicerca": "830001700-830008409-one_way-2026-01-27T10:00:00.000---...",
+  "stazioni": {
+    "from": "Milano Centrale",
+    "to": "Roma Termini"
+  },
+  "soluzioni": [
+    {
+      "durata": 219,
+      "dataPartenza": "2026-01-27",
+      "partenza": "10:10",
+      "dataArrivo": "2026-01-27",
+      "arrivo": "13:49",
+      "cambi": 0,
+      "prezzo": {"valuta": "EUR", "importo": 74.9, "indicativo": false},
+      "treni": [
+        {
+          "numeroTreno": "9510",
+          "tipoTreno": {"sigla": "FR AV", "nome": "Frecciarossa"},
+          "da": "Milano Centrale",
+          "a": "Roma Termini",
+          "dataPartenza": "2026-01-27",
+          "orarioPartenza": "10:10",
+          "dataArrivo": "2026-01-27",
+          "orarioArrivo": "13:49"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Response errore (esempio):
+```json
+{
+  "ok": false,
+  "idRicerca": null,
+  "stazioni": {"from": "Firenze Campo Marte", "to": "Roma Tiburtina"},
+  "soluzioni": [],
+  "error": "We are sorry. An error has occurred.",
+  "status": 400
+}
+```
+
+### GET /news
+Request:
+- Nessun parametro.
+
+Response (esempio):
+```json
+{
+  "ok": true,
+  "data": []
+}
+```
+
+## Esempi rapidi
+
+```bash
+curl "https://treninfo.netlify.app/api/health"
+curl "https://treninfo.netlify.app/api/stations/autocomplete?query=roma&includeIds=1"
+curl "https://treninfo.netlify.app/api/lefrecce/autocomplete?query=roma&includeIds=1"
+curl "https://treninfo.netlify.app/api/solutions?fromLefrecceId=830001700&toLefrecceId=830008409&date=2026-01-27&time=10:00"
+```

@@ -1756,6 +1756,100 @@ app.get('/api/viaggiatreno/autocomplete', async (req, res) => {
   }
 });
 
+function buildStationAutocompleteMatches(query, limit, options = {}) {
+  const qKey = normalizeStationNameKey(query);
+  if (!qKey) return [];
+  const onlyWithLefrecceId = options.onlyWithLefrecceId === true;
+  const qTokens = qKey.split(' ').filter(Boolean);
+  const scored = [];
+  const directId = stationIdByKey.get(qKey);
+  const directStation = directId ? stationsById.get(directId) : null;
+  const directName = directStation?.name ? String(directStation.name) : null;
+
+  if (directStation?.name) {
+    scored.push({ name: directName, score: 200, station: directStation });
+  }
+
+  if (qTokens.length >= 1) {
+    const cityKey = qTokens[0];
+    const multistation = stationList.find((s) => {
+      if (!s?.name) return false;
+      if (!/\(tutte le stazioni\)/i.test(s.name)) return false;
+      const sKey = normalizeStationNameKey(s.name);
+      return sKey.startsWith(`${cityKey} tutte le stazioni`);
+    });
+    if (multistation && (!directStation || multistation.id !== directStation.id)) {
+      scored.push({ name: String(multistation.name), score: 160, station: multistation });
+    }
+  }
+
+  for (const s of stationList) {
+    if (!s?.name) continue;
+    if (directStation && s.id === directStation.id) continue;
+    if (onlyWithLefrecceId && !Number.isFinite(s.lefrecceId)) continue;
+    const sKey = normalizeStationNameKey(s.name);
+    if (!sKey) continue;
+
+    if (qKey.length < 4 && !sKey.startsWith(qKey)) {
+      continue;
+    }
+
+    let score = 0;
+    if (sKey === qKey) score += 100;
+    else if (sKey.startsWith(qKey)) score += 80;
+    else if (sKey.includes(qKey)) score += 60;
+
+    let hits = 0;
+    let tokenScore = 0;
+    const sTokens = sKey.split(' ').filter(Boolean);
+    const sTokenSet = new Set(sTokens);
+    for (const t of qTokens) {
+      if (!t) continue;
+      if (sTokenSet.has(t)) {
+        hits += 1;
+        tokenScore += 12;
+        continue;
+      }
+      if (sTokens.some((sTok) => sTok.startsWith(t))) {
+        hits += 1;
+        tokenScore += 8;
+      }
+    }
+    if (qTokens.length >= 2 && !sKey.includes(qKey) && hits < Math.min(2, qTokens.length)) {
+      continue;
+    }
+    if (hits > 0) score += tokenScore;
+
+    if (qTokens.length > 1) {
+      const ordered = qTokens.every((t, idx) => sTokens.indexOf(t) >= (idx === 0 ? 0 : sTokens.indexOf(qTokens[idx - 1])));
+      if (ordered && sTokens.join(' ').includes(qTokens.join(' '))) score += 12;
+      else if (ordered) score += 6;
+    }
+
+    const lengthPenalty = Math.max(0, sTokens.length - qTokens.length);
+    score -= Math.min(10, lengthPenalty);
+
+    if (/\(tutte le stazioni\)/i.test(s.name) && sKey.startsWith(qKey)) {
+      score += 6;
+    }
+
+    if (score > 0) scored.push({ name: String(s.name), score, station: s });
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'it'));
+
+  const matches = [];
+  const seen = new Set();
+  for (const item of scored) {
+    if (seen.has(item.name)) continue;
+    seen.add(item.name);
+    matches.push(item);
+    if (matches.length >= limit) break;
+  }
+
+  return matches;
+}
+
 // Autocomplete stazioni (locale: usa stazioni.json, senza chiamate esterne)
 app.get('/api/stations/autocomplete', (req, res) => {
   const query = (req.query.query || '').trim();
@@ -1764,50 +1858,15 @@ app.get('/api/stations/autocomplete', (req, res) => {
   const includeIds = parseBool(req.query.includeIds, false);
   if (query.length < 2) return res.json({ ok: true, data: [] });
 
-  const qKey = normalizeStationNameKey(query);
-  if (!qKey) return res.json({ ok: true, data: [] });
-
-  const qTokens = qKey.split(' ').filter(Boolean);
-  const scored = [];
-
-  for (const s of stationList) {
-    if (!s?.name) continue;
-    const sKey = normalizeStationNameKey(s.name);
-    if (!sKey) continue;
-
-    let score = 0;
-    if (sKey === qKey) score += 10;
-    if (sKey.startsWith(qKey)) score += 5;
-    if (sKey.includes(qKey)) score += 2;
-
-    let hits = 0;
-    for (const t of qTokens) {
-      if (t && sKey.includes(t)) hits += 1;
-    }
-    if (hits > 0) score += hits / Math.max(1, qTokens.length);
-
-    if (score > 0) scored.push({ name: String(s.name), score, station: s });
-  }
-
-  scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'it'));
-
-  const data = [];
-  const seen = new Set();
-  for (const item of scored) {
-    if (seen.has(item.name)) continue;
-    seen.add(item.name);
-    if (includeIds) {
-      data.push({
+  const matches = buildStationAutocompleteMatches(query, limit);
+  const data = includeIds
+    ? matches.map((item) => ({
         name: item.name,
         stationCode: item.station?.id || null,
         lefrecceId: Number.isFinite(item.station?.lefrecceId) ? item.station.lefrecceId : null,
         italoCode: item.station?.italoCode || null,
-      });
-    } else {
-      data.push(item.name);
-    }
-    if (data.length >= limit) break;
-  }
+      }))
+    : matches.map((item) => item.name);
 
   res.json({ ok: true, data });
 });
@@ -2694,26 +2753,27 @@ app.get('/api/trains/status', handleTrainStatus);
 
 app.get('/api/lefrecce/autocomplete', async (req, res) => {
   const query = (req.query.query || '').trim();
+  const includeIds = parseBool(req.query.includeIds, false);
+  const limitRaw = req.query.limit;
+  const limit = Number.isFinite(Number(limitRaw)) ? Math.max(1, Math.min(50, Number(limitRaw))) : 10;
   if (query.length < 2) return res.json({ ok: true, data: [] });
 
-  try {
-    const params = new URLSearchParams({ name: query, limit: '10' });
-    const url = `${LEFRECCE_BASE_URL}/website/locations/search?${params.toString()}`;
-    const list = await fetchJson(url, { headers: { Accept: 'application/json, text/plain, */*' } });
-    const data = Array.isArray(list)
-      ? list.map((s) => ({
-          stazione: (() => {
-            const lfId = typeof s.id === 'number' ? s.id : Number(s.id);
-            const stationId = Number.isFinite(lfId) ? stationIdByLefrecceId.get(lfId) : null;
-            return stationNameById(stationId) || stationPublicNameFromIdOrName(s?.name || s?.displayName);
-          })(),
-          multistation: !!s.multistation,
-        }))
-      : [];
-    res.json({ ok: true, data });
-  } catch (err) {
-    res.status(err.status || 500).json({ ok: false, error: err.message });
-  }
+  const matches = buildStationAutocompleteMatches(query, limit, { onlyWithLefrecceId: true });
+  const data = matches.map((item) => {
+    const name = item.name;
+    const multistation = /\(tutte le stazioni\)/i.test(name);
+    return {
+      stazione: name,
+      multistation,
+      ...(includeIds
+        ? {
+            lefrecceId: Number.isFinite(item.station?.lefrecceId) ? item.station.lefrecceId : null,
+            stationCode: item.station?.id || null,
+          }
+        : {}),
+    };
+  });
+  res.json({ ok: true, data });
 });
 
 async function resolveLefrecceLocationIdByName(stationName) {
@@ -2845,20 +2905,11 @@ app.get('/api/solutions', async (req, res) => {
       arrId = lefrecceIdByStationId.get(toCode);
     }
 
-    if (!depId) {
-      const name = (fromCode && stationNameById(fromCode)) || (fromName ? String(fromName) : '') || fromCode;
-      if (name) depId = await resolveLefrecceLocationIdByName(name);
-    }
-    if (!arrId) {
-      const name = (toCode && stationNameById(toCode)) || (toName ? String(toName) : '') || toCode;
-      if (name) arrId = await resolveLefrecceLocationIdByName(name);
-    }
-
     if (!depId || !arrId) {
       return res.status(400).json({
         ok: false,
         error:
-          'Impossibile risolvere locationId LeFrecce (usa fromLefrecceId/toLefrecceId o departureLocationId/arrivalLocationId; in alternativa fromStationCode/toStationCode o fromName/toName).',
+          'Impossibile risolvere locationId LeFrecce con stazioni.json (usa fromLefrecceId/toLefrecceId o departureLocationId/arrivalLocationId; in alternativa fromStationCode/toStationCode o fromName/toName presenti nel DB locale).',
       });
     }
 
@@ -2908,6 +2959,25 @@ app.get('/api/solutions', async (req, res) => {
         error: 'Risposta LeFrecce non in formato JSON',
         upstreamStatus: vtResp.status,
         raw: String(text || '').slice(0, 2000),
+      });
+    }
+
+    if (!vtResp.ok) {
+      const fromCodeByLefrecce = Number.isFinite(depId) ? stationIdByLefrecceId.get(depId) : null;
+      const toCodeByLefrecce = Number.isFinite(arrId) ? stationIdByLefrecceId.get(arrId) : null;
+      const fromCodeResolved = fromCode || fromCodeByLefrecce || null;
+      const toCodeResolved = toCode || toCodeByLefrecce || null;
+      return res.json({
+        ok: false,
+        idRicerca: data?.searchId || null,
+        stazioni: {
+          from:
+            (fromCodeResolved && stationNameById(fromCodeResolved)) || (fromName ? String(fromName).trim() : null) || null,
+          to: (toCodeResolved && stationNameById(toCodeResolved)) || (toName ? String(toName).trim() : null) || null,
+        },
+        soluzioni: [],
+        error: data?.message || data?.reason || data?.technicalReason || null,
+        status: vtResp.status || null,
       });
     }
 
