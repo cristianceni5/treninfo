@@ -341,6 +341,11 @@ function formatHHmmFromIso(iso) {
   return Number.isNaN(ms) ? null : formatHHmmFromMs(ms);
 }
 
+function formatYYYYMMDDFromIso(iso) {
+  const ms = Date.parse(String(iso || ''));
+  return Number.isNaN(ms) ? null : formatYYYYMMDDFromMs(ms);
+}
+
 let IT_DATE_FORMATTER = null;
 function getItDateFormatter() {
   if (IT_DATE_FORMATTER) return IT_DATE_FORMATTER;
@@ -1179,12 +1184,36 @@ function buildItaloStops(schedule, referenceMs) {
   return stops;
 }
 
+function getItaloStopArrivalRealMs(stop) {
+  return stop?.orari?.arrivo?.reale ?? null;
+}
+
+function getItaloStopDepartureRealMs(stop) {
+  return stop?.orari?.partenza?.reale ?? null;
+}
+
+function getItaloStopArrivalPlannedMs(stop) {
+  return stop?.orari?.arrivo?.programmato ?? null;
+}
+
+function getItaloStopDeparturePlannedMs(stop) {
+  return stop?.orari?.partenza?.programmato ?? null;
+}
+
+function getItaloStopArrivalForecastMs(stop) {
+  return stop?.orari?.arrivo?.probabile ?? getItaloStopArrivalPlannedMs(stop);
+}
+
+function getItaloStopDepartureForecastMs(stop) {
+  return stop?.orari?.partenza?.probabile ?? getItaloStopDeparturePlannedMs(stop);
+}
+
 function getItaloStopArrivalMs(stop) {
-  return stop?.orari?.arrivo?.reale ?? stop?.orari?.arrivo?.programmato ?? null;
+  return getItaloStopArrivalRealMs(stop) ?? getItaloStopArrivalForecastMs(stop) ?? null;
 }
 
 function getItaloStopDepartureMs(stop) {
-  return stop?.orari?.partenza?.reale ?? stop?.orari?.partenza?.programmato ?? null;
+  return getItaloStopDepartureRealMs(stop) ?? getItaloStopDepartureForecastMs(stop) ?? null;
 }
 
 function getItaloStopPassMs(stop) {
@@ -1201,7 +1230,7 @@ function buildItaloNextStopSummary(nextStop, index) {
   return {
     indice: index,
     stazione: nextStop?.stazione ?? null,
-    arrivoPrevisto: formatHHmmFromMs(getItaloStopArrivalMs(nextStop)),
+    arrivoPrevisto: formatHHmmFromMs(getItaloStopArrivalForecastMs(nextStop)),
   };
 }
 
@@ -1210,8 +1239,8 @@ function buildItaloPreviousStopSummary(prevStop, index) {
   return {
     indice: index,
     stazione: prevStop?.stazione ?? null,
-    arrivoReale: formatHHmmFromMs(getItaloStopArrivalMs(prevStop)),
-    partenzaReale: formatHHmmFromMs(getItaloStopDepartureMs(prevStop)),
+    arrivoReale: formatHHmmFromMs(getItaloStopArrivalRealMs(prevStop)),
+    partenzaReale: formatHHmmFromMs(getItaloStopDepartureRealMs(prevStop)),
   };
 }
 
@@ -1267,6 +1296,41 @@ function computeItaloStopIndexes(fermate, referenceMs) {
   if (currentIdx == null && previousIdx != null) currentIdx = previousIdx;
 
   return { previousIdx, nextIdx, currentIdx };
+}
+
+const ITALO_STATE_TOLERANCE_MS = 2 * 60 * 1000;
+
+function deriveItaloRunningState({
+  rawState,
+  referenceMs,
+  firstDepartureMs,
+  lastArrivalMs,
+  currentIdx,
+  fermate,
+}) {
+  if (rawState && rawState !== 'programmato') return rawState;
+  let derived = 'programmato';
+  if (lastArrivalMs != null && referenceMs >= lastArrivalMs + ITALO_STATE_TOLERANCE_MS) {
+    derived = 'concluso';
+  } else if (firstDepartureMs != null && referenceMs >= firstDepartureMs - ITALO_STATE_TOLERANCE_MS) {
+    derived = 'in viaggio';
+  }
+
+  if (derived === 'in viaggio' && currentIdx != null && Array.isArray(fermate)) {
+    const stop = fermate[currentIdx];
+    const arrivoMs = getItaloStopArrivalMs(stop);
+    const partenzaMs = getItaloStopDepartureMs(stop);
+    if (
+      arrivoMs != null &&
+      partenzaMs != null &&
+      referenceMs >= arrivoMs - ITALO_STATE_TOLERANCE_MS &&
+      referenceMs <= partenzaMs + ITALO_STATE_TOLERANCE_MS
+    ) {
+      derived = 'in stazione';
+    }
+  }
+
+  return derived;
 }
 
 function mergeTrainEntries(primary, extra, timeKey) {
@@ -1697,6 +1761,7 @@ app.get('/api/stations/autocomplete', (req, res) => {
   const query = (req.query.query || '').trim();
   const limitRaw = req.query.limit;
   const limit = Number.isFinite(Number(limitRaw)) ? Math.max(1, Math.min(50, Number(limitRaw))) : 10;
+  const includeIds = parseBool(req.query.includeIds, false);
   if (query.length < 2) return res.json({ ok: true, data: [] });
 
   const qKey = normalizeStationNameKey(query);
@@ -1721,7 +1786,7 @@ app.get('/api/stations/autocomplete', (req, res) => {
     }
     if (hits > 0) score += hits / Math.max(1, qTokens.length);
 
-    if (score > 0) scored.push({ name: String(s.name), score });
+    if (score > 0) scored.push({ name: String(s.name), score, station: s });
   }
 
   scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'it'));
@@ -1731,7 +1796,16 @@ app.get('/api/stations/autocomplete', (req, res) => {
   for (const item of scored) {
     if (seen.has(item.name)) continue;
     seen.add(item.name);
-    data.push(item.name);
+    if (includeIds) {
+      data.push({
+        name: item.name,
+        stationCode: item.station?.id || null,
+        lefrecceId: Number.isFinite(item.station?.lefrecceId) ? item.station.lefrecceId : null,
+        italoCode: item.station?.italoCode || null,
+      });
+    } else {
+      data.push(item.name);
+    }
     if (data.length >= limit) break;
   }
 
@@ -1858,7 +1932,7 @@ function buildItaloModelPayload(italo, trainNumber) {
   const referenceMs = Date.now();
   const globalDelay = schedule?.Distruption?.DelayAmount;
   const runningState = schedule?.Distruption?.RunningState;
-  const statoTreno = mapItaloRunningState(runningState);
+  const statoTrenoRaw = mapItaloRunningState(runningState);
 
   const fermate = buildItaloStops(schedule, referenceMs);
   const firstStop = fermate[0] || null;
@@ -1879,8 +1953,28 @@ function buildItaloModelPayload(italo, trainNumber) {
 
   const firstRealDepartureMs = firstStop?.orari?.partenza?.reale ?? null;
   const lastRealArrivalMs = lastStop?.orari?.arrivo?.reale ?? null;
+  const firstDepartureMs =
+    firstStop?.orari?.partenza?.reale ??
+    firstStop?.orari?.partenza?.probabile ??
+    firstStop?.orari?.partenza?.programmato ??
+    firstSchedDepartureMs ??
+    null;
+  const lastArrivalMs =
+    lastStop?.orari?.arrivo?.reale ??
+    lastStop?.orari?.arrivo?.probabile ??
+    lastStop?.orari?.arrivo?.programmato ??
+    lastSchedArrivalMs ??
+    null;
 
   const { previousIdx, nextIdx, currentIdx } = computeItaloStopIndexes(fermate, referenceMs);
+  const statoTreno = deriveItaloRunningState({
+    rawState: statoTrenoRaw,
+    referenceMs,
+    firstDepartureMs,
+    lastArrivalMs,
+    currentIdx,
+    fermate,
+  });
   const precedenteFermata = previousIdx != null ? buildItaloPreviousStopSummary(fermate[previousIdx], previousIdx) : null;
   const prossimaFermata = (() => {
     if (nextIdx == null || statoTreno === 'concluso') return null;
@@ -2700,6 +2794,10 @@ app.get('/api/solutions', async (req, res) => {
     const {
       fromId,
       toId,
+      fromLefrecceId,
+      toLefrecceId,
+      departureLocationId,
+      arrivalLocationId,
       fromName,
       toName,
       fromStationCode,
@@ -2724,8 +2822,12 @@ app.get('/api/solutions', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Parametro obbligatorio: date (YYYY-MM-DD)' });
     }
 
-    let depId = fromId ? Number(fromId) : null;
-    let arrId = toId ? Number(toId) : null;
+    const depIdRaw = departureLocationId ?? fromLefrecceId ?? fromId;
+    const arrIdRaw = arrivalLocationId ?? toLefrecceId ?? toId;
+    let depId = depIdRaw != null && String(depIdRaw).trim() ? Number(depIdRaw) : null;
+    let arrId = arrIdRaw != null && String(arrIdRaw).trim() ? Number(arrIdRaw) : null;
+    if (!Number.isFinite(depId)) depId = null;
+    if (!Number.isFinite(arrId)) arrId = null;
 
     const fromCode =
       (fromStationCode ? String(fromStationCode).trim().toUpperCase() : '') ||
@@ -2756,7 +2858,7 @@ app.get('/api/solutions', async (req, res) => {
       return res.status(400).json({
         ok: false,
         error:
-          'Impossibile risolvere locationId LeFrecce (usa fromName/toName oppure fromStationCode/toStationCode; fromId/toId solo per uso interno).',
+          'Impossibile risolvere locationId LeFrecce (usa fromLefrecceId/toLefrecceId o departureLocationId/arrivalLocationId; in alternativa fromStationCode/toStationCode o fromName/toName).',
       });
     }
 
@@ -2821,17 +2923,25 @@ app.get('/api/solutions', async (req, res) => {
             tipoTreno: trainTypeInfoFromCode(n?.train?.acronym || null),
             da: stationPublicNameFromIdOrName(n?.origin),
             a: stationPublicNameFromIdOrName(n?.destination),
+            dataPartenza: formatYYYYMMDDFromIso(n?.departureTime),
             orarioPartenza: formatHHmmFromIso(n?.departureTime),
+            dataArrivo: formatYYYYMMDDFromIso(n?.arrivalTime),
             orarioArrivo: formatHHmmFromIso(n?.arrivalTime),
           }));
 
           const durata = parseDurationMinutes(sol?.duration, sol?.departureTime, sol?.arrivalTime);
-          const partenza = formatHHmmFromIso(firstNode?.departureTime || sol?.departureTime);
-          const arrivo = formatHHmmFromIso(lastNode?.arrivalTime || sol?.arrivalTime);
+          const departureIso = firstNode?.departureTime || sol?.departureTime;
+          const arrivalIso = lastNode?.arrivalTime || sol?.arrivalTime;
+          const dataPartenza = formatYYYYMMDDFromIso(departureIso);
+          const dataArrivo = formatYYYYMMDDFromIso(arrivalIso);
+          const partenza = formatHHmmFromIso(departureIso);
+          const arrivo = formatHHmmFromIso(arrivalIso);
 
           return {
             durata,
+            dataPartenza,
             partenza,
+            dataArrivo,
             arrivo,
             cambi: Math.max(0, nodes.length - 1),
             prezzo: mapLefreccePrice(sol?.price),
@@ -2840,12 +2950,17 @@ app.get('/api/solutions', async (req, res) => {
         })
       : [];
 
+    const fromCodeByLefrecce = Number.isFinite(depId) ? stationIdByLefrecceId.get(depId) : null;
+    const toCodeByLefrecce = Number.isFinite(arrId) ? stationIdByLefrecceId.get(arrId) : null;
+    const fromCodeResolved = fromCode || fromCodeByLefrecce || null;
+    const toCodeResolved = toCode || toCodeByLefrecce || null;
+
     res.json({
       ok: vtResp.ok,
       idRicerca: data.searchId || null,
       stazioni: {
-        from: (fromCode && stationNameById(fromCode)) || (fromName ? String(fromName).trim() : null) || null,
-        to: (toCode && stationNameById(toCode)) || (toName ? String(toName).trim() : null) || null,
+        from: (fromCodeResolved && stationNameById(fromCodeResolved)) || (fromName ? String(fromName).trim() : null) || null,
+        to: (toCodeResolved && stationNameById(toCodeResolved)) || (toName ? String(toName).trim() : null) || null,
       },
       soluzioni,
     });

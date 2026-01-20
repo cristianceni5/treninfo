@@ -8,7 +8,8 @@ Backend leggero (Netlify Functions) che normalizza i dati di **ViaggiaTreno (RFI
   Check rapido: DB stazioni caricato.
 
 - `GET /api/stations/autocomplete?query=...`  
-  Autocomplete locale usando `stazioni.json`.
+  Autocomplete locale usando `stazioni.json`.  
+  Opzionale: `includeIds=1` per ottenere oggetti con `name`, `stationCode`, `lefrecceId`, `italoCode`.
 
 - `GET /api/stations/info?stationName=...`  
   Info stazione + meteo (se disponibile).
@@ -25,7 +26,8 @@ Backend leggero (Netlify Functions) che normalizza i dati di **ViaggiaTreno (RFI
   Per treni che attraversano la mezzanotte espone `principali.giorniCoperti` e `principali.fermatePerGiorno`.
 
 - `GET /api/solutions?fromName=...&toName=...&date=YYYY-MM-DD&time=HH:mm`  
-  Soluzioni viaggio LeFrecce (include `prezzo` quando disponibile).
+  Soluzioni viaggio LeFrecce (include `prezzo` quando disponibile).  
+  Alternative: `fromLefrecceId`/`toLefrecceId` o `departureLocationId`/`arrivalLocationId`, oppure `fromStationCode`/`toStationCode`.
 
 ## Esempi (curl)
 

@@ -113,6 +113,8 @@
             const [toSuggestions, setToSuggestions] = useState([]);
             const [pickedFrom, setPickedFrom] = useState('');
             const [pickedTo, setPickedTo] = useState('');
+            const [pickedFromMeta, setPickedFromMeta] = useState(null);
+            const [pickedToMeta, setPickedToMeta] = useState(null);
             const [fromPickedLabel, setFromPickedLabel] = useState('');
             const [toPickedLabel, setToPickedLabel] = useState('');
             const [solDate, setSolDate] = useState('');
@@ -157,7 +159,7 @@
                 return a.trim().toLowerCase() === b.trim().toLowerCase();
             }
 
-            async function fetchStationSuggestions(query, abortRef, setSuggestions) {
+            async function fetchStationSuggestions(query, abortRef, setSuggestions, includeIds = false) {
                 const q = query.trim();
                 if (q.length < 2) {
                     setSuggestions([]);
@@ -165,12 +167,14 @@
                 }
                 if (abortRef.current) abortRef.current.abort();
                 abortRef.current = new AbortController();
-                const resp = await fetch(`/api/stations/autocomplete?query=${encodeURIComponent(q)}`, {
+                const url = `/api/stations/autocomplete?query=${encodeURIComponent(q)}${includeIds ? '&includeIds=1' : ''}`;
+                const resp = await fetch(url, {
                     signal: abortRef.current.signal,
                 });
                 const json = await resp.json();
                 const list = json && json.ok && Array.isArray(json.data) ? json.data : [];
-                setSuggestions(list);
+                const cleaned = includeIds ? list.filter((item) => item && item.name) : list;
+                setSuggestions(cleaned);
             }
 
             useEffect(() => {
@@ -184,23 +188,25 @@
             }, [stationInput, pickedStationName]);
 
             useEffect(() => {
-                fetchStationSuggestions(fromName, fromAbortRef, setFromSuggestions).catch((err) => {
+                fetchStationSuggestions(fromName, fromAbortRef, setFromSuggestions, true).catch((err) => {
                     if (err.name === 'AbortError') return;
                     setFromSuggestions([]);
                 });
                 if (!isSameStation(fromName, pickedFrom)) {
                     setPickedFrom('');
+                    setPickedFromMeta(null);
                     setFromPickedLabel('');
                 }
             }, [fromName, pickedFrom]);
 
             useEffect(() => {
-                fetchStationSuggestions(toName, toAbortRef, setToSuggestions).catch((err) => {
+                fetchStationSuggestions(toName, toAbortRef, setToSuggestions, true).catch((err) => {
                     if (err.name === 'AbortError') return;
                     setToSuggestions([]);
                 });
                 if (!isSameStation(toName, pickedTo)) {
                     setPickedTo('');
+                    setPickedToMeta(null);
                     setToPickedLabel('');
                 }
             }, [toName, pickedTo]);
@@ -258,8 +264,22 @@
                     setSolutionsResult('Inserisci una data.');
                     return;
                 }
-                const params = new URLSearchParams({ fromName: from, toName: to, date: solDate });
+                const params = new URLSearchParams({ date: solDate });
                 if (solTime) params.set('time', solTime);
+                if (pickedFromMeta && pickedFromMeta.lefrecceId) {
+                    params.set('fromLefrecceId', pickedFromMeta.lefrecceId);
+                } else if (pickedFromMeta && pickedFromMeta.stationCode) {
+                    params.set('fromStationCode', pickedFromMeta.stationCode);
+                } else {
+                    params.set('fromName', from);
+                }
+                if (pickedToMeta && pickedToMeta.lefrecceId) {
+                    params.set('toLefrecceId', pickedToMeta.lefrecceId);
+                } else if (pickedToMeta && pickedToMeta.stationCode) {
+                    params.set('toStationCode', pickedToMeta.stationCode);
+                } else {
+                    params.set('toName', to);
+                }
                 const url = `/api/solutions?${params.toString()}`;
                 setSolutionsRequestUrl(url);
                 setSolutionsResult('Caricamento...');
@@ -270,16 +290,19 @@
                 }
             }
 
-            const suggestionButton = (name, onSelect) => (
+            const suggestionButton = (item, onSelect) => {
+                const label = typeof item === 'string' ? item : item.name;
+                return (
                 <button
-                    key={name}
+                    key={label}
                     type="button"
-                    onClick={() => onSelect(name)}
+                    onClick={() => onSelect(item)}
                     className="w-full text-left px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm hover:border-zinc-400 hover:text-zinc-700 dark:hover:border-zinc-600 dark:hover:text-zinc-300 transition"
                 >
-                    {name}
+                    {label}
                 </button>
-            );
+                );
+            };
 
             const primaryButtonClass =
                 "px-5 py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 transition";
@@ -743,12 +766,23 @@
                                         <div className="grid gap-2">
                                             <input value={fromName} onChange={(e) => setFromName(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="text" placeholder="Da (stazione)..." autoComplete="off" />
                                             <div className="grid gap-2">
-                                                {fromSuggestions.map((name) =>
-                                                    suggestionButton(name, (picked) => {
-                                                        setPickedFrom(picked);
-                                                        setFromName(picked);
+                                                {fromSuggestions.map((item) =>
+                                                    suggestionButton(item, (picked) => {
+                                                        const label = typeof picked === 'string' ? picked : picked.name;
+                                                        const meta = typeof picked === 'string' ? null : picked;
+                                                        const metaLabel = meta
+                                                            ? [
+                                                                meta.lefrecceId ? `lefrecceId: ${meta.lefrecceId}` : null,
+                                                                meta.stationCode ? `stationCode: ${meta.stationCode}` : null,
+                                                            ].filter(Boolean).join(', ')
+                                                            : '';
+                                                        setPickedFrom(label);
+                                                        setPickedFromMeta(meta);
+                                                        setFromName(label);
                                                         setFromSuggestions([]);
-                                                        setFromPickedLabel(`Selezionato: ${picked}`);
+                                                        setFromPickedLabel(
+                                                            metaLabel ? `Selezionato: ${label} (${metaLabel})` : `Selezionato: ${label}`
+                                                        );
                                                     })
                                                 )}
                                             </div>
@@ -758,12 +792,23 @@
                                         <div className="grid gap-2">
                                             <input value={toName} onChange={(e) => setToName(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="text" placeholder="A (stazione)..." autoComplete="off" />
                                             <div className="grid gap-2">
-                                                {toSuggestions.map((name) =>
-                                                    suggestionButton(name, (picked) => {
-                                                        setPickedTo(picked);
-                                                        setToName(picked);
+                                                {toSuggestions.map((item) =>
+                                                    suggestionButton(item, (picked) => {
+                                                        const label = typeof picked === 'string' ? picked : picked.name;
+                                                        const meta = typeof picked === 'string' ? null : picked;
+                                                        const metaLabel = meta
+                                                            ? [
+                                                                meta.lefrecceId ? `lefrecceId: ${meta.lefrecceId}` : null,
+                                                                meta.stationCode ? `stationCode: ${meta.stationCode}` : null,
+                                                            ].filter(Boolean).join(', ')
+                                                            : '';
+                                                        setPickedTo(label);
+                                                        setPickedToMeta(meta);
+                                                        setToName(label);
                                                         setToSuggestions([]);
-                                                        setToPickedLabel(`Selezionato: ${picked}`);
+                                                        setToPickedLabel(
+                                                            metaLabel ? `Selezionato: ${label} (${metaLabel})` : `Selezionato: ${label}`
+                                                        );
                                                     })
                                                 )}
                                             </div>
