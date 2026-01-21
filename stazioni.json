@@ -9210,9 +9210,9 @@
   },
   {
     "nome": "Coronella",
-    "regionId": null,
-    "lat": null,
-    "lon": null,
+    "regionId": "8",
+    "lat": 44.474488,
+    "lon": 11.323804,
     "disuso": false,
     "viaggiatrenoId": "S05719",
     "lefrecceId": 830005726,
@@ -9259,11 +9259,11 @@
     "italoId": null
   },
   {
-    "nome": "Cortina D'ampezzo",
-    "regionId": null,
-    "lat": null,
-    "lon": null,
-    "disuso": false,
+    "nome": "Cortina D'Ampezzo",
+    "regionId": "12",
+    "lat": 46.322127,
+    "lon": 12.08166,
+    "disuso": true,
     "viaggiatrenoId": "S02999",
     "lefrecceId": 830013835,
     "italoId": null
