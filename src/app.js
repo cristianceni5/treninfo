@@ -592,7 +592,7 @@ function formatTrainStatusLabel(status) {
   if (s === 'in viaggio') return 'In viaggio';
   if (s === 'in stazione') return 'In stazione';
   if (s === 'soppresso') return 'Soppresso';
-  if (s === 'variato') return 'Modificato';
+  if (s === 'variato') return 'Variato';
   if (s === 'programmato') return 'Pianificato';
   if (s === 'concluso') return 'Concluso';
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -623,6 +623,8 @@ function buildModelResponse({
   const fermatePulite = fermateList.map((f) => ({
     stazione: f?.stazione ?? null,
     tipoFermata: f?.tipoFermata ?? null,
+    statoFermata: f?.statoFermata ?? null,
+    tipoFermataRfi: f?.tipoFermataRfi ?? null,
     orari: {
       arrivo: {
         deltaMinuti: f?.orari?.arrivo?.deltaMinuti ?? null,
@@ -903,7 +905,7 @@ function mapDepartureEntry(entry) {
     orarioPartenzaLeggibile: formatHHmmFromMs(partenzaMs),
     ritardo: Number.isFinite(ritardo) ? ritardo : null,
     binarioProgrammato,
-    binarioEffettivo: binarioEffettivo || binarioProgrammato,
+    binarioEffettivo,
     circolante: !!circolante,
     tipoTreno,
   };
@@ -937,7 +939,7 @@ function mapArrivalEntry(entry) {
     orarioArrivoLeggibile: formatHHmmFromMs(arrivoMs),
     ritardo: Number.isFinite(ritardo) ? ritardo : null,
     binarioProgrammato,
-    binarioEffettivo: binarioEffettivo || binarioProgrammato,
+    binarioEffettivo,
     circolante: !!circolante,
     tipoTreno,
   };
@@ -1032,7 +1034,7 @@ function mapItaloArrivalEntry(entry, stationName, referenceMs) {
     orarioArrivoLeggibile: formatHHmmFromMs(scheduledMs),
     ritardo: Number.isFinite(ritardo) ? ritardo : null,
     binarioProgrammato: binario,
-    binarioEffettivo: binario,
+    binarioEffettivo: null,
     circolante: true,
     tipoTreno: trainTypeInfoFromCode('ITA'),
   };
@@ -1052,7 +1054,7 @@ function mapItaloDepartureEntry(entry, stationName, referenceMs) {
     orarioPartenzaLeggibile: formatHHmmFromMs(scheduledMs),
     ritardo: Number.isFinite(ritardo) ? ritardo : null,
     binarioProgrammato: binario,
-    binarioEffettivo: binario,
+    binarioEffettivo: null,
     circolante: true,
     tipoTreno: trainTypeInfoFromCode('ITA'),
   };
@@ -1358,7 +1360,19 @@ function mergeTrainEntries(primary, extra, timeKey) {
     seen.add(key);
     merged.push(item);
   }
-  return merged;
+  return merged
+    .map((item, idx) => ({
+      item,
+      idx,
+      time: item && Number.isFinite(Number(item[timeKey])) ? Number(item[timeKey]) : null,
+    }))
+    .sort((a, b) => {
+      const timeA = a.time != null ? a.time : Number.POSITIVE_INFINITY;
+      const timeB = b.time != null ? b.time : Number.POSITIVE_INFINITY;
+      if (timeA !== timeB) return timeA - timeB;
+      return a.idx - b.idx;
+    })
+    .map((entry) => entry.item);
 }
 
 function computeProbableMs(scheduledMs, realMs, delayMinutes) {
@@ -1543,7 +1557,21 @@ function buildStopTimes(stop, globalDelay) {
 // ============================================================================
 function isSuppressedStop(stop) {
   const tipo = stop?.tipoFermata != null ? String(stop.tipoFermata).trim().toUpperCase() : '';
+  const actualType = Number(stop?.actualFermataType);
+  if (Number.isFinite(actualType) && actualType === 3) return true;
   return tipo === 'S' || stop?.soppresso === true;
+}
+
+function resolveStopServiceStatus(stop) {
+  if (!stop) return { stato: null, codice: null };
+  if (isSuppressedStop(stop)) {
+    const code = Number.isFinite(Number(stop?.actualFermataType)) ? Number(stop.actualFermataType) : null;
+    return { stato: 'soppressa', codice: code };
+  }
+  const actualType = Number(stop?.actualFermataType);
+  if (Number.isFinite(actualType) && actualType === 2) return { stato: 'straordinaria', codice: actualType };
+  if (Number.isFinite(actualType) && actualType === 1) return { stato: 'prevista', codice: actualType };
+  return { stato: 'prevista', codice: Number.isFinite(actualType) ? actualType : null };
 }
 
 function isOriginStop(stop) {
@@ -1602,6 +1630,28 @@ function isTrainVaried(snapshot, fermateRaw) {
   return false;
 }
 
+function hasPartialSuppression(fermateRaw) {
+  if (!Array.isArray(fermateRaw) || fermateRaw.length === 0) return false;
+  let suppressed = 0;
+  let active = 0;
+  for (const stop of fermateRaw) {
+    if (isSuppressedStop(stop)) suppressed += 1;
+    else active += 1;
+  }
+  return suppressed > 0 && active > 0;
+}
+
+function hasOnlySuppressedStops(fermateRaw) {
+  if (!Array.isArray(fermateRaw) || fermateRaw.length === 0) return false;
+  let suppressed = 0;
+  let active = 0;
+  for (const stop of fermateRaw) {
+    if (isSuppressedStop(stop)) suppressed += 1;
+    else active += 1;
+  }
+  return suppressed > 0 && active === 0;
+}
+
 function flattenToStrings(value) {
   if (value == null) return [];
   if (Array.isArray(value)) return value.flatMap(flattenToStrings);
@@ -1649,8 +1699,10 @@ function resolveTrainStatus(snapshot) {
   if (!snapshot) return null;
 
   const fermateRaw = Array.isArray(snapshot.fermate) ? snapshot.fermate : [];
+  const partialSuppression = hasPartialSuppression(fermateRaw);
+  const fullySuppressed = hasOnlySuppressedStops(fermateRaw);
 
-  const isSuppressed = looksLikeSuppressedTrain(snapshot);
+  const isSuppressed = (looksLikeSuppressedTrain(snapshot) || fullySuppressed) && !partialSuppression;
   if (isSuppressed) return 'soppresso';
 
   const last = fermateRaw.length ? fermateRaw[fermateRaw.length - 1] : null;
@@ -2536,10 +2588,13 @@ const handleTrainStatus = async (req, res) => {
       const id = stop && stop.id != null ? String(stop.id).trim().toUpperCase() : null;
       const ritardo = parseDelayMinutes(stop?.ritardo) ?? globalDelay;
       const carrozzaExecutive = tipoTrenoFinal.codice === 'FR' ? computeExecutivePositionForOrient(stop?.orientamento) : null;
+      const fermataInfo = resolveStopServiceStatus(stop);
 
       return {
         stazione: stationNameById(id) || stationPublicNameFromIdOrName(stop?.stazione),
         tipoFermata: stop?.tipoFermata != null ? String(stop.tipoFermata) : null,
+        statoFermata: fermataInfo.stato,
+        tipoFermataRfi: fermataInfo.codice,
         ritardo,
         orari: buildStopTimes(stop, globalDelay),
         binari: buildStopPlatforms(stop),
@@ -2602,8 +2657,10 @@ const handleTrainStatus = async (req, res) => {
 
     const statoRaw = resolveTrainStatus(snapshot);
     const statoTreno = stoppedAtDestination && statoRaw !== 'soppresso' ? 'concluso' : statoRaw;
-    const isSoppresso = looksLikeSuppressedTrain(snapshot);
-    const isVariato = isTrainVaried(snapshot, fermateRaw);
+    const partialSuppression = hasPartialSuppression(fermateRaw);
+    const fullySuppressed = hasOnlySuppressedStops(fermateRaw);
+    const isSoppresso = (looksLikeSuppressedTrain(snapshot) || fullySuppressed) && !partialSuppression;
+    const isVariato = isTrainVaried(snapshot, fermateRaw) && !isSoppresso;
 
     // Se il treno è ancora pianificato, non esporre "prossima fermata" e "ultimo rilevamento"
     // finché dalla stazione di partenza non arriva il binario effettivo (treno in stazione e pronto a partire).

@@ -3,7 +3,8 @@
 <html lang="it" class="dark">
 <head>
     <meta charset="UTF-8">
-    <link rel="shortcut icon" href="./iconTreninfo-iOS-ClearDark-1024x1024@1x.png" type="png">
+    <link rel="icon" href="./prova-iOS-Default-1024x1024@1x.png" type="image/png" media="(prefers-color-scheme: light)">
+    <link rel="icon" href="./prova-iOS-Default-1024x1024@1x.png" type="image/png" media="(prefers-color-scheme: dark)">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Treninfo Server - Test API (Server)</title>
 
@@ -15,14 +16,16 @@
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['TikTok Sans', 'Google Sans', 'sans-serif'],
+                        sans: ['Google Sans', 'sans-serif'],
                         mono: ['JetBrains Mono', 'monospace'],
                     },
                     colors: {
-                        systemBlue: '#007AFF',
+                        systemBlue: '#0066CC',
                         systemGray: '#8E8E93',
                         systemGray6Light: '#F2F2F7',
                         systemGray6Dark: '#1C1C1E',
+                        italianGreen: '#009246',
+                        italianRed: '#CE2B37',
                     },
                     animation: {
                         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
@@ -43,14 +46,14 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
-        /* Import User's Custom Font Link (TikTok Sans & Google Sans) */
-        @import url('https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&family=TikTok+Sans:opsz,wght@12..36,300..900&display=swap');
+        /* Import Google Sans */
+        @import url('https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap');
 
         /* Keep JetBrains Mono for technical details */
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 
         body {
-            font-family: 'TikTok Sans', 'Google Sans', sans-serif;
+            font-family: 'Google Sans', sans-serif;
             transition: background-color 0.3s ease, color 0.3s ease;
         }
 
@@ -62,7 +65,7 @@
         /* Minimal look: rely on Tailwind defaults */
     </style>
 </head>
-<body class="bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 antialiased selection:bg-zinc-300 selection:text-zinc-900 dark:selection:bg-zinc-700 dark:selection:text-zinc-100">
+<body class="bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 antialiased selection:bg-systemBlue selection:text-white">
     <div id="root"></div>
 
     <script type="text/babel">
@@ -92,6 +95,14 @@
             };
             return icons[name] || null;
         };
+
+        const TricoloreFlag = ({ className = '' }) => (
+            <span className={`flex h-3 w-6 overflow-hidden rounded-sm border border-zinc-200 dark:border-zinc-700 ${className}`}>
+                <span className="w-1/3 bg-italianGreen"></span>
+                <span className="w-1/3 bg-white"></span>
+                <span className="w-1/3 bg-italianRed"></span>
+            </span>
+        );
 
         function App() {
             const [isDarkMode, setIsDarkMode] = useState(true);
@@ -321,7 +332,7 @@
                     key={label}
                     type="button"
                     onClick={() => onSelect(item)}
-                    className="w-full text-left px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm hover:border-zinc-400 hover:text-zinc-700 dark:hover:border-zinc-600 dark:hover:text-zinc-300 transition"
+                    className="w-full text-left px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900 text-sm text-zinc-700 dark:text-zinc-200 hover:border-systemBlue/70 hover:text-systemBlue dark:hover:text-white hover:bg-systemBlue/5 dark:hover:bg-systemBlue/10 transition"
                 >
                     {label}
                 </button>
@@ -329,7 +340,17 @@
             };
 
             const primaryButtonClass =
-                "px-5 py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 transition";
+                "px-5 py-2.5 rounded-xl bg-systemBlue text-white text-sm font-semibold shadow-sm hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-systemBlue/40 focus:ring-offset-2 focus:ring-offset-zinc-50 dark:focus:ring-offset-zinc-950 transition";
+
+            const toggleButtonClass = (active) =>
+                `px-4 py-2 rounded-full text-sm font-semibold transition ${
+                    active
+                        ? 'bg-systemBlue text-white shadow-sm'
+                        : 'bg-white/80 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-systemBlue/60 hover:text-systemBlue dark:hover:text-white'
+                }`;
+
+            const inputClass =
+                "w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-systemBlue/30 focus:border-systemBlue transition";
 
             function parseJsonPreview(text) {
                 if (!text || typeof text !== 'string') return null;
@@ -339,6 +360,25 @@
                 } catch {
                     return null;
                 }
+            }
+
+            function formatCompactTrainJson(rawText) {
+                const data = parseJsonPreview(rawText);
+                if (!data || !data.needsSelection) return rawText || '';
+                const payload = {
+                    ok: true,
+                    needsSelection: true,
+                    selectionType: data.selectionType || null,
+                    origine: data.origine || null,
+                    message: data.message || null,
+                };
+                if (data.selectionType === 'date') {
+                    payload.dateDisponibili = Array.isArray(data.dateDisponibili) ? data.dateDisponibili : [];
+                } else if (data.selectionType === 'origin') {
+                    const choices = Array.isArray(data.choices) ? data.choices : [];
+                    payload.originiDisponibili = choices.map((c) => c?.origine).filter(Boolean);
+                }
+                return JSON.stringify(payload, null, 2);
             }
 
             function formatValue(val) {
@@ -373,6 +413,59 @@
 
             function renderTrainPreview(data) {
                 if (!data || !data.ok) return null;
+                if (data.needsSelection) {
+                    const selectionType = data.selectionType || '-';
+                    const dateDisponibili = Array.isArray(data.dateDisponibili) ? data.dateDisponibili : [];
+                    const choices = Array.isArray(data.choices) ? data.choices : [];
+                    const dateChoices = dateDisponibili.length
+                        ? dateDisponibili.map((item, idx) => ({
+                            choice: idx,
+                            label: typeof item === 'string' ? item : item?.data || String(item?.timestamp || ''),
+                            timestamp: typeof item === 'string' ? null : item?.timestamp ?? null,
+                        }))
+                        : choices.map((item, idx) => ({
+                            choice: Number.isFinite(item?.choice) ? item.choice : idx,
+                            label: item?.data || item?.origine || '-',
+                            timestamp: item?.timestampRiferimento ?? item?.timestamp ?? null,
+                        }));
+                    return (
+                        <div className="rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950/70 p-5">
+                            <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Selezione richiesta</div>
+                            <div className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                                {data.message || 'Sono disponibili piu corse per questo numero.'}
+                            </div>
+                            {selectionType === 'origin' ? (
+                                <div className="mt-4 grid gap-2">
+                                    {choices.map((item, idx) => (
+                                        <div key={`origin-${idx}`} className="flex items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 px-4 py-2 text-sm">
+                                            <span className="text-zinc-900 dark:text-zinc-100">{item?.origine || '-'}</span>
+                                            <span className="text-xs font-mono text-zinc-500 dark:text-zinc-400">choice {item?.choice ?? idx}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="mt-4 grid gap-2">
+                                    {dateChoices.length === 0 && (
+                                        <div className="text-sm text-zinc-500 dark:text-zinc-400">Nessuna data disponibile.</div>
+                                    )}
+                                    {dateChoices.map((item, idx) => (
+                                        <div key={`date-${idx}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 px-4 py-2 text-sm">
+                                            <span className="text-zinc-900 dark:text-zinc-100">{item.label || '-'}</span>
+                                            <div className="flex items-center gap-3 text-xs font-mono text-zinc-500 dark:text-zinc-400">
+                                                <span>choice {item.choice}</span>
+                                                {item.timestamp ? <span>{item.timestamp}</span> : null}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+                                Suggerimento: usa <span className="font-mono">choice</span> o <span className="font-mono">timestampRiferimento</span>.
+                            </div>
+                        </div>
+                    );
+                }
+
                 const tratta = data.tratta || {};
                 const stato = data.statoTreno || {};
                 const tipoTreno = data.tipoTreno || {};
@@ -384,6 +477,17 @@
                 const numero = data.numeroTreno != null ? String(data.numeroTreno) : '';
                 const titoloTreno = [sigla, numero].filter(Boolean).join(' ');
                 const compagnia = data.compagnia ? String(data.compagnia).toUpperCase() : '-';
+                const currentStopName = stato.stazioneCorrente ? String(stato.stazioneCorrente).trim().toLowerCase() : '';
+
+                const pickStopTime = (stop, key) => {
+                    const hhmm = stop?.orari?.[key]?.hhmm || {};
+                    return {
+                        time: hhmm.reale || hhmm.probabile || hhmm.programmato || null,
+                        kind: hhmm.reale ? 'reale' : hhmm.probabile ? 'probabile' : hhmm.programmato ? 'programmato' : null,
+                        real: hhmm.reale || null,
+                    };
+                };
+
                 return (
                     <div className="rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950/70 p-5">
                         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -467,90 +571,95 @@
                             </div>
                             <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 p-4">
                                 <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Timeline fermate</div>
-                                <div className="mt-3 grid gap-3">
+                                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+                                    <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-italianGreen"></span>Fatte</span>
+                                    <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-systemBlue"></span>Straordinarie</span>
+                                    <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-italianRed"></span>Soppresse</span>
+                                    <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-700"></span>Da fare</span>
+                                </div>
+                                <div className="mt-4 grid gap-4">
                                     {stops.length === 0 && (
                                         <div className="text-sm text-zinc-500 dark:text-zinc-400">Nessuna fermata disponibile.</div>
                                     )}
-                                    {stops.map((stop, idx) => (
-                                        <div key={`${stop.stazione || 'stop'}-${idx}`} className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-950/60 p-3">
-                                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                                <div>
-                                                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                                    {stops.map((stop, idx) => {
+                                        const tipo = stop?.tipoFermata ? String(stop.tipoFermata).trim().toUpperCase() : '';
+                                        const useDeparture = tipo === 'P';
+                                        const timeData = pickStopTime(stop, useDeparture ? 'partenza' : 'arrivo');
+                                        const isSuppressed = stop?.statoFermata === 'soppressa';
+                                        const isExtra = stop?.statoFermata === 'straordinaria';
+                                        const isCurrent =
+                                            !!currentStopName &&
+                                            !!stop?.stazione &&
+                                            String(stop.stazione).trim().toLowerCase() === currentStopName &&
+                                            !isSuppressed;
+                                        const isDone = !!timeData.real;
+
+                                        let statusLabel = 'Da fare';
+                                        let dotClass = 'bg-zinc-300 dark:bg-zinc-700 border-zinc-300 dark:border-zinc-700';
+                                        let statusClass = 'text-zinc-500 dark:text-zinc-400';
+                                        let nameClass = '';
+
+                                        if (isSuppressed) {
+                                            statusLabel = 'Soppressa';
+                                            dotClass = 'bg-italianRed border-italianRed';
+                                            statusClass = 'text-italianRed';
+                                            nameClass = 'line-through text-zinc-500';
+                                        } else if (isExtra) {
+                                            statusLabel = 'Straordinaria';
+                                            dotClass = 'bg-systemBlue border-systemBlue';
+                                            statusClass = 'text-systemBlue';
+                                        } else if (isCurrent) {
+                                            statusLabel = 'In stazione';
+                                            dotClass = 'bg-systemBlue border-systemBlue ring-4 ring-systemBlue/20';
+                                            statusClass = 'text-systemBlue';
+                                        } else if (isDone) {
+                                            statusLabel = 'Fatta';
+                                            dotClass = 'bg-italianGreen border-italianGreen';
+                                            statusClass = 'text-italianGreen';
+                                        }
+
+                                        const lineClass =
+                                            idx === stops.length - 1
+                                                ? ''
+                                                : isSuppressed
+                                                    ? 'bg-italianRed/30'
+                                                    : isDone
+                                                        ? 'bg-italianGreen/50'
+                                                        : 'bg-zinc-200 dark:bg-zinc-800';
+
+                                        return (
+                                            <div key={`${stop.stazione || 'stop'}-${idx}`} className="flex items-start gap-3">
+                                                <div className="w-16 pt-0.5 text-xs font-mono text-zinc-500 dark:text-zinc-400">
+                                                    {timeData.time || '-'}
+                                                    {timeData.kind ? (
+                                                        <div className="text-[10px] uppercase tracking-wide text-zinc-400">{timeData.kind}</div>
+                                                    ) : null}
+                                                </div>
+                                                <div className="relative flex flex-col items-center">
+                                                    <span className={`h-3 w-3 rounded-full border ${dotClass}`}></span>
+                                                    {idx < stops.length - 1 && (
+                                                        <span className={`w-px flex-1 ${lineClass}`}></span>
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 pb-2">
+                                                    <div className={`text-sm font-semibold text-zinc-900 dark:text-zinc-100 ${nameClass}`}>
                                                         {stop.stazione || '-'}
                                                     </div>
-                                                    <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                                                        {stop.tipoFermata || '-'}
-                                                        {stop.carrozzaExecutive ? ` • Executive: ${stop.carrozzaExecutive}` : ''}
-                                                    </div>
-                                                </div>
-                                                <div className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">
-                                                    #{idx + 1}
-                                                </div>
-                                            </div>
-                                            <div className="mt-3 grid gap-2 text-xs">
-                                                <div className="grid gap-2 md:grid-cols-2">
-                                                    <div className="rounded-lg border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 p-2">
-                                                        <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Arrivo</div>
-                                                        <div className="mt-1 grid gap-1">
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="text-zinc-500 dark:text-zinc-400">Prog.</span>
-                                                                <span className="text-zinc-900 dark:text-zinc-100 font-mono">{stop.orari?.arrivo?.hhmm?.programmato || '-'}</span>
-                                                            </div>
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="text-zinc-500 dark:text-zinc-400">Reale</span>
-                                                                <span className="text-zinc-900 dark:text-zinc-100 font-mono">{stop.orari?.arrivo?.hhmm?.reale || '-'}</span>
-                                                            </div>
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="text-zinc-500 dark:text-zinc-400">Prob.</span>
-                                                                <span className="text-zinc-900 dark:text-zinc-100 font-mono">{stop.orari?.arrivo?.hhmm?.probabile || '-'}</span>
-                                                            </div>
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="text-zinc-500 dark:text-zinc-400">Delta</span>
-                                                                <span className="text-zinc-900 dark:text-zinc-100">
-                                                                    {stop.orari?.arrivo?.deltaMinuti != null ? `${stop.orari.arrivo.deltaMinuti} min` : '-'}
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="text-zinc-500 dark:text-zinc-400">Bin.</span>
-                                                                <span className="text-zinc-900 dark:text-zinc-100">
-                                                                    {(stop.binari?.arrivo?.reale || stop.binari?.arrivo?.programmato || '-') + ''}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="rounded-lg border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 p-2">
-                                                        <div className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Partenza</div>
-                                                        <div className="mt-1 grid gap-1">
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="text-zinc-500 dark:text-zinc-400">Prog.</span>
-                                                                <span className="text-zinc-900 dark:text-zinc-100 font-mono">{stop.orari?.partenza?.hhmm?.programmato || '-'}</span>
-                                                            </div>
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="text-zinc-500 dark:text-zinc-400">Reale</span>
-                                                                <span className="text-zinc-900 dark:text-zinc-100 font-mono">{stop.orari?.partenza?.hhmm?.reale || '-'}</span>
-                                                            </div>
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="text-zinc-500 dark:text-zinc-400">Prob.</span>
-                                                                <span className="text-zinc-900 dark:text-zinc-100 font-mono">{stop.orari?.partenza?.hhmm?.probabile || '-'}</span>
-                                                            </div>
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="text-zinc-500 dark:text-zinc-400">Delta</span>
-                                                                <span className="text-zinc-900 dark:text-zinc-100">
-                                                                    {stop.orari?.partenza?.deltaMinuti != null ? `${stop.orari.partenza.deltaMinuti} min` : '-'}
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="text-zinc-500 dark:text-zinc-400">Bin.</span>
-                                                                <span className="text-zinc-900 dark:text-zinc-100">
-                                                                    {(stop.binari?.partenza?.reale || stop.binari?.partenza?.programmato || '-') + ''}
-                                                                </span>
-                                                            </div>
-                                                        </div>
+                                                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                                                        <span className={`px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-900/60 ${statusClass}`}>
+                                                            {statusLabel}
+                                                        </span>
+                                                        {stop?.statoFermata ? (
+                                                            <span className="text-zinc-400 dark:text-zinc-500">{stop.statoFermata}</span>
+                                                        ) : null}
+                                                        {stop?.tipoFermataRfi != null ? (
+                                                            <span className="text-zinc-400 dark:text-zinc-500">RFI {stop.tipoFermataRfi}</span>
+                                                        ) : null}
                                                     </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
@@ -665,12 +774,13 @@
             return (
                 <div className="min-h-screen flex flex-col">
                     <nav className="fixed top-0 w-full z-50 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 transition-colors duration-300">
-                        <div className="absolute top-0 left-0 w-full h-1 bg-zinc-300 dark:bg-zinc-800"></div>
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-italianGreen via-white to-italianRed"></div>
 
                         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between relative">
                             <div className="flex items-center gap-2">
-                                <img src="iconTreninfo-iOS-ClearDark-1024x1024@1x.png" alt="Treninfo logo" className="w-8 h-8 object-contain" />
+                                <img src="prova-iOS-Dark-1024x1024@1x.png" alt="Treninfo logo server" className="w-8 h-8 object-contain" />
                                 <span className="font-bold text-lg tracking-tight text-zinc-900 dark:text-white">Treninfo</span>
+                                <TricoloreFlag className="ml-1" />
                             </div>
 
                             <div className="flex items-center gap-2 md:gap-4">
@@ -683,10 +793,10 @@
 
                                 <div className="h-4 w-px bg-zinc-300 dark:bg-zinc-700 mx-1"></div>
 
-                                <a href="https://github.com/cristianceni5/treninfoapp" target="_blank" className="p-2 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
+                                <a href="https://github.com/cristianceni5/treninfoapp" target="_blank" className="p-2 text-zinc-500 hover:text-systemBlue transition-colors">
                                     <Icon name="github" size={20} />
                                 </a>
-                                <a href="https://instagram.com/treninfoapp" target="_blank" className="p-2 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
+                                <a href="https://instagram.com/treninfoapp" target="_blank" className="p-2 text-zinc-500 hover:text-systemBlue transition-colors">
                                     <Icon name="instagram" size={20} />
                                 </a>
                             </div>
@@ -697,7 +807,7 @@
                         <div className="max-w-2xl mx-auto px-6 text-left mb-16">
                             <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-6 text-zinc-900 dark:text-white">
                                 Treninfo <br />
-                                <span className="text-zinc-500">Test Chiamate API.</span>
+                                <span className="text-systemBlue">Test Chiamate API.</span>
                             </h1>
                             <p className="text-base md:text-lg text-zinc-600 dark:text-zinc-400 mb-10 leading-relaxed max-w-lg">
                                 Ambiente interno per verificare autocomplete, tabelloni e stato treno con output normalizzato.
@@ -711,16 +821,16 @@
 
                         <section className="max-w-5xl mx-auto px-6 mb-12">
                             <div className="grid gap-6">
-                                <div className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                                <div className="p-6 rounded-2xl bg-white/80 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 shadow-sm">
                                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                                         <div>
                                             <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Ricerca stazione</h2>
                                             <p className="text-sm text-zinc-600 dark:text-zinc-400">Autocomplete + info, partenze e arrivi.</p>
                                         </div>
                                         <div className="flex flex-wrap gap-2">
-                                            <button onClick={() => handleInfo('info')} className={primaryButtonClass}>Info</button>
-                                            <button onClick={() => handleInfo('departures')} className={primaryButtonClass}>Partenze</button>
-                                            <button onClick={() => handleInfo('arrivals')} className={primaryButtonClass}>Arrivi</button>
+                                            <button onClick={() => handleInfo('info')} className={toggleButtonClass(stationMode === 'info')}>Info</button>
+                                            <button onClick={() => handleInfo('departures')} className={toggleButtonClass(stationMode === 'departures')}>Partenze</button>
+                                            <button onClick={() => handleInfo('arrivals')} className={toggleButtonClass(stationMode === 'arrivals')}>Arrivi</button>
                                         </div>
                                     </div>
 
@@ -728,7 +838,7 @@
                                         <input
                                             value={stationInput}
                                             onChange={(e) => setStationInput(e.target.value)}
-                                            className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600"
+                                            className={inputClass}
                                             type="text"
                                             placeholder="Nome stazione..."
                                             autoComplete="off"
@@ -754,7 +864,7 @@
                                     </div>
                                 </div>
 
-                                <div className="p-6 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                                <div className="p-6 rounded-2xl bg-white/80 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 shadow-sm">
                                 <div>
                                     <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Ricerca treno</h2>
                                     <p className="text-sm text-zinc-600 dark:text-zinc-400">Stato treno e JSON normalizzato.</p>
@@ -762,8 +872,8 @@
 
                                     <div className="mt-6 grid gap-4">
                                         <div className="grid gap-3 md:grid-cols-2">
-                                            <input value={trainNumber} onChange={(e) => setTrainNumber(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="text" placeholder="Numero treno (es. 8527)" />
-                                            <input value={choice} onChange={(e) => setChoice(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="number" placeholder="Choice (opzionale)" min="0" step="1" />
+                                            <input value={trainNumber} onChange={(e) => setTrainNumber(e.target.value)} className={inputClass} type="text" placeholder="Numero treno (es. 8527)" />
+                                            <input value={choice} onChange={(e) => setChoice(e.target.value)} className={inputClass} type="number" placeholder="Choice (opzionale)" min="0" step="1" />
                                         </div>
 
                                         <div className="flex flex-wrap gap-3">
@@ -776,11 +886,11 @@
                                             </div>
                                         ) : null}
                                         {renderTrainPreview(parseJsonPreview(trainResult))}
-                                        <pre className="min-h-[120px] max-h-[360px] overflow-auto rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-zinc-50 text-zinc-900 dark:bg-black dark:text-emerald-200 text-xs p-4 font-mono">{trainResult}</pre>
+                                        <pre className="min-h-[120px] max-h-[360px] overflow-auto rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-zinc-50 text-zinc-900 dark:bg-black dark:text-emerald-200 text-xs p-4 font-mono">{formatCompactTrainJson(trainResult)}</pre>
                                     </div>
                                 </div>
 
-                                <div className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                                <div className="p-6 rounded-2xl bg-white/80 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 shadow-sm">
                                     <div>
                                         <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Cerca soluzioni</h2>
                                         <p className="text-sm text-zinc-600 dark:text-zinc-400">Seleziona partenza, arrivo e orario per testare le soluzioni.</p>
@@ -788,7 +898,7 @@
 
                                     <div className="mt-6 grid gap-4">
                                         <div className="grid gap-2">
-                                            <input value={fromName} onChange={(e) => setFromName(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="text" placeholder="Da (stazione)..." autoComplete="off" />
+                                            <input value={fromName} onChange={(e) => setFromName(e.target.value)} className={inputClass} type="text" placeholder="Da (stazione)..." autoComplete="off" />
                                             <div className="grid gap-2">
                                                 {fromSuggestions.map((item) =>
                                                     suggestionButton(item, (picked) => {
@@ -814,7 +924,7 @@
                                         </div>
 
                                         <div className="grid gap-2">
-                                            <input value={toName} onChange={(e) => setToName(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="text" placeholder="A (stazione)..." autoComplete="off" />
+                                            <input value={toName} onChange={(e) => setToName(e.target.value)} className={inputClass} type="text" placeholder="A (stazione)..." autoComplete="off" />
                                             <div className="grid gap-2">
                                                 {toSuggestions.map((item) =>
                                                     suggestionButton(item, (picked) => {
@@ -840,8 +950,8 @@
                                         </div>
 
                                         <div className="grid gap-3 md:grid-cols-3">
-                                            <input value={solDate} onChange={(e) => setSolDate(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="date" />
-                                            <input value={solTime} onChange={(e) => setSolTime(e.target.value)} className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm" type="time" />
+                                            <input value={solDate} onChange={(e) => setSolDate(e.target.value)} className={inputClass} type="date" />
+                                            <input value={solTime} onChange={(e) => setSolTime(e.target.value)} className={inputClass} type="time" />
                                             <button onClick={handleSolutions} className={primaryButtonClass}>Cerca soluzioni</button>
                                         </div>
 
@@ -864,15 +974,15 @@
                                 <div className="font-bold text-zinc-900 dark:text-zinc-100">Treninfo Project</div>
                                 <div className="text-xs text-zinc-500 mt-1 flex gap-2 items-center">
                                     <span>Dev by Cristian Ceni</span>
-                                    <span>•</span>
-                                    <span>Site powered by open data</span>
+                                    <span>-</span>
+                                    <span>Powered by ViaggiaTreno, LeFrecce, Italo, Netlify CLI</span>
                                 </div>
                             </div>
 
                             <div className="flex gap-6 text-sm text-zinc-500 dark:text-zinc-400 font-mono">
-                                <a href="https://github.com/cristianceni5/treninfo" className="hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">/repo</a>
-                                <a href="#" className="hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">/api_docs</a>
-                                <a href="#" className="hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">/status</a>
+                                <a href="https://github.com/cristianceni5/treninfo" className="hover:text-systemBlue transition-colors">/repo</a>
+                                <a href="#" className="hover:text-systemBlue transition-colors">/api_docs</a>
+                                <a href="#" className="hover:text-systemBlue transition-colors">/status</a>
                             </div>
                         </div>
                     </footer>
