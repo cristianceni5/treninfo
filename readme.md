@@ -1,6 +1,6 @@
-# Treninfo API
+<img src="icona-italia.png" alt="Italia" width="125" />
 
-<img src="icona-italia.png" alt="Italia" width="48" />
+# Treninfo - App e Server
 
 Backend (Netlify Functions) che normalizza i dati di ViaggiaTreno (RFI) e LeFrecce (Trenitalia) per l'app Treninfo.
 
