@@ -13,7 +13,7 @@
       "dependencies": [
         "npm:cors@^2.8.5",
         "npm:express@^5.1.0",
-        "npm:netlify-cli@^23.12.1",
+        "npm:netlify-cli@^23.13.4",
         "npm:serverless-http@4"
       ]
     }

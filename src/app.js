@@ -710,6 +710,84 @@ function flipHeadTail(pos) {
   return null;
 }
 
+function decodeHtmlEntities(input) {
+  const s = String(input || '');
+  if (!s) return '';
+  return s
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_m, num) => String.fromCodePoint(parseInt(num, 10)));
+}
+
+function parseInfomobilitaTicker(html) {
+  const input = String(html || '');
+  const items = [];
+  const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
+  let match;
+  while ((match = liRegex.exec(input)) !== null) {
+    const raw = match[1] || '';
+    const text = decodeHtmlEntities(raw.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, ' '))
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (text) items.push(text);
+  }
+  if (items.length) return items;
+  const fallback = decodeHtmlEntities(input.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' '))
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  return fallback;
+}
+
+function parseInfomobilitaRSS(html) {
+  const input = String(html || '');
+  const items = [];
+  const liRegex = /<li[^>]*class="[^"]*editModeCollapsibleElement[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
+  let match;
+  while ((match = liRegex.exec(input)) !== null) {
+    const chunk = match[1] || '';
+    const titleMatch = chunk.match(/<a[^>]*class="[^"]*headingNewsAccordion[^"]*"[^>]*>([\s\S]*?)<\/a>/i);
+    const titleHtml = titleMatch ? titleMatch[1] : '';
+    const title = decodeHtmlEntities(titleHtml.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+    const inEvidenza = /headingNewsAccordion[^"]*inEvidenza/i.test(titleMatch ? titleMatch[0] : chunk);
+
+    const dateMatch = chunk.match(/<h4[^>]*>([\s\S]*?)<\/h4>/i);
+    const date = dateMatch
+      ? decodeHtmlEntities(dateMatch[1].replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim()
+      : null;
+
+    const infoMatch = chunk.match(/<div[^>]*class="[^"]*info-text[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+    const infoHtml = infoMatch ? infoMatch[1] : '';
+    const text = decodeHtmlEntities(infoHtml.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' '))
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n');
+
+    if (title || text) {
+      items.push({
+        title: title || null,
+        date,
+        text: text || null,
+        inEvidenza: !!inEvidenza,
+      });
+    }
+  }
+
+  if (items.length) return items;
+
+  const fallback = decodeHtmlEntities(input.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' '))
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  return fallback.map((text) => ({ title: null, date: null, text, inEvidenza: false }));
+}
+
 function encodeDateString(when = 'now') {
   const baseDate = when === 'now' ? new Date() : new Date(when);
   return encodeURIComponent(baseDate.toString());
@@ -906,6 +984,7 @@ function mapDepartureEntry(entry) {
     ritardo: Number.isFinite(ritardo) ? ritardo : null,
     binarioProgrammato,
     binarioEffettivo,
+    arrivato: typeof entry?.arrivato === 'boolean' ? entry.arrivato : null,
     circolante: !!circolante,
     tipoTreno,
   };
@@ -940,6 +1019,7 @@ function mapArrivalEntry(entry) {
     ritardo: Number.isFinite(ritardo) ? ritardo : null,
     binarioProgrammato,
     binarioEffettivo,
+    arrivato: typeof entry?.arrivato === 'boolean' ? entry.arrivato : null,
     circolante: !!circolante,
     tipoTreno,
   };
@@ -1035,6 +1115,7 @@ function mapItaloArrivalEntry(entry, stationName, referenceMs) {
     ritardo: Number.isFinite(ritardo) ? ritardo : null,
     binarioProgrammato: binario,
     binarioEffettivo: null,
+    arrivato: null,
     circolante: true,
     tipoTreno: trainTypeInfoFromCode('ITA'),
   };
@@ -1055,6 +1136,7 @@ function mapItaloDepartureEntry(entry, stationName, referenceMs) {
     ritardo: Number.isFinite(ritardo) ? ritardo : null,
     binarioProgrammato: binario,
     binarioEffettivo: null,
+    arrivato: null,
     circolante: true,
     tipoTreno: trainTypeInfoFromCode('ITA'),
   };
@@ -1932,20 +2014,12 @@ app.get('/api/stations/info', async (req, res) => {
     const regionId = await fetchRegionId(stationCode);
     const detail = await fetchStationDetail(stationCode, regionId);
 
-    let meteo = null;
-    try {
-      meteo = await fetchJson(`${VT_BASE_URL}/datimeteo/${encodeURIComponent(regionId)}`);
-    } catch {
-      meteo = null;
-    }
-
     res.json({
       ok: true,
       stazione: stationNameById(stationCode),
       latitudine: detail && detail.lat != null ? detail.lat : null,
       longitudine: detail && detail.lon != null ? detail.lon : null,
       regione: String(regionId || '').trim() || null,
-      meteo,
     });
   } catch (err) {
     res.status(err.status || 500).json({ ok: false, error: err.message });
@@ -3147,10 +3221,14 @@ app.get('/api/stations/board', async (req, res) => {
   }
 });
 
-app.get('/api/news', async (_req, res) => {
+app.get('/api/news', async (req, res) => {
   try {
-    const data = await fetchJson(`${VT_BASE_URL}/news/0/it`);
-    res.json({ ok: true, data });
+    const works = parseBool(req.query.works || req.query.lavori, false);
+    const html = await fetchText(`${VT_BASE_URL}/infomobilitaRSS/${works ? 'true' : 'false'}`);
+    const data = parseInfomobilitaRSS(html);
+    const payload = { ok: true, works, data };
+    if (ENABLE_RAW_UPSTREAM) payload.raw = html;
+    res.json(payload);
   } catch (err) {
     res.status(err.status || 500).json({ ok: false, error: err.message });
   }

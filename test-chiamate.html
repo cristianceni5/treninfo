@@ -1,12 +1,14 @@
 <!--Developed by Cristian Ceni-->
 <!DOCTYPE html>
-<html lang="it" class="dark">
+<html lang="it">
+
 <head>
     <meta charset="UTF-8">
-    <link rel="icon" href="./prova-iOS-Default-1024x1024@1x.png" type="image/png" media="(prefers-color-scheme: light)">
-    <link rel="icon" href="./prova-iOS-Default-1024x1024@1x.png" type="image/png" media="(prefers-color-scheme: dark)">
+    <link rel="icon" href="./icona-default.png" type="image/png">
+    <link rel="icon" href="./icona-default.png" type="image/png" media="(prefers-color-scheme: light)">
+    <link rel="icon" href="./icona-dark.png" type="image/png" media="(prefers-color-scheme: dark)">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Treninfo Server - Test API (Server)</title>
+    <title>Treninfo Server - Test API</title>
 
     <!-- Tailwind CSS with Configuration -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -35,963 +37,1049 @@
         }
     </script>
 
-    <!-- React & ReactDOM -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-
-    <!-- Babel -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-
-    <style>
-        /* Import Google Sans */
-        @import url('https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap');
-
-        /* Keep JetBrains Mono for technical details */
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
-
-        body {
-            font-family: 'Google Sans', sans-serif;
-            transition: background-color 0.3s ease, color 0.3s ease;
-        }
-
-        ::-webkit-scrollbar {
-            width: 0px;
-            background: transparent;
-        }
-
-        /* Minimal look: rely on Tailwind defaults */
-    </style>
+    <link rel="stylesheet" href="styles.css">
 </head>
-<body class="bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 antialiased selection:bg-systemBlue selection:text-white">
-    <div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-
-        // --- ICONS ---
-        const Icon = ({ name, size = 20, className }) => {
-            const icons = {
-                github: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>,
-                instagram: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg>,
-                download: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15"/><line x1="12" x2="12" y1="3"/></svg>,
-                smartphone: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>,
-                server: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>,
-                code: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>,
-                moon: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>,
-                sun: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>,
-                apple: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" className={className}><path d="M17.8 19.34c-.87 1.25-1.78 2.5-3.15 2.53-1.35.03-1.79-.8-3.34-.8-1.57 0-2.06.78-3.29.83-1.32.06-2.33-1.32-3.17-2.53-1.73-2.5-3.05-7.07-1.27-10.16.89-1.54 2.48-2.51 4.2-2.54 1.33-.03 2.58.9 3.4.9.82 0 2.36-1.11 3.98-0.95 1.36.13 2.57.92 3.25 1.94-.06.04-1.94 1.13-1.92 3.37.03 2.68 2.36 3.6 2.47 3.65-.01.03-.38 1.31-1.16 2.76zM15.48 4.24c.73-.88 1.21-2.11 1.08-3.34-1.04.04-2.3.69-3.05 1.57-.67.79-1.25 2.06-1.09 3.24 1.16.09 2.34-.58 3.06-1.47z"/></svg>,
-                playStore: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" className={className}><path d="M3 3.5L20.5 12 3 20.5V3.5z"/></svg>,
-                sparkles: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M9 3v4"/><path d="M3 5h4"/><path d="M3 9h4"/></svg>,
-                brain: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.97-3.284"/><path d="M17.97 14.716A4 4 0 0 1 16 18"/><path d="M12 18v5"/></svg>,
-                activity: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>,
-                zap: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
-                bell: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>,
-                layers: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>,
-                copy: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>,
-                check: <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>
-            };
-            return icons[name] || null;
-        };
-
-        const TricoloreFlag = ({ className = '' }) => (
-            <span className={`flex h-3 w-6 overflow-hidden rounded-sm border border-zinc-200 dark:border-zinc-700 ${className}`}>
-                <span className="w-1/3 bg-italianGreen"></span>
-                <span className="w-1/3 bg-white"></span>
-                <span className="w-1/3 bg-italianRed"></span>
-            </span>
-        );
-
-        function App() {
-            const [isDarkMode, setIsDarkMode] = useState(true);
-            const [stationInput, setStationInput] = useState('');
-            const [stationSuggestions, setStationSuggestions] = useState([]);
-            const [pickedStationName, setPickedStationName] = useState('');
-            const [stationResult, setStationResult] = useState('');
-            const [stationMode, setStationMode] = useState('info');
-            const [stationRequestUrl, setStationRequestUrl] = useState('');
-
-            const [trainNumber, setTrainNumber] = useState('');
-            const [choice, setChoice] = useState('');
-            const [trainResult, setTrainResult] = useState('');
-            const [trainRequestUrl, setTrainRequestUrl] = useState('');
-
-            const [fromName, setFromName] = useState('');
-            const [toName, setToName] = useState('');
-            const [fromSuggestions, setFromSuggestions] = useState([]);
-            const [toSuggestions, setToSuggestions] = useState([]);
-            const [pickedFrom, setPickedFrom] = useState('');
-            const [pickedTo, setPickedTo] = useState('');
-            const [pickedFromMeta, setPickedFromMeta] = useState(null);
-            const [pickedToMeta, setPickedToMeta] = useState(null);
-            const [fromPickedLabel, setFromPickedLabel] = useState('');
-            const [toPickedLabel, setToPickedLabel] = useState('');
-            const [solDate, setSolDate] = useState('');
-            const [solTime, setSolTime] = useState('');
-            const [solutionsResult, setSolutionsResult] = useState('');
-            const [solutionsRequestUrl, setSolutionsRequestUrl] = useState('');
-
-            const stationAbortRef = useRef(null);
-            const fromAbortRef = useRef(null);
-            const toAbortRef = useRef(null);
-
-            useEffect(() => {
-                const html = document.documentElement;
-                if (isDarkMode) {
-                    html.classList.add('dark');
-                } else {
-                    html.classList.remove('dark');
-                }
-            }, [isDarkMode]);
-
-            useEffect(() => {
-                const d = new Date();
-                const yyyy = String(d.getFullYear());
-                const mm = String(d.getMonth() + 1).padStart(2, '0');
-                const dd = String(d.getDate()).padStart(2, '0');
-                setSolDate(`${yyyy}-${mm}-${dd}`);
-                setSolTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
-            }, []);
-
-            async function callApi(url) {
-                const resp = await fetch(url);
-                const text = await resp.text();
-                try {
-                    return JSON.stringify(JSON.parse(text), null, 2);
-                } catch {
-                    return text;
-                }
-            }
-
-            function isSameStation(a, b) {
-                if (!a || !b) return false;
-                return a.trim().toLowerCase() === b.trim().toLowerCase();
-            }
-
-            async function fetchStationSuggestions(query, abortRef, setSuggestions, includeIds = false) {
-                const q = query.trim();
-                if (q.length < 2) {
-                    setSuggestions([]);
-                    return;
-                }
-                if (abortRef.current) abortRef.current.abort();
-                abortRef.current = new AbortController();
-                const url = `/api/stations/autocomplete?query=${encodeURIComponent(q)}${includeIds ? '&includeIds=1' : ''}`;
-                const resp = await fetch(url, {
-                    signal: abortRef.current.signal,
-                });
-                const json = await resp.json();
-                const list = json && json.ok && Array.isArray(json.data) ? json.data : [];
-                const cleaned = includeIds ? list.filter((item) => item && item.name) : list;
-                setSuggestions(cleaned);
-            }
-
-            async function fetchLefrecceSuggestions(query, abortRef, setSuggestions) {
-                const q = query.trim();
-                if (q.length < 2) {
-                    setSuggestions([]);
-                    return;
-                }
-                if (abortRef.current) abortRef.current.abort();
-                abortRef.current = new AbortController();
-                const url = `/api/lefrecce/autocomplete?query=${encodeURIComponent(q)}&includeIds=1`;
-                const resp = await fetch(url, {
-                    signal: abortRef.current.signal,
-                });
-                const json = await resp.json();
-                const list = json && json.ok && Array.isArray(json.data) ? json.data : [];
-                const cleaned = list
-                    .map((item) => ({
-                        name: item?.stazione || item?.name || '',
-                        lefrecceId: item?.lefrecceId ?? null,
-                        stationCode: item?.stationCode ?? null,
-                    }))
-                    .filter((item) => item.name);
-                setSuggestions(cleaned);
-            }
-
-            useEffect(() => {
-                fetchStationSuggestions(stationInput, stationAbortRef, setStationSuggestions).catch((err) => {
-                    if (err.name === 'AbortError') return;
-                    setStationSuggestions([]);
-                });
-                if (!isSameStation(stationInput, pickedStationName)) {
-                    setPickedStationName('');
-                }
-            }, [stationInput, pickedStationName]);
-
-            useEffect(() => {
-                fetchLefrecceSuggestions(fromName, fromAbortRef, setFromSuggestions).catch((err) => {
-                    if (err.name === 'AbortError') return;
-                    setFromSuggestions([]);
-                });
-                if (!isSameStation(fromName, pickedFrom)) {
-                    setPickedFrom('');
-                    setPickedFromMeta(null);
-                    setFromPickedLabel('');
-                }
-            }, [fromName, pickedFrom]);
-
-            useEffect(() => {
-                fetchLefrecceSuggestions(toName, toAbortRef, setToSuggestions).catch((err) => {
-                    if (err.name === 'AbortError') return;
-                    setToSuggestions([]);
-                });
-                if (!isSameStation(toName, pickedTo)) {
-                    setPickedTo('');
-                    setPickedToMeta(null);
-                    setToPickedLabel('');
-                }
-            }, [toName, pickedTo]);
-
-            async function handleInfo(kind) {
-                setStationMode(kind);
-                const stationName = pickedStationName || stationInput.trim();
-                if (!stationName) {
-                    setStationResult("Seleziona una stazione dall'autocomplete.");
-                    return;
-                }
-                let endpoint = '';
-                if (kind === 'info') {
-                    endpoint = `/api/stations/info?stationName=${encodeURIComponent(stationName)}`;
-                } else if (kind === 'departures') {
-                    endpoint = `/api/stations/departures?stationName=${encodeURIComponent(stationName)}`;
-                } else if (kind === 'arrivals') {
-                    endpoint = `/api/stations/arrivals?stationName=${encodeURIComponent(stationName)}`;
-                }
-                setStationRequestUrl(endpoint);
-                setStationResult('Caricamento...');
-                try {
-                    setStationResult(await callApi(endpoint));
-                } catch (err) {
-                    setStationResult(`Errore: ${err.message}`);
-                }
-            }
-
-            async function handleTrain() {
-                const numero = trainNumber.trim();
-                if (!numero) {
-                    setTrainResult('Inserisci un numero treno.');
-                    return;
-                }
-                const params = new URLSearchParams({ trainNumber: numero });
-                if (choice !== '') params.set('choice', choice);
-                const url = `/api/trains/status?${params.toString()}`;
-                setTrainRequestUrl(url);
-                setTrainResult('Caricamento...');
-                try {
-                    setTrainResult(await callApi(url));
-                } catch (err) {
-                    setTrainResult(`Errore: ${err.message}`);
-                }
-            }
-
-            async function handleSolutions() {
-                const from = pickedFrom || fromName.trim();
-                const to = pickedTo || toName.trim();
-                if (!from || !to) {
-                    setSolutionsResult('Inserisci (o seleziona) stazione di partenza e arrivo.');
-                    return;
-                }
-                if (!solDate) {
-                    setSolutionsResult('Inserisci una data.');
-                    return;
-                }
-                const params = new URLSearchParams({ date: solDate });
-                if (solTime) params.set('time', solTime);
-                if (pickedFromMeta && pickedFromMeta.lefrecceId) {
-                    params.set('fromLefrecceId', pickedFromMeta.lefrecceId);
-                } else if (pickedFromMeta && pickedFromMeta.stationCode) {
-                    params.set('fromStationCode', pickedFromMeta.stationCode);
-                } else {
-                    params.set('fromName', from);
-                }
-                if (pickedToMeta && pickedToMeta.lefrecceId) {
-                    params.set('toLefrecceId', pickedToMeta.lefrecceId);
-                } else if (pickedToMeta && pickedToMeta.stationCode) {
-                    params.set('toStationCode', pickedToMeta.stationCode);
-                } else {
-                    params.set('toName', to);
-                }
-                const url = `/api/solutions?${params.toString()}`;
-                setSolutionsRequestUrl(url);
-                setSolutionsResult('Caricamento...');
-                try {
-                    setSolutionsResult(await callApi(url));
-                } catch (err) {
-                    setSolutionsResult(`Errore: ${err.message}`);
-                }
-            }
-
-            const suggestionButton = (item, onSelect) => {
-                const label = typeof item === 'string' ? item : item.name;
-                return (
-                <button
-                    key={label}
-                    type="button"
-                    onClick={() => onSelect(item)}
-                    className="w-full text-left px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900 text-sm text-zinc-700 dark:text-zinc-200 hover:border-systemBlue/70 hover:text-systemBlue dark:hover:text-white hover:bg-systemBlue/5 dark:hover:bg-systemBlue/10 transition"
-                >
-                    {label}
-                </button>
-                );
-            };
-
-            const primaryButtonClass =
-                "px-5 py-2.5 rounded-xl bg-systemBlue text-white text-sm font-semibold shadow-sm hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-systemBlue/40 focus:ring-offset-2 focus:ring-offset-zinc-50 dark:focus:ring-offset-zinc-950 transition";
-
-            const toggleButtonClass = (active) =>
-                `px-4 py-2 rounded-full text-sm font-semibold transition ${
-                    active
-                        ? 'bg-systemBlue text-white shadow-sm'
-                        : 'bg-white/80 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-systemBlue/60 hover:text-systemBlue dark:hover:text-white'
-                }`;
-
-            const inputClass =
-                "w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-systemBlue/30 focus:border-systemBlue transition";
-
-            function parseJsonPreview(text) {
-                if (!text || typeof text !== 'string') return null;
-                try {
-                    const data = JSON.parse(text);
-                    return data && typeof data === 'object' ? data : null;
-                } catch {
-                    return null;
-                }
-            }
-
-            function formatCompactTrainJson(rawText) {
-                const data = parseJsonPreview(rawText);
-                if (!data || !data.needsSelection) return rawText || '';
-                const payload = {
-                    ok: true,
-                    needsSelection: true,
-                    selectionType: data.selectionType || null,
-                    origine: data.origine || null,
-                    message: data.message || null,
-                };
-                if (data.selectionType === 'date') {
-                    payload.dateDisponibili = Array.isArray(data.dateDisponibili) ? data.dateDisponibili : [];
-                } else if (data.selectionType === 'origin') {
-                    const choices = Array.isArray(data.choices) ? data.choices : [];
-                    payload.originiDisponibili = choices.map((c) => c?.origine).filter(Boolean);
-                }
-                return JSON.stringify(payload, null, 2);
-            }
-
-            function formatValue(val) {
-                if (val == null) return '-';
-                if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return String(val);
-                try {
-                    return JSON.stringify(val);
-                } catch {
-                    return String(val);
-                }
-            }
-
-            function renderKeyValueGrid(obj) {
-                if (!obj || typeof obj !== 'object') {
-                    return <div className="text-sm text-zinc-500 dark:text-zinc-400">-</div>;
-                }
-                const entries = Object.entries(obj);
-                if (entries.length === 0) {
-                    return <div className="text-sm text-zinc-500 dark:text-zinc-400">-</div>;
-                }
-                return (
-                    <div className="grid gap-2 text-xs">
-                        {entries.map(([key, value]) => (
-                            <div key={key} className="flex items-start justify-between gap-4">
-                                <span className="text-zinc-500 dark:text-zinc-400">{key}</span>
-                                <span className="text-zinc-900 dark:text-zinc-100 text-right break-all">{formatValue(value)}</span>
-                            </div>
-                        ))}
-                    </div>
-                );
-            }
-
-            function renderTrainPreview(data) {
-                if (!data || !data.ok) return null;
-                if (data.needsSelection) {
-                    const selectionType = data.selectionType || '-';
-                    const dateDisponibili = Array.isArray(data.dateDisponibili) ? data.dateDisponibili : [];
-                    const choices = Array.isArray(data.choices) ? data.choices : [];
-                    const dateChoices = dateDisponibili.length
-                        ? dateDisponibili.map((item, idx) => ({
-                            choice: idx,
-                            label: typeof item === 'string' ? item : item?.data || String(item?.timestamp || ''),
-                            timestamp: typeof item === 'string' ? null : item?.timestamp ?? null,
-                        }))
-                        : choices.map((item, idx) => ({
-                            choice: Number.isFinite(item?.choice) ? item.choice : idx,
-                            label: item?.data || item?.origine || '-',
-                            timestamp: item?.timestampRiferimento ?? item?.timestamp ?? null,
-                        }));
-                    return (
-                        <div className="rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950/70 p-5">
-                            <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Selezione richiesta</div>
-                            <div className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-                                {data.message || 'Sono disponibili piu corse per questo numero.'}
-                            </div>
-                            {selectionType === 'origin' ? (
-                                <div className="mt-4 grid gap-2">
-                                    {choices.map((item, idx) => (
-                                        <div key={`origin-${idx}`} className="flex items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 px-4 py-2 text-sm">
-                                            <span className="text-zinc-900 dark:text-zinc-100">{item?.origine || '-'}</span>
-                                            <span className="text-xs font-mono text-zinc-500 dark:text-zinc-400">choice {item?.choice ?? idx}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="mt-4 grid gap-2">
-                                    {dateChoices.length === 0 && (
-                                        <div className="text-sm text-zinc-500 dark:text-zinc-400">Nessuna data disponibile.</div>
-                                    )}
-                                    {dateChoices.map((item, idx) => (
-                                        <div key={`date-${idx}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 px-4 py-2 text-sm">
-                                            <span className="text-zinc-900 dark:text-zinc-100">{item.label || '-'}</span>
-                                            <div className="flex items-center gap-3 text-xs font-mono text-zinc-500 dark:text-zinc-400">
-                                                <span>choice {item.choice}</span>
-                                                {item.timestamp ? <span>{item.timestamp}</span> : null}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-                                Suggerimento: usa <span className="font-mono">choice</span> o <span className="font-mono">timestampRiferimento</span>.
-                            </div>
-                        </div>
-                    );
-                }
-
-                const tratta = data.tratta || {};
-                const stato = data.statoTreno || {};
-                const tipoTreno = data.tipoTreno || {};
-                const infoIR = stato.infoIR || {};
-                const fermate = data.fermate || {};
-                const dateDisponibili = Array.isArray(data.dateDisponibili) ? data.dateDisponibili : [];
-                const stops = Array.isArray(fermate.fermate) ? fermate.fermate : [];
-                const sigla = tipoTreno.categoria || 'TR';
-                const numero = data.numeroTreno != null ? String(data.numeroTreno) : '';
-                const titoloTreno = [sigla, numero].filter(Boolean).join(' ');
-                const compagnia = data.compagnia ? String(data.compagnia).toUpperCase() : '-';
-                const currentStopName = stato.stazioneCorrente ? String(stato.stazioneCorrente).trim().toLowerCase() : '';
-
-                const pickStopTime = (stop, key) => {
-                    const hhmm = stop?.orari?.[key]?.hhmm || {};
-                    return {
-                        time: hhmm.reale || hhmm.probabile || hhmm.programmato || null,
-                        kind: hhmm.reale ? 'reale' : hhmm.probabile ? 'probabile' : hhmm.programmato ? 'programmato' : null,
-                        real: hhmm.reale || null,
-                    };
-                };
-
-                return (
-                    <div className="rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950/70 p-5">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                                <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Anteprima treno</div>
-                                <div className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
-                                    {titoloTreno || 'Treno'}
-                                </div>
-                                <div className="text-sm text-zinc-500 dark:text-zinc-400">
-                                    {[compagnia, tipoTreno.nomeCat].filter(Boolean).join(' • ') || '-'}
-                                </div>
-                            </div>
-                            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900">
-                                {stato.stato || 'Stato'}
-                            </span>
-                        </div>
-                        <div className="mt-4 grid gap-3">
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-zinc-500 dark:text-zinc-400">Data riferimento</span>
-                                <span className="font-medium text-zinc-900 dark:text-zinc-100">{data.dataRiferimento || '-'}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-zinc-500 dark:text-zinc-400">Date disponibili</span>
-                                <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                                    {dateDisponibili.length ? dateDisponibili.join(', ') : '-'}
-                                </span>
-                            </div>
-                            <div className="rounded-xl bg-zinc-100 dark:bg-zinc-900/60 p-4">
-                                <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Tratta</div>
-                                <div className="mt-2 flex flex-col gap-2 text-sm text-zinc-900 dark:text-zinc-100">
-                                    <div className="flex items-center justify-between">
-                                        <span>{tratta.stazionePartenzaZero || '-'}</span>
-                                        <span className="font-mono text-xs">{tratta.orarioPartenzaZero || '-'}</span>
-                                    </div>
-                                    <div className="h-px bg-zinc-200 dark:bg-zinc-800"></div>
-                                    <div className="flex items-center justify-between">
-                                        <span>{tratta.stazioneArrivoZero || '-'}</span>
-                                        <span className="font-mono text-xs">{tratta.orarioArrivoZero || '-'}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="grid gap-2 text-sm">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-zinc-500 dark:text-zinc-400">Stazione corrente</span>
-                                    <span className="text-zinc-900 dark:text-zinc-100">{stato.stazioneCorrente || '-'}</span>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-zinc-500 dark:text-zinc-400">Stazione precedente</span>
-                                    <span className="text-zinc-900 dark:text-zinc-100">{stato.stazionePrecedente || '-'}</span>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-zinc-500 dark:text-zinc-400">Stazione successiva</span>
-                                    <span className="text-zinc-900 dark:text-zinc-100">{stato.stazioneSuccessiva || '-'}</span>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-zinc-500 dark:text-zinc-400">Delta minuti</span>
-                                    <span className="text-zinc-900 dark:text-zinc-100">
-                                        {stato.deltaTempo != null ? `${stato.deltaTempo} min` : '-'}
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="rounded-xl bg-zinc-100 dark:bg-zinc-900/60 p-4">
-                                <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Ultimo rilevamento</div>
-                                <div className="mt-2 grid gap-2 text-sm text-zinc-900 dark:text-zinc-100">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-zinc-500 dark:text-zinc-400">Ora</span>
-                                        <span>{infoIR.ultimoRilevOra || '-'}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-zinc-500 dark:text-zinc-400">Luogo</span>
-                                        <span>{infoIR.ultimoRilevLuogo || '-'}</span>
-                                    </div>
-                                    <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                                        {infoIR.messaggioUltimoRilev || stato.messaggiRfi || '-'}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-zinc-500 dark:text-zinc-400">Fermate totali</span>
-                                <span className="text-zinc-900 dark:text-zinc-100">{fermate.totali ?? '-'}</span>
-                            </div>
-                            <div className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 p-4">
-                                <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Timeline fermate</div>
-                                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
-                                    <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-italianGreen"></span>Fatte</span>
-                                    <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-systemBlue"></span>Straordinarie</span>
-                                    <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-italianRed"></span>Soppresse</span>
-                                    <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-700"></span>Da fare</span>
-                                </div>
-                                <div className="mt-4 grid gap-4">
-                                    {stops.length === 0 && (
-                                        <div className="text-sm text-zinc-500 dark:text-zinc-400">Nessuna fermata disponibile.</div>
-                                    )}
-                                    {stops.map((stop, idx) => {
-                                        const tipo = stop?.tipoFermata ? String(stop.tipoFermata).trim().toUpperCase() : '';
-                                        const useDeparture = tipo === 'P';
-                                        const timeData = pickStopTime(stop, useDeparture ? 'partenza' : 'arrivo');
-                                        const isSuppressed = stop?.statoFermata === 'soppressa';
-                                        const isExtra = stop?.statoFermata === 'straordinaria';
-                                        const isCurrent =
-                                            !!currentStopName &&
-                                            !!stop?.stazione &&
-                                            String(stop.stazione).trim().toLowerCase() === currentStopName &&
-                                            !isSuppressed;
-                                        const isDone = !!timeData.real;
-
-                                        let statusLabel = 'Da fare';
-                                        let dotClass = 'bg-zinc-300 dark:bg-zinc-700 border-zinc-300 dark:border-zinc-700';
-                                        let statusClass = 'text-zinc-500 dark:text-zinc-400';
-                                        let nameClass = '';
-
-                                        if (isSuppressed) {
-                                            statusLabel = 'Soppressa';
-                                            dotClass = 'bg-italianRed border-italianRed';
-                                            statusClass = 'text-italianRed';
-                                            nameClass = 'line-through text-zinc-500';
-                                        } else if (isExtra) {
-                                            statusLabel = 'Straordinaria';
-                                            dotClass = 'bg-systemBlue border-systemBlue';
-                                            statusClass = 'text-systemBlue';
-                                        } else if (isCurrent) {
-                                            statusLabel = 'In stazione';
-                                            dotClass = 'bg-systemBlue border-systemBlue ring-4 ring-systemBlue/20';
-                                            statusClass = 'text-systemBlue';
-                                        } else if (isDone) {
-                                            statusLabel = 'Fatta';
-                                            dotClass = 'bg-italianGreen border-italianGreen';
-                                            statusClass = 'text-italianGreen';
-                                        }
-
-                                        const lineClass =
-                                            idx === stops.length - 1
-                                                ? ''
-                                                : isSuppressed
-                                                    ? 'bg-italianRed/30'
-                                                    : isDone
-                                                        ? 'bg-italianGreen/50'
-                                                        : 'bg-zinc-200 dark:bg-zinc-800';
-
-                                        return (
-                                            <div key={`${stop.stazione || 'stop'}-${idx}`} className="flex items-start gap-3">
-                                                <div className="w-16 pt-0.5 text-xs font-mono text-zinc-500 dark:text-zinc-400">
-                                                    {timeData.time || '-'}
-                                                    {timeData.kind ? (
-                                                        <div className="text-[10px] uppercase tracking-wide text-zinc-400">{timeData.kind}</div>
-                                                    ) : null}
-                                                </div>
-                                                <div className="relative flex flex-col items-center">
-                                                    <span className={`h-3 w-3 rounded-full border ${dotClass}`}></span>
-                                                    {idx < stops.length - 1 && (
-                                                        <span className={`w-px flex-1 ${lineClass}`}></span>
-                                                    )}
-                                                </div>
-                                                <div className="flex-1 pb-2">
-                                                    <div className={`text-sm font-semibold text-zinc-900 dark:text-zinc-100 ${nameClass}`}>
-                                                        {stop.stazione || '-'}
-                                                    </div>
-                                                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                                                        <span className={`px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-900/60 ${statusClass}`}>
-                                                            {statusLabel}
-                                                        </span>
-                                                        {stop?.statoFermata ? (
-                                                            <span className="text-zinc-400 dark:text-zinc-500">{stop.statoFermata}</span>
-                                                        ) : null}
-                                                        {stop?.tipoFermataRfi != null ? (
-                                                            <span className="text-zinc-400 dark:text-zinc-500">RFI {stop.tipoFermataRfi}</span>
-                                                        ) : null}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
-
-            function renderStationPreview(data) {
-                if (!data || !data.ok) return null;
-                if (stationMode !== 'info') return null;
-                return (
-                    <div className="rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950/70 p-5">
-                        <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Anteprima stazione</div>
-                        <div className="mt-3 grid gap-3 text-sm">
-                            <div className="flex items-center justify-between">
-                                <span className="text-zinc-500 dark:text-zinc-400">Stazione</span>
-                                <span className="text-zinc-900 dark:text-zinc-100">{data.stazione || '-'}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-zinc-500 dark:text-zinc-400">Regione</span>
-                                <span className="text-zinc-900 dark:text-zinc-100">{data.regione || '-'}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-zinc-500 dark:text-zinc-400">Latitudine</span>
-                                <span className="text-zinc-900 dark:text-zinc-100">{data.latitudine ?? '-'}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-zinc-500 dark:text-zinc-400">Longitudine</span>
-                                <span className="text-zinc-900 dark:text-zinc-100">{data.longitudine ?? '-'}</span>
-                            </div>
-                        </div>
-                        <div className="mt-4 rounded-xl border border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-3">
-                            <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Meteo</div>
-                            <div className="mt-2">{renderKeyValueGrid(data.meteo)}</div>
-                        </div>
-                    </div>
-                );
-            }
-
-            function renderBoardPreview(data) {
-                if (!data || !data.ok) return null;
-                if (stationMode !== 'departures' && stationMode !== 'arrivals') return null;
-                const treni = Array.isArray(data.treni) ? data.treni : [];
-                const label = stationMode === 'departures' ? 'Partenze' : 'Arrivi';
-                return (
-                    <div className="rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950/70 p-5">
-                        <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Anteprima {label}</div>
-                        <div className="mt-3 grid gap-2 text-sm">
-                            <div className="flex items-center justify-between">
-                                <span className="text-zinc-500 dark:text-zinc-400">Stazione</span>
-                                <span className="text-zinc-900 dark:text-zinc-100">{data.stazione || '-'}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-zinc-500 dark:text-zinc-400">Data</span>
-                                <span className="text-zinc-900 dark:text-zinc-100">{data.data || '-'}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-zinc-500 dark:text-zinc-400">Totale treni</span>
-                                <span className="text-zinc-900 dark:text-zinc-100">{treni.length}</span>
-                            </div>
-                        </div>
-                        <div className="mt-4 grid gap-3">
-                            {treni.slice(0, 5).map((t, idx) => (
-                                <div key={`${t.numeroTreno || 'treno'}-${idx}`} className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-3">
-                                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                                        {t.numeroTreno || '-'} {t.tipoTreno?.sigla || ''}
-                                    </div>
-                                    <div className="mt-2">{renderKeyValueGrid(t)}</div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                );
-            }
-
-            function renderSolutionsPreview(data) {
-                if (!data || !data.ok) return null;
-                const soluzioni = Array.isArray(data.soluzioni) ? data.soluzioni : [];
-                return (
-                    <div className="rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950/70 p-5">
-                        <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Anteprima soluzioni</div>
-                        <div className="mt-3 grid gap-2 text-sm">
-                            <div className="flex items-center justify-between">
-                                <span className="text-zinc-500 dark:text-zinc-400">ID ricerca</span>
-                                <span className="text-zinc-900 dark:text-zinc-100">{data.idRicerca || '-'}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-zinc-500 dark:text-zinc-400">Da</span>
-                                <span className="text-zinc-900 dark:text-zinc-100">{data.stazioni?.from || '-'}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-zinc-500 dark:text-zinc-400">A</span>
-                                <span className="text-zinc-900 dark:text-zinc-100">{data.stazioni?.to || '-'}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-zinc-500 dark:text-zinc-400">Soluzioni</span>
-                                <span className="text-zinc-900 dark:text-zinc-100">{soluzioni.length}</span>
-                            </div>
-                        </div>
-                        <div className="mt-4 grid gap-3">
-                            {soluzioni.slice(0, 3).map((s, idx) => (
-                                <div key={`sol-${idx}`} className="rounded-xl border border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-3">
-                                    <div className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Soluzione {idx + 1}</div>
-                                    <div className="mt-2">{renderKeyValueGrid(s)}</div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                );
-            }
-
-            return (
-                <div className="min-h-screen flex flex-col">
-                    <nav className="fixed top-0 w-full z-50 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 transition-colors duration-300">
-                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-italianGreen via-white to-italianRed"></div>
-
-                        <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between relative">
-                            <div className="flex items-center gap-2">
-                                <img src="prova-iOS-Dark-1024x1024@1x.png" alt="Treninfo logo server" className="w-8 h-8 object-contain" />
-                                <span className="font-bold text-lg tracking-tight text-zinc-900 dark:text-white">Treninfo</span>
-                                <TricoloreFlag className="ml-1" />
-                            </div>
-
-                            <div className="flex items-center gap-2 md:gap-4">
-                                <button
-                                    onClick={() => setIsDarkMode(!isDarkMode)}
-                                    className="p-2 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                                >
-                                    <Icon name={isDarkMode ? "sun" : "moon"} size={20} />
-                                </button>
-
-                                <div className="h-4 w-px bg-zinc-300 dark:bg-zinc-700 mx-1"></div>
-
-                                <a href="https://github.com/cristianceni5/treninfoapp" target="_blank" className="p-2 text-zinc-500 hover:text-systemBlue transition-colors">
-                                    <Icon name="github" size={20} />
-                                </a>
-                                <a href="https://instagram.com/treninfoapp" target="_blank" className="p-2 text-zinc-500 hover:text-systemBlue transition-colors">
-                                    <Icon name="instagram" size={20} />
-                                </a>
-                            </div>
-                        </div>
-                    </nav>
-
-                    <main className="flex-grow pt-24 sm:pt-28 md:pt-32 pb-16">
-                        <div className="max-w-2xl mx-auto px-6 text-left mb-16">
-                            <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-6 text-zinc-900 dark:text-white">
-                                Treninfo <br />
-                                <span className="text-systemBlue">Test Chiamate API.</span>
-                            </h1>
-                            <p className="text-base md:text-lg text-zinc-600 dark:text-zinc-400 mb-10 leading-relaxed max-w-lg">
-                                Ambiente interno per verificare autocomplete, tabelloni e stato treno con output normalizzato.
-                            </p>
-                            <div className="mt-4 flex items-center gap-2 text-xs font-mono text-zinc-400 dark:text-zinc-600">
-                                <span>versione 1</span>
-                                <span>-</span>
-                                <span>Proxy Status: ONLINE</span>
-                            </div>
-                        </div>
-
-                        <section className="max-w-5xl mx-auto px-6 mb-12">
-                            <div className="grid gap-6">
-                                <div className="p-6 rounded-2xl bg-white/80 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                                        <div>
-                                            <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Ricerca stazione</h2>
-                                            <p className="text-sm text-zinc-600 dark:text-zinc-400">Autocomplete + info, partenze e arrivi.</p>
-                                        </div>
-                                        <div className="flex flex-wrap gap-2">
-                                            <button onClick={() => handleInfo('info')} className={toggleButtonClass(stationMode === 'info')}>Info</button>
-                                            <button onClick={() => handleInfo('departures')} className={toggleButtonClass(stationMode === 'departures')}>Partenze</button>
-                                            <button onClick={() => handleInfo('arrivals')} className={toggleButtonClass(stationMode === 'arrivals')}>Arrivi</button>
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-6 grid gap-4">
-                                        <input
-                                            value={stationInput}
-                                            onChange={(e) => setStationInput(e.target.value)}
-                                            className={inputClass}
-                                            type="text"
-                                            placeholder="Nome stazione..."
-                                            autoComplete="off"
-                                        />
-                                        <div className="grid gap-2">
-                                            {stationSuggestions.map((name) =>
-                                                suggestionButton(name, (picked) => {
-                                                    setPickedStationName(picked);
-                                                    setStationInput(picked);
-                                                    setStationSuggestions([]);
-                                                })
-                                            )}
-                                        </div>
-                                        <p className="text-xs text-zinc-500 dark:text-zinc-400">{pickedStationName ? `Stazione selezionata: ${pickedStationName}` : ''}</p>
-                                        {stationRequestUrl ? (
-                                            <div className="text-xs font-mono text-zinc-500 dark:text-zinc-400">
-                                                Richiesta: {stationRequestUrl}
-                                            </div>
-                                        ) : null}
-                                        {renderStationPreview(parseJsonPreview(stationResult))}
-                                        {renderBoardPreview(parseJsonPreview(stationResult))}
-                                        <pre className="min-h-[120px] max-h-[360px] overflow-auto rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-zinc-50 text-zinc-900 dark:bg-black dark:text-emerald-200 text-xs p-4 font-mono">{stationResult}</pre>
-                                    </div>
-                                </div>
-
-                                <div className="p-6 rounded-2xl bg-white/80 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                                <div>
-                                    <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Ricerca treno</h2>
-                                    <p className="text-sm text-zinc-600 dark:text-zinc-400">Stato treno e JSON normalizzato.</p>
-                                </div>
-
-                                    <div className="mt-6 grid gap-4">
-                                        <div className="grid gap-3 md:grid-cols-2">
-                                            <input value={trainNumber} onChange={(e) => setTrainNumber(e.target.value)} className={inputClass} type="text" placeholder="Numero treno (es. 8527)" />
-                                            <input value={choice} onChange={(e) => setChoice(e.target.value)} className={inputClass} type="number" placeholder="Choice (opzionale)" min="0" step="1" />
-                                        </div>
-
-                                        <div className="flex flex-wrap gap-3">
-                                            <button onClick={handleTrain} className={primaryButtonClass}>Cerca stato treno</button>
-                                        </div>
-
-                                        {trainRequestUrl ? (
-                                            <div className="text-xs font-mono text-zinc-500 dark:text-zinc-400">
-                                                Richiesta: {trainRequestUrl}
-                                            </div>
-                                        ) : null}
-                                        {renderTrainPreview(parseJsonPreview(trainResult))}
-                                        <pre className="min-h-[120px] max-h-[360px] overflow-auto rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-zinc-50 text-zinc-900 dark:bg-black dark:text-emerald-200 text-xs p-4 font-mono">{formatCompactTrainJson(trainResult)}</pre>
-                                    </div>
-                                </div>
-
-                                <div className="p-6 rounded-2xl bg-white/80 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                                    <div>
-                                        <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Cerca soluzioni</h2>
-                                        <p className="text-sm text-zinc-600 dark:text-zinc-400">Seleziona partenza, arrivo e orario per testare le soluzioni.</p>
-                                    </div>
-
-                                    <div className="mt-6 grid gap-4">
-                                        <div className="grid gap-2">
-                                            <input value={fromName} onChange={(e) => setFromName(e.target.value)} className={inputClass} type="text" placeholder="Da (stazione)..." autoComplete="off" />
-                                            <div className="grid gap-2">
-                                                {fromSuggestions.map((item) =>
-                                                    suggestionButton(item, (picked) => {
-                                                        const label = typeof picked === 'string' ? picked : picked.name;
-                                                        const meta = typeof picked === 'string' ? null : picked;
-                                                        const metaLabel = meta
-                                                            ? [
-                                                                meta.lefrecceId ? `lefrecceId: ${meta.lefrecceId}` : null,
-                                                                meta.stationCode ? `stationCode: ${meta.stationCode}` : null,
-                                                            ].filter(Boolean).join(', ')
-                                                            : '';
-                                                        setPickedFrom(label);
-                                                        setPickedFromMeta(meta);
-                                                        setFromName(label);
-                                                        setFromSuggestions([]);
-                                                        setFromPickedLabel(
-                                                            metaLabel ? `Selezionato: ${label} (${metaLabel})` : `Selezionato: ${label}`
-                                                        );
-                                                    })
-                                                )}
-                                            </div>
-                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{fromPickedLabel}</p>
-                                        </div>
-
-                                        <div className="grid gap-2">
-                                            <input value={toName} onChange={(e) => setToName(e.target.value)} className={inputClass} type="text" placeholder="A (stazione)..." autoComplete="off" />
-                                            <div className="grid gap-2">
-                                                {toSuggestions.map((item) =>
-                                                    suggestionButton(item, (picked) => {
-                                                        const label = typeof picked === 'string' ? picked : picked.name;
-                                                        const meta = typeof picked === 'string' ? null : picked;
-                                                        const metaLabel = meta
-                                                            ? [
-                                                                meta.lefrecceId ? `lefrecceId: ${meta.lefrecceId}` : null,
-                                                                meta.stationCode ? `stationCode: ${meta.stationCode}` : null,
-                                                            ].filter(Boolean).join(', ')
-                                                            : '';
-                                                        setPickedTo(label);
-                                                        setPickedToMeta(meta);
-                                                        setToName(label);
-                                                        setToSuggestions([]);
-                                                        setToPickedLabel(
-                                                            metaLabel ? `Selezionato: ${label} (${metaLabel})` : `Selezionato: ${label}`
-                                                        );
-                                                    })
-                                                )}
-                                            </div>
-                                            <p className="text-xs text-zinc-500 dark:text-zinc-400">{toPickedLabel}</p>
-                                        </div>
-
-                                        <div className="grid gap-3 md:grid-cols-3">
-                                            <input value={solDate} onChange={(e) => setSolDate(e.target.value)} className={inputClass} type="date" />
-                                            <input value={solTime} onChange={(e) => setSolTime(e.target.value)} className={inputClass} type="time" />
-                                            <button onClick={handleSolutions} className={primaryButtonClass}>Cerca soluzioni</button>
-                                        </div>
-
-                                        {solutionsRequestUrl ? (
-                                            <div className="text-xs font-mono text-zinc-500 dark:text-zinc-400">
-                                                Richiesta: {solutionsRequestUrl}
-                                            </div>
-                                        ) : null}
-                                        {renderSolutionsPreview(parseJsonPreview(solutionsResult))}
-                                        <pre className="min-h-[120px] max-h-[360px] overflow-auto rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-zinc-50 text-zinc-900 dark:bg-black dark:text-emerald-200 text-xs p-4 font-mono">{solutionsResult}</pre>
-                                    </div>
-                                </div>
-                            </div>
-                        </section>
-                    </main>
-
-                    <footer className="py-10 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950">
-                        <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
-                            <div className="text-center md:text-left">
-                                <div className="font-bold text-zinc-900 dark:text-zinc-100">Treninfo Project</div>
-                                <div className="text-xs text-zinc-500 mt-1 flex gap-2 items-center">
-                                    <span>Dev by Cristian Ceni</span>
-                                    <span>-</span>
-                                    <span>Powered by ViaggiaTreno, LeFrecce, Italo, Netlify CLI</span>
-                                </div>
-                            </div>
-
-                            <div className="flex gap-6 text-sm text-zinc-500 dark:text-zinc-400 font-mono">
-                                <a href="https://github.com/cristianceni5/treninfo" className="hover:text-systemBlue transition-colors">/repo</a>
-                                <a href="#" className="hover:text-systemBlue transition-colors">/api_docs</a>
-                                <a href="#" className="hover:text-systemBlue transition-colors">/status</a>
-                            </div>
-                        </div>
-                    </footer>
+<body
+    class="bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-100 antialiased selection:bg-systemBlue selection:text-white">
+    <div class="min-h-screen flex flex-col">
+        <nav
+            class="fixed top-0 w-full z-50 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 transition-colors duration-300">
+            <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-italianGreen via-white to-italianRed">
+            </div>
+            <div class="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between relative">
+                <div class="flex items-center gap-2">
+                    <img src="icona-default.png" alt="Treninfo logo" class="w-8 h-8 object-contain dark:hidden" />
+                    <img src="icona-dark.png" alt="Treninfo logo" class="w-8 h-8 object-contain hidden dark:block" />
+                    <span class="font-bold text-lg tracking-tight text-zinc-900 dark:text-white">Treninfo</span>
                 </div>
+
+                <div class="flex items-center gap-2 md:gap-4">
+                    <button id="theme-toggle" type="button"
+                        class="p-2 rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center"
+                        aria-label="Cambia tema">
+                        <span class="icon-moon" aria-hidden="true">
+                            <svg class="block" xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                            </svg>
+                        </span>
+                        <span class="icon-sun" aria-hidden="true">
+                            <svg class="block" xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="4" />
+                                <path d="M12 2v2" />
+                                <path d="M12 20v2" />
+                                <path d="m4.93 4.93 1.41 1.41" />
+                                <path d="m17.66 17.66 1.41 1.41" />
+                                <path d="M2 12h2" />
+                                <path d="M20 12h2" />
+                                <path d="m6.34 17.66-1.41 1.41" />
+                                <path d="m19.07 4.93-1.41 1.41" />
+                            </svg>
+                        </span>
+                    </button>
+
+                    <div class="h-4 w-px bg-zinc-300 dark:bg-zinc-700 mx-1"></div>
+
+                    <a href="https://github.com/cristianceni5/treninfoapp" target="_blank" rel="noreferrer"
+                        class="p-2 text-zinc-500 hover:text-systemBlue transition-colors" aria-label="GitHub">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path
+                                d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
+                            <path d="M9 18c-4.51 2-5-2-7-2" />
+                        </svg>
+                    </a>
+                    <a href="https://instagram.com/treninfoapp" target="_blank" rel="noreferrer"
+                        class="p-2 text-zinc-500 hover:text-systemBlue transition-colors" aria-label="Instagram">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+                            <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+                            <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+                        </svg>
+                    </a>
+                </div>
+            </div>
+        </nav>
+
+        <main class="flex-grow pt-24 sm:pt-28 md:pt-32 pb-16">
+            <div class="max-w-5xl mx-auto px-6 text-left mb-16">
+                <div class="max-w-2xl">
+                    <h1 class="text-4xl md:text-6xl font-bold tracking-tight mb-6 text-zinc-900 dark:text-white">
+                        Treninfo<br />
+                        <span class="text-systemBlue">Test Chiamate API.</span>
+                    </h1>
+                    <p class="text-base md:text-lg text-zinc-600 dark:text-zinc-400 mb-6 leading-relaxed max-w-lg">
+                        Ambiente interno per verificare autocomplete, tabelloni e stato treno con output normalizzato.
+                    </p>
+                </div>
+            </div>
+
+            <section class="max-w-5xl mx-auto px-6 mb-12">
+                <div class="grid gap-6">
+                    <div
+                        class="p-6 rounded-2xl bg-white/80 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                            <div>
+                                <h2 class="text-xl font-bold text-zinc-900 dark:text-zinc-100">Infomobilità</h2>
+                                <p class="text-sm text-zinc-600 dark:text-zinc-400">Ticker ViaggiaTreno convertito in
+                                    JSON.</p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button data-news-mode="news"
+                                    class="news-mode-btn px-4 py-2 rounded-full text-sm font-semibold transition">News</button>
+                                <button data-news-mode="works"
+                                    class="news-mode-btn px-4 py-2 rounded-full text-sm font-semibold transition">Lavori</button>
+                                <button id="news-submit"
+                                    class="px-5 py-2.5 rounded-xl bg-systemBlue text-white text-sm font-semibold shadow-sm hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-systemBlue/40 focus:ring-offset-2 focus:ring-offset-zinc-50 dark:focus:ring-offset-zinc-950 transition">Aggiorna</button>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 grid gap-4">
+                            <div class="text-xs font-mono text-zinc-500 dark:text-zinc-400">Richiesta: <span
+                                    id="news-request">/api/news</span></div>
+                            <div class="text-xs uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Anteprima
+                            </div>
+                            <div id="news-preview"
+                                class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4 text-sm text-zinc-700 dark:text-zinc-200">
+                            </div>
+                            <pre id="news-result"
+                                class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4 text-xs text-zinc-700 dark:text-zinc-200 whitespace-pre-wrap min-h-[140px]"></pre>
+                        </div>
+                    </div>
+
+                    <div
+                        class="p-6 rounded-2xl bg-white/80 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                            <div>
+                                <h2 class="text-xl font-bold text-zinc-900 dark:text-zinc-100">Ricerca stazione</h2>
+                                <p class="text-sm text-zinc-600 dark:text-zinc-400">Autocomplete + info, partenze e
+                                    arrivi.</p>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <button data-station-mode="info"
+                                    class="station-mode-btn px-4 py-2 rounded-full text-sm font-semibold transition">Info</button>
+                                <button data-station-mode="departures"
+                                    class="station-mode-btn px-4 py-2 rounded-full text-sm font-semibold transition">Partenze</button>
+                                <button data-station-mode="arrivals"
+                                    class="station-mode-btn px-4 py-2 rounded-full text-sm font-semibold transition">Arrivi</button>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 grid gap-4">
+                            <input id="station-input"
+                                class="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-systemBlue/30 focus:border-systemBlue transition"
+                                type="text" placeholder="Nome stazione..." autocomplete="off" />
+                            <div id="station-suggestions" class="grid gap-2"></div>
+                            <p id="station-picked" class="text-xs text-zinc-500 dark:text-zinc-400"></p>
+                            <div class="text-xs font-mono text-zinc-500 dark:text-zinc-400">Richiesta: <span
+                                    id="station-request">-</span></div>
+                            <div class="text-xs uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Anteprima
+                            </div>
+                            <div id="station-preview"
+                                class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4 text-sm text-zinc-700 dark:text-zinc-200">
+                            </div>
+                            <pre id="station-result"
+                                class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4 text-xs text-zinc-700 dark:text-zinc-200 whitespace-pre-wrap min-h-[140px]"></pre>
+                        </div>
+                    </div>
+
+                    <div
+                        class="p-6 rounded-2xl bg-white/80 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                            <div>
+                                <h2 class="text-xl font-bold text-zinc-900 dark:text-zinc-100">Stato treno</h2>
+                                <p class="text-sm text-zinc-600 dark:text-zinc-400">Numero treno + scelta opzionale.</p>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 grid gap-4">
+                            <div class="grid md:grid-cols-2 gap-4">
+                                <input id="train-number"
+                                    class="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-systemBlue/30 focus:border-systemBlue transition"
+                                    type="text" placeholder="Numero treno..." />
+                                <input id="train-choice"
+                                    class="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-systemBlue/30 focus:border-systemBlue transition"
+                                    type="number" placeholder="Choice (opzionale)" min="0" step="1" />
+                            </div>
+                            <button id="train-submit"
+                                class="px-5 py-2.5 rounded-xl bg-systemBlue text-white text-sm font-semibold shadow-sm hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-systemBlue/40 focus:ring-offset-2 focus:ring-offset-zinc-50 dark:focus:ring-offset-zinc-950 transition">Esegui
+                                richiesta</button>
+                            <div class="text-xs font-mono text-zinc-500 dark:text-zinc-400">Richiesta: <span
+                                    id="train-request">-</span></div>
+                            <div class="text-xs uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Anteprima
+                            </div>
+                            <div id="train-preview"
+                                class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4 text-sm text-zinc-700 dark:text-zinc-200">
+                            </div>
+                            <pre id="train-result"
+                                class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4 text-xs text-zinc-700 dark:text-zinc-200 whitespace-pre-wrap min-h-[140px]"></pre>
+                        </div>
+                    </div>
+
+                    <div
+                        class="p-6 rounded-2xl bg-white/80 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                            <div>
+                                <h2 class="text-xl font-bold text-zinc-900 dark:text-zinc-100">Soluzioni viaggio</h2>
+                                <p class="text-sm text-zinc-600 dark:text-zinc-400">Autocomplete LeFrecce + ricerca
+                                    soluzioni.</p>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 grid gap-4">
+                            <div class="grid md:grid-cols-2 gap-4">
+                                <input id="from-input"
+                                    class="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-systemBlue/30 focus:border-systemBlue transition"
+                                    type="text" placeholder="Stazione di partenza..." autocomplete="off" />
+                                <input id="to-input"
+                                    class="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-systemBlue/30 focus:border-systemBlue transition"
+                                    type="text" placeholder="Stazione di arrivo..." autocomplete="off" />
+                            </div>
+                            <div class="grid md:grid-cols-2 gap-4">
+                                <div id="from-suggestions" class="grid gap-2"></div>
+                                <div id="to-suggestions" class="grid gap-2"></div>
+                            </div>
+                            <div class="grid md:grid-cols-2 gap-4">
+                                <input id="solution-date"
+                                    class="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-systemBlue/30 focus:border-systemBlue transition"
+                                    type="date" />
+                                <input id="solution-time"
+                                    class="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-systemBlue/30 focus:border-systemBlue transition"
+                                    type="time" />
+                            </div>
+                            <button id="solutions-submit"
+                                class="px-5 py-2.5 rounded-xl bg-systemBlue text-white text-sm font-semibold shadow-sm hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-systemBlue/40 focus:ring-offset-2 focus:ring-offset-zinc-50 dark:focus:ring-offset-zinc-950 transition">Cerca
+                                soluzioni</button>
+                            <div class="text-xs font-mono text-zinc-500 dark:text-zinc-400">Richiesta: <span
+                                    id="solutions-request">-</span></div>
+                            <div class="text-xs uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Anteprima
+                            </div>
+                            <div id="solutions-preview"
+                                class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4 text-sm text-zinc-700 dark:text-zinc-200">
+                            </div>
+                            <pre id="solutions-result"
+                                class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4 text-xs text-zinc-700 dark:text-zinc-200 whitespace-pre-wrap min-h-[140px]"></pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="py-10 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950">
+            <div class="max-w-5xl mx-auto px-6 flex flex-col md:flex-row justify-between items-start gap-6">
+                <div class="text-left">
+                    <div class="font-bold text-zinc-900 dark:text-zinc-100">Treninfo Project</div>
+                    <div class="text-xs text-zinc-500 mt-1 flex flex-wrap gap-2 items-center">
+                        <span>Dev by Cristian Ceni</span>
+                        <span>-</span>
+                        <span>Powered by ViaggiaTreno, LeFrecce, Italo, Netlify CLI</span>
+                    </div>
+                </div>
+
+                <div class="flex gap-6 text-sm text-zinc-500 dark:text-zinc-400 font-mono">
+                    <a href="https://github.com/cristianceni5/treninfo"
+                        class="hover:text-systemBlue transition-colors">/repo</a>
+                    <a href="#" class="hover:text-systemBlue transition-colors">/api_docs</a>
+                    <a href="#" class="hover:text-systemBlue transition-colors">/status</a>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        const stationInput = document.getElementById('station-input');
+        const stationSuggestions = document.getElementById('station-suggestions');
+        const stationPicked = document.getElementById('station-picked');
+        const stationPreview = document.getElementById('station-preview');
+        const stationResult = document.getElementById('station-result');
+        const stationRequest = document.getElementById('station-request');
+        const stationModeButtons = Array.from(document.querySelectorAll('.station-mode-btn'));
+
+        const newsSubmit = document.getElementById('news-submit');
+        const newsPreview = document.getElementById('news-preview');
+        const newsResult = document.getElementById('news-result');
+        const newsRequest = document.getElementById('news-request');
+        const newsModeButtons = Array.from(document.querySelectorAll('.news-mode-btn'));
+
+        const trainNumber = document.getElementById('train-number');
+        const trainChoice = document.getElementById('train-choice');
+        const trainSubmit = document.getElementById('train-submit');
+        const trainPreview = document.getElementById('train-preview');
+        const trainResult = document.getElementById('train-result');
+        const trainRequest = document.getElementById('train-request');
+
+        const fromInput = document.getElementById('from-input');
+        const toInput = document.getElementById('to-input');
+        const fromSuggestions = document.getElementById('from-suggestions');
+        const toSuggestions = document.getElementById('to-suggestions');
+        const solutionDate = document.getElementById('solution-date');
+        const solutionTime = document.getElementById('solution-time');
+        const solutionsSubmit = document.getElementById('solutions-submit');
+        const solutionsPreview = document.getElementById('solutions-preview');
+        const solutionsResult = document.getElementById('solutions-result');
+        const solutionsRequest = document.getElementById('solutions-request');
+
+        let pickedStation = null;
+        let stationMode = 'info';
+        let stationAbort = null;
+        let stationDebounce = null;
+
+        let pickedFrom = null;
+        let pickedTo = null;
+        let fromAbort = null;
+        let toAbort = null;
+        let fromDebounce = null;
+        let toDebounce = null;
+
+        const activeClasses = ['bg-systemBlue', 'text-white', 'shadow-sm'];
+        const inactiveClasses = ['bg-white/80', 'dark:bg-zinc-900', 'border', 'border-zinc-200', 'dark:border-zinc-700', 'text-zinc-600', 'dark:text-zinc-300', 'hover:border-systemBlue/60', 'hover:text-systemBlue', 'dark:hover:text-white'];
+
+        let newsMode = 'news';
+
+        function setStationMode(mode) {
+            stationMode = mode;
+            stationModeButtons.forEach((btn) => {
+                const isActive = btn.dataset.stationMode === mode;
+                btn.classList.remove(...activeClasses, ...inactiveClasses);
+                if (isActive) {
+                    btn.classList.add(...activeClasses);
+                } else {
+                    btn.classList.add(...inactiveClasses);
+                }
+            });
+        }
+
+        function setNewsMode(mode) {
+            newsMode = mode;
+            newsModeButtons.forEach((btn) => {
+                const isActive = btn.dataset.newsMode === mode;
+                btn.classList.remove(...activeClasses, ...inactiveClasses);
+                if (isActive) {
+                    btn.classList.add(...activeClasses);
+                } else {
+                    btn.classList.add(...inactiveClasses);
+                }
+            });
+        }
+
+        function formatStationParts(item) {
+            if (!item || typeof item === 'string') return { name: item || '', codes: '' };
+            const base = item.name || item.stazione || '';
+            const codes = [];
+            if (item.lefrecceId != null && item.lefrecceId !== '') {
+                codes.push(String(item.lefrecceId));
+            }
+            if (item.stationCode) {
+                codes.push(String(item.stationCode));
+            }
+            if (item.italoCode) {
+                codes.push(String(item.italoCode));
+            }
+            return { name: base, codes: codes.join(' • ') };
+        }
+
+        function suggestionButton(item, onSelect) {
+            const { name, codes } = formatStationParts(item);
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'w-full text-left px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900 text-sm text-zinc-700 dark:text-zinc-200 hover:border-systemBlue/70 hover:text-systemBlue dark:hover:text-white hover:bg-systemBlue/5 dark:hover:bg-systemBlue/10 transition';
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = name;
+            button.appendChild(nameSpan);
+            if (codes) {
+                const codesSpan = document.createElement('span');
+                codesSpan.className = 'block text-xs text-zinc-400 dark:text-zinc-500';
+                codesSpan.textContent = codes;
+                button.appendChild(codesSpan);
+            }
+            button.addEventListener('click', () => onSelect(item));
+            return button;
+        }
+
+        function renderSuggestions(container, list, onSelect) {
+            container.innerHTML = '';
+            list.forEach((item) => container.appendChild(suggestionButton(item, onSelect)));
+        }
+
+        async function callApi(url) {
+            const resp = await fetch(url);
+            const text = await resp.text();
+            try {
+                const json = JSON.parse(text);
+                return { text: JSON.stringify(json, null, 2), json };
+            } catch {
+                return { text, json: null };
+            }
+        }
+
+        function isPlainObject(value) {
+            return value != null && typeof value === 'object' && !Array.isArray(value);
+        }
+
+        function el(tag, className, text) {
+            const node = document.createElement(tag);
+            if (className) node.className = className;
+            if (text != null) node.textContent = text;
+            return node;
+        }
+
+        function badge(text, tone = 'neutral') {
+            const toneClass = {
+                ok: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
+                warn: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
+                danger: 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300',
+                info: 'bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
+                brandRed: 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300',
+                brandBlue: 'bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
+                brandDarkRed: 'bg-rose-200 text-rose-800 dark:bg-rose-500/20 dark:text-rose-200',
+                brandBlack: 'bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100',
+                neutral: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300',
+            };
+            return el(
+                'span',
+                `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${toneClass[tone] || toneClass.neutral}`,
+                text
             );
         }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        function titleWithDot(text, className = 'text-sm font-semibold text-zinc-900 dark:text-zinc-100') {
+            const wrap = el('div', 'flex items-center gap-2');
+            wrap.appendChild(el('span', 'inline-flex h-2 w-2 rounded-full bg-systemBlue'));
+            wrap.appendChild(el('span', className, text));
+            return wrap;
+        }
+
+        function renderValueNode(value) {
+            if (Array.isArray(value)) {
+                const details = el('details', 'rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/60 p-3');
+                const summary = el('summary', 'cursor-pointer text-xs font-semibold text-zinc-500 dark:text-zinc-400');
+                summary.textContent = `Lista (${value.length})`;
+                details.appendChild(summary);
+                const list = el('div', 'mt-3 grid gap-3');
+                value.forEach((item, idx) => {
+                    const box = el('div', 'rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/60 p-3');
+                    const title = el('div', 'text-xs font-mono text-zinc-500 dark:text-zinc-400', `#${idx + 1}`);
+                    box.appendChild(title);
+                    box.appendChild(renderValueNode(item));
+                    list.appendChild(box);
+                });
+                details.appendChild(list);
+                return details;
+            }
+
+            if (isPlainObject(value)) {
+                const wrapper = el('div', 'grid gap-3');
+                Object.keys(value)
+                    .sort()
+                    .forEach((key) => {
+                        const row = el('div', 'rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/60 p-3');
+                        row.appendChild(el('div', 'text-xs uppercase tracking-wide text-zinc-400 dark:text-zinc-500', key));
+                        const valueWrap = el('div', 'mt-1 text-sm text-zinc-700 dark:text-zinc-200');
+                        valueWrap.appendChild(renderValueNode(value[key]));
+                        row.appendChild(valueWrap);
+                        wrapper.appendChild(row);
+                    });
+                return wrapper;
+            }
+
+            if (value == null) return el('span', 'text-zinc-400 dark:text-zinc-500', 'null');
+            if (typeof value === 'boolean') return badge(value ? 'true' : 'false', value ? 'ok' : 'neutral');
+            return el('span', '', String(value));
+        }
+
+        function renderDetailsSection(data) {
+            const details = el('details', 'rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/60 p-4');
+            details.open = true;
+            const summary = el('summary', 'cursor-pointer text-sm font-semibold text-zinc-700 dark:text-zinc-200');
+            summary.textContent = 'Dettagli (tutti i campi)';
+            details.appendChild(summary);
+            const body = el('div', 'mt-4');
+            body.appendChild(renderValueNode(data));
+            details.appendChild(body);
+            return details;
+        }
+
+        function renderStationBoardPreview(data) {
+            const wrapper = el('div', 'grid gap-4');
+            const header = el('div', 'flex flex-wrap items-center justify-between gap-3');
+            const meta = el('div', 'text-xs text-zinc-500 dark:text-zinc-400', data.data || '');
+            header.appendChild(titleWithDot(data.stazione || 'Stazione'));
+            header.appendChild(meta);
+            wrapper.appendChild(header);
+
+            const list = el('div', 'grid gap-3');
+            (data.treni || []).forEach((treno) => {
+                const card = el('div', 'rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/60 p-4');
+                const top = el('div', 'flex flex-wrap items-center justify-between gap-3');
+                const left = el('div', 'flex items-center gap-2');
+                left.appendChild(badge(treno.numeroTreno || '—', 'info'));
+                if (treno?.tipoTreno?.nome || treno?.tipoTreno?.categoria) {
+                    left.appendChild(el('span', 'text-xs text-zinc-500 dark:text-zinc-400', treno.tipoTreno.nome || treno.tipoTreno.categoria));
+                }
+                top.appendChild(left);
+                const timeLabel = treno.orarioPartenzaLeggibile || treno.orarioArrivoLeggibile || '—';
+                top.appendChild(el('div', 'text-sm font-semibold text-zinc-900 dark:text-zinc-100', timeLabel));
+                card.appendChild(top);
+
+                card.appendChild(
+                    el(
+                        'div',
+                        'mt-2 text-sm text-zinc-700 dark:text-zinc-200',
+                        `${treno.origine || '—'} → ${treno.destinazione || '—'}`
+                    )
+                );
+
+                const metaRow = el('div', 'mt-3 flex flex-wrap gap-2 text-xs');
+                if (treno.ritardo != null) metaRow.appendChild(badge(`Ritardo ${treno.ritardo}m`, treno.ritardo > 0 ? 'warn' : 'ok'));
+                if (treno.binarioEffettivo || treno.binarioProgrammato) {
+                    metaRow.appendChild(
+                        badge(
+                            `Binario ${treno.binarioEffettivo || treno.binarioProgrammato}`,
+                            treno.binarioEffettivo ? 'info' : 'neutral'
+                        )
+                    );
+                }
+                if (treno.arrivato != null) metaRow.appendChild(badge(`Arrivato ${treno.arrivato ? 'si' : 'no'}`, treno.arrivato ? 'ok' : 'neutral'));
+                if (treno.circolante === false) metaRow.appendChild(badge('Soppresso', 'danger'));
+                if (metaRow.childNodes.length) card.appendChild(metaRow);
+                list.appendChild(card);
+            });
+            wrapper.appendChild(list);
+            return wrapper;
+        }
+
+        function renderStationInfoPreview(data) {
+            const card = el('div', 'rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/60 p-4');
+            card.appendChild(titleWithDot(data.stazione || 'Stazione'));
+            const grid = el('div', 'mt-3 grid sm:grid-cols-2 gap-3 text-sm text-zinc-700 dark:text-zinc-200');
+            grid.appendChild(el('div', '', `Regione: ${data.regione || '—'}`));
+            grid.appendChild(el('div', '', `Lat: ${data.latitudine ?? '—'}`));
+            grid.appendChild(el('div', '', `Lon: ${data.longitudine ?? '—'}`));
+            card.appendChild(grid);
+            return card;
+        }
+
+        function stopStatusInfo(stop) {
+            const raw = [stop?.statoFermata, stop?.tipoFermata, stop?.tipoFermataRfi]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+            if (raw.includes('sopp') || raw.includes('canc') || raw.includes('suppr')) return { label: 'soppressa', tone: 'danger' };
+            if (raw.includes('straord')) return { label: 'straordinaria', tone: 'info' };
+            if (raw.includes('eff') || raw.includes('fatta') || raw.includes('real')) return { label: 'fatta', tone: 'ok' };
+            return { label: 'prevista', tone: 'neutral' };
+        }
+
+        function trainTypeTone(code, compagnia) {
+            const tag = String(code || '').toUpperCase();
+            const comp = String(compagnia || '').toLowerCase();
+            if (comp === 'italo') return 'brandDarkRed';
+            if (['FR', 'FA'].includes(tag)) return 'brandRed';
+            if (['REG', 'REGV', 'RV', 'R'].includes(tag)) return 'brandBlack';
+            if (['IC', 'ICN', 'NI', 'EC', 'FB'].includes(tag)) return 'brandBlue';
+            return 'neutral';
+        }
+
+        function formatTrainTypeLabel(tipoTreno) {
+            if (!tipoTreno || typeof tipoTreno !== 'object') return '';
+            const code = String(tipoTreno.categoria || tipoTreno.sigla || '').trim();
+            const name = String(tipoTreno.nomeCat || tipoTreno.nome || '').trim();
+            if (code && name) return `${code} · ${name}`;
+            return code || name || '';
+        }
+
+        function formatPriceLabel(prezzo) {
+            if (prezzo == null) return '';
+            if (typeof prezzo === 'string') return prezzo;
+            if (typeof prezzo === 'number' && Number.isFinite(prezzo)) return prezzo.toFixed(2);
+            if (typeof prezzo === 'object') {
+                const amount = Number(prezzo.importo ?? prezzo.amount);
+                const currency = String(prezzo.valuta || prezzo.currency || '').trim();
+                if (Number.isFinite(amount)) {
+                    const symbol = currency.toUpperCase() === 'EUR' || currency === '€' ? '€' : currency;
+                    return symbol ? `${symbol} ${amount.toFixed(2)}` : amount.toFixed(2);
+                }
+            }
+            return '';
+        }
+
+        function platformPill(label, value, isReal) {
+            if (!value) return null;
+            const text = label ? `${label} ${value}` : String(value);
+            return badge(text, isReal ? 'info' : 'neutral');
+        }
+
+        function renderStopTimes(stop) {
+            const wrapper = el('div', 'mt-2 grid sm:grid-cols-2 gap-2 text-xs text-zinc-500 dark:text-zinc-400');
+            const arr = stop?.orari?.arrivo?.hhmm || {};
+            const dep = stop?.orari?.partenza?.hhmm || {};
+
+            const makeLine = (label, data) => {
+                const line = el('div', 'grid gap-1');
+                line.appendChild(el('div', 'text-[11px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500', label));
+                const text = [];
+                if (data.programmato) text.push(`Prog. ${data.programmato}`);
+                if (data.reale) {
+                    text.push(`Reale ${data.reale}`);
+                } else if (data.probabile) {
+                    text.push(`Prob. ${data.probabile}`);
+                }
+                line.appendChild(el('div', 'text-xs text-zinc-600 dark:text-zinc-300', text.join(' • ') || '—'));
+                return line;
+            };
+
+            wrapper.appendChild(makeLine('Arrivo', arr));
+            wrapper.appendChild(makeLine('Partenza', dep));
+            return wrapper;
+        }
+
+        function renderTrainStatusPreview(data) {
+            const wrapper = el('div', 'grid gap-4');
+            const card = el('div', 'rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/60 p-4');
+            const header = el('div', 'flex flex-wrap items-center justify-between gap-3');
+            const left = el('div', 'flex items-center gap-2');
+            left.appendChild(el('span', 'inline-flex h-2 w-2 rounded-full bg-systemBlue'));
+            left.appendChild(badge(String(data.numeroTreno ?? '—'), 'info'));
+            if (data?.compagnia) left.appendChild(badge(String(data.compagnia).toUpperCase(), trainTypeTone(null, data.compagnia)));
+            const typeLabel = formatTrainTypeLabel(data?.tipoTreno);
+            const typeCode = data?.tipoTreno?.categoria || data?.tipoTreno?.sigla || null;
+            if (typeLabel) {
+                left.appendChild(badge(typeLabel, trainTypeTone(typeCode, data?.compagnia)));
+            }
+            header.appendChild(left);
+            const statoLabel = data?.statoTreno?.stato || 'stato n/d';
+            header.appendChild(badge(statoLabel, data?.statoTreno?.stato ? 'ok' : 'neutral'));
+            card.appendChild(header);
+
+            const route = el('div', 'mt-3 text-sm text-zinc-700 dark:text-zinc-200');
+            route.textContent = `${data?.tratta?.stazionePartenzaZero || '—'} → ${data?.tratta?.stazioneArrivoZero || '—'}`;
+            card.appendChild(route);
+
+            const times = el('div', 'mt-3 grid sm:grid-cols-2 gap-3 text-sm text-zinc-700 dark:text-zinc-200');
+            times.appendChild(el('div', '', `Partenza: ${data?.tratta?.orarioPartenzaZero || '—'}`));
+            times.appendChild(el('div', '', `Arrivo: ${data?.tratta?.orarioArrivoZero || '—'}`));
+            card.appendChild(times);
+
+            if (data?.statoTreno?.infoIR) {
+                const info = data.statoTreno.infoIR;
+                const infoBox = el('div', 'mt-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-3');
+                infoBox.appendChild(el('div', 'text-xs uppercase tracking-wide text-zinc-400 dark:text-zinc-500', 'Ultimo rilevamento'));
+                const infoText = el('div', 'mt-1 text-sm text-zinc-700 dark:text-zinc-200');
+                const parts = [
+                    info?.ultimoRilevOra ? `Ora: ${info.ultimoRilevOra}` : null,
+                    info?.ultimoRilevLuogo ? `Luogo: ${info.ultimoRilevLuogo}` : null,
+                ].filter(Boolean);
+                infoText.textContent = parts.join(' • ') || '—';
+                infoBox.appendChild(infoText);
+                if (info?.messaggioUltimoRilev) {
+                    infoBox.appendChild(el('div', 'mt-1 text-xs text-zinc-500 dark:text-zinc-400', info.messaggioUltimoRilev));
+                }
+                card.appendChild(infoBox);
+            }
+            wrapper.appendChild(card);
+
+            if (data?.fermate?.fermate && Array.isArray(data.fermate.fermate)) {
+                const stops = el('div', 'rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/60 p-4');
+                stops.appendChild(el('div', 'text-xs uppercase tracking-wide text-zinc-400 dark:text-zinc-500', `Fermate (${data.fermate.fermate.length})`));
+                const list = el('div', 'mt-3 grid gap-2');
+                const hasExecutive = data.fermate.fermate.some((stop) => stop?.carrozzaExecutive);
+                if (hasExecutive && String(data?.tipoTreno?.categoria || '').toUpperCase() === 'FR') {
+                    stops.appendChild(
+                        el(
+                            'div',
+                            'mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300',
+                            'Executive disponibile su questo treno'
+                        )
+                    );
+                }
+                data.fermate.fermate.forEach((stop) => {
+                    const row = el('div', 'rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/60 p-3');
+                    const top = el('div', 'flex flex-wrap items-center justify-between gap-2');
+                    top.appendChild(el('div', 'text-sm font-semibold text-zinc-900 dark:text-zinc-100', stop.stazione || '—'));
+                    const status = stopStatusInfo(stop);
+                    top.appendChild(badge(status.label, status.tone));
+                    row.appendChild(top);
+
+                    row.appendChild(renderStopTimes(stop));
+
+                    const meta = el('div', 'mt-2 flex flex-wrap gap-2 text-xs');
+                    const binArr = stop?.binari?.arrivo?.reale || stop?.binari?.arrivo?.programmato;
+                    const binDep = stop?.binari?.partenza?.reale || stop?.binari?.partenza?.programmato;
+                    const arrReal = stop?.binari?.arrivo?.reale;
+                    const arrProg = stop?.binari?.arrivo?.programmato;
+                    const depReal = stop?.binari?.partenza?.reale;
+                    const depProg = stop?.binari?.partenza?.programmato;
+                    const arrRealPill = platformPill('Arr', arrReal, true);
+                    const arrProgPill = arrReal ? null : platformPill('Arr', arrProg, false);
+                    const depRealPill = platformPill('Part', depReal, true);
+                    const depProgPill = depReal ? null : platformPill('Part', depProg, false);
+                    [arrRealPill, arrProgPill, depRealPill, depProgPill].filter(Boolean).forEach((pill) => meta.appendChild(pill));
+                    if (stop?.orari?.arrivo?.deltaMinuti != null && stop.orari.arrivo.deltaMinuti !== 0) {
+                        meta.appendChild(
+                            badge(
+                                `Rit. arr ${stop.orari.arrivo.deltaMinuti}m`,
+                                stop.orari.arrivo.deltaMinuti > 0 ? 'warn' : 'ok'
+                            )
+                        );
+                    }
+                    if (stop?.orari?.partenza?.deltaMinuti != null && stop.orari.partenza.deltaMinuti !== 0) {
+                        meta.appendChild(
+                            badge(
+                                `Rit. part ${stop.orari.partenza.deltaMinuti}m`,
+                                stop.orari.partenza.deltaMinuti > 0 ? 'warn' : 'ok'
+                            )
+                        );
+                    }
+                    if (meta.childNodes.length) row.appendChild(meta);
+                    list.appendChild(row);
+                });
+                stops.appendChild(list);
+                wrapper.appendChild(stops);
+            }
+            return wrapper;
+        }
+
+        function renderSolutionsPreview(data) {
+            const wrapper = el('div', 'grid gap-4');
+            const header = el('div', 'flex flex-wrap items-center justify-between gap-3');
+            header.appendChild(titleWithDot(`${data?.stazioni?.from || '—'} → ${data?.stazioni?.to || '—'}`));
+            header.appendChild(el('div', 'text-xs text-zinc-500 dark:text-zinc-400', `Soluzioni: ${(data.soluzioni || []).length}`));
+            wrapper.appendChild(header);
+
+            const list = el('div', 'grid gap-3');
+            (data.soluzioni || []).forEach((sol, idx) => {
+                const card = el('div', 'rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/60 p-4');
+                const top = el('div', 'flex flex-wrap items-center justify-between gap-3');
+                top.appendChild(titleWithDot(`Soluzione ${idx + 1}`, 'text-sm font-semibold text-zinc-900 dark:text-zinc-100'));
+                const priceLabel = formatPriceLabel(sol?.prezzo);
+                if (priceLabel) top.appendChild(badge(priceLabel, 'info'));
+                card.appendChild(top);
+
+                const meta = el('div', 'mt-3 flex flex-wrap gap-2 text-xs');
+                if (sol?.partenza && sol?.arrivo) meta.appendChild(badge(`${sol.partenza} → ${sol.arrivo}`, 'neutral'));
+                if (sol?.durata) meta.appendChild(badge(`Durata ${sol.durata}m`, 'neutral'));
+                if (sol?.cambi != null) meta.appendChild(badge(`Cambi ${sol.cambi}`, sol.cambi > 0 ? 'warn' : 'ok'));
+                card.appendChild(meta);
+
+                if (Array.isArray(sol?.treni)) {
+                    const trains = el('div', 'mt-3 grid gap-2');
+                    sol.treni.forEach((t) => {
+                        const row = el('div', 'rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/60 p-3');
+                        row.appendChild(el('div', 'text-sm font-semibold text-zinc-900 dark:text-zinc-100', t.numeroTreno || '—'));
+                        row.appendChild(el('div', 'text-xs text-zinc-500 dark:text-zinc-400', `${t.da || '—'} → ${t.a || '—'}`));
+                        row.appendChild(el('div', 'mt-1 text-xs text-zinc-500 dark:text-zinc-400', `${t.orarioPartenza || '—'} • ${t.orarioArrivo || '—'}`));
+                        trains.appendChild(row);
+                    });
+                    card.appendChild(trains);
+                }
+                list.appendChild(card);
+            });
+            wrapper.appendChild(list);
+            return wrapper;
+        }
+
+        function renderNewsPreview(data) {
+            const wrapper = el('div', 'grid gap-3');
+            const items = Array.isArray(data?.data) ? data.data : [];
+            if (!items.length) {
+                wrapper.appendChild(el('div', 'text-xs text-zinc-400 dark:text-zinc-500', 'Nessun aggiornamento disponibile.'));
+                return wrapper;
+            }
+            items.forEach((item, idx) => {
+                const cardTone = item?.inEvidenza ? 'border-sky-200 dark:border-sky-500/40 bg-sky-50/70 dark:bg-sky-500/10' : 'border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/60';
+                const card = el('div', `rounded-xl border ${cardTone} p-3`);
+                if (typeof item === 'string') {
+                    const head = el('div', 'flex items-start gap-2');
+                    head.appendChild(el('span', 'inline-flex h-2 w-2 rounded-full bg-systemBlue mt-1'));
+                    head.appendChild(el('div', 'text-sm text-zinc-700 dark:text-zinc-200', item));
+                    card.appendChild(head);
+                } else {
+                    const title = item?.title || 'Aggiornamento';
+                    const head = el('div', 'flex items-start gap-2');
+                    head.appendChild(el('span', 'inline-flex h-2 w-2 rounded-full bg-systemBlue mt-1'));
+                    const textBlock = el('div', 'grid gap-1');
+                    textBlock.appendChild(el('div', 'text-sm font-semibold text-zinc-900 dark:text-zinc-100', title));
+                    if (item?.date) {
+                        textBlock.appendChild(el('div', 'text-xs text-zinc-500 dark:text-zinc-400', item.date));
+                    }
+                    if (item?.text) {
+                        textBlock.appendChild(el('div', 'text-sm text-zinc-700 dark:text-zinc-200 whitespace-pre-wrap', item.text));
+                    }
+                    head.appendChild(textBlock);
+                    card.appendChild(head);
+                }
+                if (items.length > 1) {
+                    card.appendChild(el('div', 'mt-2 text-xs text-zinc-400 dark:text-zinc-500', `#${idx + 1}`));
+                }
+                wrapper.appendChild(card);
+            });
+            return wrapper;
+        }
+
+        function renderPreview(container, data) {
+            if (!container) return;
+            container.innerHTML = '';
+            if (!data) {
+                container.appendChild(el('div', 'text-xs text-zinc-400 dark:text-zinc-500', 'Nessun dato disponibile.'));
+                return;
+            }
+
+            const sections = el('div', 'grid gap-4');
+            if (data.ok === false) {
+                const errorCard = el('div', 'rounded-2xl border border-rose-200 dark:border-rose-500/40 bg-rose-50 dark:bg-rose-500/10 p-4');
+                errorCard.appendChild(el('div', 'text-sm font-semibold text-rose-700 dark:text-rose-300', 'Errore'));
+                if (data.error) errorCard.appendChild(el('div', 'mt-2 text-sm text-rose-700 dark:text-rose-200', data.error));
+                sections.appendChild(errorCard);
+            }
+
+            if (Array.isArray(data.treni)) {
+                sections.appendChild(renderStationBoardPreview(data));
+            } else if (Array.isArray(data?.data)) {
+                sections.appendChild(renderNewsPreview(data));
+            } else if (Array.isArray(data.soluzioni)) {
+                sections.appendChild(renderSolutionsPreview(data));
+            } else if (data?.statoTreno || data?.tratta) {
+                sections.appendChild(renderTrainStatusPreview(data));
+            } else if (data?.stazione) {
+                sections.appendChild(renderStationInfoPreview(data));
+            } else {
+                const generic = el('div', 'rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/60 p-4');
+                generic.appendChild(el('div', 'text-sm font-semibold text-zinc-900 dark:text-zinc-100', 'Anteprima dati'));
+                sections.appendChild(generic);
+            }
+
+            sections.appendChild(renderDetailsSection(data));
+            container.appendChild(sections);
+        }
+
+        function setToday() {
+            const d = new Date();
+            const yyyy = String(d.getFullYear());
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            solutionDate.value = `${yyyy}-${mm}-${dd}`;
+            solutionTime.value = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        }
+
+        async function fetchStationSuggestions(query) {
+            const q = query.trim();
+            if (q.length < 3) {
+                stationSuggestions.innerHTML = '';
+                return;
+            }
+            if (stationAbort) stationAbort.abort();
+            stationAbort = new AbortController();
+            const url = `/api/stations/autocomplete?query=${encodeURIComponent(q)}&includeIds=1`;
+            const resp = await fetch(url, { signal: stationAbort.signal });
+            const json = await resp.json();
+            const list = json && json.ok && Array.isArray(json.data) ? json.data : [];
+            renderSuggestions(stationSuggestions, list, (picked) => {
+                pickedStation = picked;
+                const { name, codes } = formatStationParts(picked);
+                stationInput.value = picked && picked.name ? picked.name : name;
+                stationPicked.innerHTML = '';
+                if (name) {
+                    const labelSpan = document.createElement('span');
+                    labelSpan.textContent = `Stazione selezionata: ${name}`;
+                    stationPicked.appendChild(labelSpan);
+                }
+                if (codes) {
+                    const codesSpan = document.createElement('span');
+                    codesSpan.className = 'block text-xs text-zinc-400 dark:text-zinc-500';
+                    codesSpan.textContent = codes;
+                    stationPicked.appendChild(codesSpan);
+                }
+                stationSuggestions.innerHTML = '';
+            });
+        }
+
+        async function fetchLefrecceSuggestions(query, isFrom) {
+            const q = query.trim();
+            if (q.length < 3) {
+                if (isFrom) fromSuggestions.innerHTML = '';
+                else toSuggestions.innerHTML = '';
+                return;
+            }
+            const abortRef = isFrom ? fromAbort : toAbort;
+            if (abortRef) abortRef.abort();
+            const controller = new AbortController();
+            if (isFrom) fromAbort = controller; else toAbort = controller;
+            const url = `/api/lefrecce/autocomplete?query=${encodeURIComponent(q)}&includeIds=1`;
+            const resp = await fetch(url, { signal: controller.signal });
+            const json = await resp.json();
+            const list = json && json.ok && Array.isArray(json.data) ? json.data : [];
+            renderSuggestions(isFrom ? fromSuggestions : toSuggestions, list, (picked) => {
+                const label = picked && (picked.name || picked.stazione) ? (picked.name || picked.stazione) : String(picked || '');
+                if (isFrom) {
+                    pickedFrom = picked;
+                    fromInput.value = label;
+                    fromSuggestions.innerHTML = '';
+                } else {
+                    pickedTo = picked;
+                    toInput.value = label;
+                    toSuggestions.innerHTML = '';
+                }
+            });
+        }
+
+        async function handleStationRequest() {
+            const stationName = (pickedStation && pickedStation.name) || stationInput.value.trim();
+            const stationCode = pickedStation && pickedStation.stationCode ? pickedStation.stationCode : '';
+            if (!stationName && !stationCode) {
+                stationResult.textContent = "Seleziona una stazione dall'autocomplete.";
+                return;
+            }
+            let endpoint = '';
+            if (stationMode === 'info') {
+                endpoint = stationCode
+                    ? `/api/stations/info?stationCode=${encodeURIComponent(stationCode)}`
+                    : `/api/stations/info?stationName=${encodeURIComponent(stationName)}`;
+            } else if (stationMode === 'departures') {
+                endpoint = stationCode
+                    ? `/api/stations/departures?stationCode=${encodeURIComponent(stationCode)}`
+                    : `/api/stations/departures?stationName=${encodeURIComponent(stationName)}`;
+            } else if (stationMode === 'arrivals') {
+                endpoint = stationCode
+                    ? `/api/stations/arrivals?stationCode=${encodeURIComponent(stationCode)}`
+                    : `/api/stations/arrivals?stationName=${encodeURIComponent(stationName)}`;
+            }
+            stationRequest.textContent = endpoint;
+            stationResult.textContent = 'Caricamento...';
+            renderPreview(stationPreview, null);
+            try {
+                const { text, json } = await callApi(endpoint);
+                stationResult.textContent = text;
+                renderPreview(stationPreview, json);
+            } catch (err) {
+                stationResult.textContent = `Errore: ${err.message}`;
+                renderPreview(stationPreview, null);
+            }
+        }
+
+        async function handleTrainRequest() {
+            const numero = trainNumber.value.trim();
+            if (!numero) {
+                trainResult.textContent = 'Inserisci un numero treno.';
+                return;
+            }
+            const params = new URLSearchParams({ trainNumber: numero });
+            const choice = trainChoice.value.trim();
+            if (choice !== '') params.set('choice', choice);
+            const url = `/api/trains/status?${params.toString()}`;
+            trainRequest.textContent = url;
+            trainResult.textContent = 'Caricamento...';
+            renderPreview(trainPreview, null);
+            try {
+                const { text, json } = await callApi(url);
+                trainResult.textContent = text;
+                renderPreview(trainPreview, json);
+            } catch (err) {
+                trainResult.textContent = `Errore: ${err.message}`;
+                renderPreview(trainPreview, null);
+            }
+        }
+
+        async function handleNewsRequest() {
+            const url = newsMode === 'works' ? '/api/news?works=1' : '/api/news';
+            newsRequest.textContent = url;
+            newsResult.textContent = 'Caricamento...';
+            renderPreview(newsPreview, null);
+            try {
+                const { text, json } = await callApi(url);
+                newsResult.textContent = text;
+                renderPreview(newsPreview, json);
+            } catch (err) {
+                newsResult.textContent = `Errore: ${err.message}`;
+                renderPreview(newsPreview, null);
+            }
+        }
+
+        async function handleSolutionsRequest() {
+            const from = (pickedFrom && pickedFrom.name) || fromInput.value.trim();
+            const to = (pickedTo && pickedTo.name) || toInput.value.trim();
+            if (!from || !to) {
+                solutionsResult.textContent = 'Inserisci (o seleziona) stazione di partenza e arrivo.';
+                return;
+            }
+            if (!solutionDate.value) {
+                solutionsResult.textContent = 'Inserisci una data.';
+                return;
+            }
+            const params = new URLSearchParams({ date: solutionDate.value });
+            if (solutionTime.value) params.set('time', solutionTime.value);
+
+            if (pickedFrom && pickedFrom.lefrecceId) {
+                params.set('fromLefrecceId', pickedFrom.lefrecceId);
+            } else if (pickedFrom && pickedFrom.stationCode) {
+                params.set('fromStationCode', pickedFrom.stationCode);
+            } else {
+                params.set('fromName', from);
+            }
+
+            if (pickedTo && pickedTo.lefrecceId) {
+                params.set('toLefrecceId', pickedTo.lefrecceId);
+            } else if (pickedTo && pickedTo.stationCode) {
+                params.set('toStationCode', pickedTo.stationCode);
+            } else {
+                params.set('toName', to);
+            }
+
+            const url = `/api/solutions?${params.toString()}`;
+            solutionsRequest.textContent = url;
+            solutionsResult.textContent = 'Caricamento...';
+            renderPreview(solutionsPreview, null);
+            try {
+                const { text, json } = await callApi(url);
+                solutionsResult.textContent = text;
+                renderPreview(solutionsPreview, json);
+            } catch (err) {
+                solutionsResult.textContent = `Errore: ${err.message}`;
+                renderPreview(solutionsPreview, null);
+            }
+        }
+
+        stationModeButtons.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                setStationMode(btn.dataset.stationMode);
+                handleStationRequest();
+            });
+        });
+
+        newsModeButtons.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                setNewsMode(btn.dataset.newsMode);
+            });
+        });
+
+        stationInput.addEventListener('input', () => {
+            clearTimeout(stationDebounce);
+            stationDebounce = setTimeout(() => fetchStationSuggestions(stationInput.value), 200);
+        });
+
+        fromInput.addEventListener('input', () => {
+            clearTimeout(fromDebounce);
+            fromDebounce = setTimeout(() => fetchLefrecceSuggestions(fromInput.value, true), 200);
+        });
+
+        toInput.addEventListener('input', () => {
+            clearTimeout(toDebounce);
+            toDebounce = setTimeout(() => fetchLefrecceSuggestions(toInput.value, false), 200);
+        });
+
+        trainSubmit.addEventListener('click', handleTrainRequest);
+        newsSubmit.addEventListener('click', handleNewsRequest);
+        solutionsSubmit.addEventListener('click', handleSolutionsRequest);
+
+        setStationMode('info');
+        setNewsMode('news');
+        setToday();
     </script>
 </body>
+
 </html>
