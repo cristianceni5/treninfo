@@ -1,5 +1,7 @@
 # Treninfo API
 
+![Italia](icona-italia.png)
+
 Backend (Netlify Functions) che normalizza i dati di ViaggiaTreno (RFI) e LeFrecce (Trenitalia) per l'app Treninfo.
 
 Base URL: `https://treninfo.netlify.app/api`
@@ -69,7 +71,7 @@ Response (esempio, includeIds=1):
       "stazione": "Roma (Tutte le stazioni)",
       "multistation": true,
       "lefrecceId": 830008349,
-      "stationCode": "LF830008349"
+      "stationCode": "S08409"
     }
   ]
 }
@@ -86,8 +88,7 @@ Response (esempio):
   "stazione": "Roma Termini",
   "latitudine": 41.900636,
   "longitudine": 12.502026,
-  "regione": "5",
-  "meteo": {"temperature": 18}
+  "regione": "5"
 }
 ```
 
@@ -113,6 +114,7 @@ Response (esempio):
       "ritardo": 0,
       "binarioProgrammato": "7",
       "binarioEffettivo": "7",
+      "arrivato": false,
       "circolante": true,
       "tipoTreno": {"sigla": "FR AV", "nome": "Frecciarossa"}
     }
@@ -162,8 +164,8 @@ Response: stesso schema di `/trains/status`.
 Soluzioni viaggio LeFrecce.
 
 Request (query string):
-- `fromLefrecceId` (obbligatorio)
-- `toLefrecceId` (obbligatorio)
+- `fromLefrecceId` (obbligatorio, usare sempre gli ID LeFrecce)
+- `toLefrecceId` (obbligatorio, usare sempre gli ID LeFrecce)
 - `date` (obbligatorio, `YYYY-MM-DD`)
 - `time` (opzionale, `HH:mm`)
 - opzionali: `adults`, `children`, `frecceOnly`, `regionalOnly`, `intercityOnly`, `tourismOnly`, `noChanges`, `order`, `offset`, `limit`, `bestFare`, `bikeFilter`
@@ -198,6 +200,28 @@ Response (esempio):
           "orarioArrivo": "13:49"
         }
       ]
+    }
+  ]
+}
+```
+
+### GET /news
+Infomobilità ViaggiaTreno in formato JSON.
+
+Request (query string):
+- `works` (opzionale, `1` per info lavori/perturbazioni)
+
+Response (esempio):
+```json
+{
+  "ok": true,
+  "works": false,
+  "data": [
+    {
+      "title": "CIRCOLAZIONE REGOLARE SULLA RETE ALTA VELOCITÀ",
+      "date": "27.01.2026",
+      "text": "In questo momento la circolazione si svolge regolarmente sull'intera rete Alta Velocità.",
+      "inEvidenza": true
     }
   ]
 }
