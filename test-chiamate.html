@@ -666,6 +666,18 @@
             times.appendChild(el('div', '', `Arrivo: ${data?.tratta?.orarioArrivoZero || '—'}`));
             card.appendChild(times);
 
+            const serviceLabel = data?.statoTreno?.statoServizio || data?.statoTreno?.statoServizioRaw || null;
+            const serviceRaw = data?.statoTreno?.statoServizioRfi || null;
+            if (serviceLabel || serviceRaw) {
+                const detail = [];
+                if (serviceRaw?.tipoTreno) detail.push(`tipoTreno ${serviceRaw.tipoTreno}`);
+                if (serviceRaw?.provvedimento != null) detail.push(`provv ${serviceRaw.provvedimento}`);
+                const suffix = detail.length ? ` (${detail.join(', ')})` : '';
+                card.appendChild(
+                    el('div', 'mt-2 text-xs text-zinc-500 dark:text-zinc-400', `Servizio: ${serviceLabel || '—'}${suffix}`)
+                );
+            }
+
             if (data?.statoTreno?.infoIR) {
                 const info = data.statoTreno.infoIR;
                 const infoBox = el('div', 'mt-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-3');

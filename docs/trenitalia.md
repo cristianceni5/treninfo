@@ -80,10 +80,11 @@ Proxy:
 - `GET /api/news`
 
 Upstream:
-- `GET /infomobilita/resteasy/viaggiatreno/infomobilitaTicker/`
+- `GET /infomobilita/resteasy/viaggiatreno/infomobilitaRSS/{true|false}`
 
-- La risposta è una mega stringa in HTML
-- `<ul><li>CIRCOLAZIONE REGOLARE SULLA RETE ALTA VELOCITÃ€</li><li>Linee Messi`
+Note:
+- `true` per lavori/perturbazioni, `false` per le notizie standard
+- La risposta è HTML (accordion) che viene ripulito in JSON dall'API
 
 ### Stato treno (ricerca per numero)
 

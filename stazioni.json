@@ -3171,7 +3171,7 @@
     "disuso": false,
     "viaggiatrenoId": "S05046",
     "lefrecceId": 830014706,
-    "italoId": "BC_"
+    "italoId": "BO2"
   },
   {
     "nome": "Bologna Corticella",
@@ -23446,7 +23446,7 @@
     "disuso": false,
     "viaggiatrenoId": "S01039",
     "lefrecceId": 830001039,
-    "italoId": null
+    "italoId": "RRO"
   },
   {
     "nome": "Riace",
@@ -30794,14 +30794,14 @@
     "italoId": null
   },
   {
-    "nome": "Vallo della Luc.castelnuovo",
+    "nome": "Vallo della Luc.-Castelnuovo",
     "regionId": "18",
     "lat": 40.233316,
     "lon": 15.266511,
     "disuso": true,
     "viaggiatrenoId": "S11709",
     "lefrecceId": null,
-    "italoId": null
+    "italoId": "VLH"
   },
   {
     "nome": "Vallorbe",

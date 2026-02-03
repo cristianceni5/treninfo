@@ -20,9 +20,30 @@ const ITALO_TRAIN_BASE_URL = 'https://italoinviaggio.italotreno.com/api/RicercaT
 const FETCH_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 12000);
 const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 5 * 60 * 1000);
 const CACHE_MAX_ENTRIES = Number(process.env.CACHE_MAX_ENTRIES || 2000);
+const TRAIN_STATUS_TTL_MS = Number(process.env.TRAIN_STATUS_TTL_MS || 30 * 1000);
+const TRAIN_SEARCH_TTL_MS = Number(process.env.TRAIN_SEARCH_TTL_MS || 10 * 60 * 1000);
+const TRAIN_SNAPSHOT_TTL_MS = Number(process.env.TRAIN_SNAPSHOT_TTL_MS || 30 * 1000);
+const ITALO_STATUS_TTL_MS = Number(process.env.ITALO_STATUS_TTL_MS || 30 * 1000);
+const ITALO_LAST_KNOWN_TTL_MS = Number(process.env.ITALO_LAST_KNOWN_TTL_MS || 12 * 60 * 60 * 1000);
+const NEWS_TTL_MS = Number(process.env.NEWS_TTL_MS || 60 * 1000);
+const STATION_BOARD_TTL_MS = Number(process.env.STATION_BOARD_TTL_MS || 30 * 1000);
+const STATION_DEPARTURES_TTL_MS = Number(process.env.STATION_DEPARTURES_TTL_MS || 30 * 1000);
+const STATION_ARRIVALS_TTL_MS = Number(process.env.STATION_ARRIVALS_TTL_MS || 30 * 1000);
+const ITALO_BOARD_TTL_MS = Number(process.env.ITALO_BOARD_TTL_MS || 30 * 1000);
+const RATE_LIMIT_ENABLED = process.env.RATE_LIMIT_ENABLED !== '0';
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60 * 1000);
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 120);
+const RATE_LIMIT_HEAVY_MAX = Number(process.env.RATE_LIMIT_HEAVY_MAX || 30);
+const RATE_LIMIT_MAX_ENTRIES = Number(process.env.RATE_LIMIT_MAX_ENTRIES || 10000);
+const SECURITY_HEADERS_ENABLED = process.env.SECURITY_HEADERS_ENABLED !== '0';
+const TRUST_PROXY = process.env.TRUST_PROXY === '1';
 const APP_TIME_ZONE = process.env.APP_TIME_ZONE || 'Europe/Rome';
 const ENABLE_RAW_UPSTREAM = process.env.ENABLE_RAW_UPSTREAM === '1';
 const ENABLE_DEBUG_RAW = process.env.ENABLE_DEBUG_RAW === '1';
+const EXPOSE_ERRORS = process.env.EXPOSE_ERRORS === '1';
+const ITALO_SOFT_TIMEOUT_MS = Number(process.env.ITALO_SOFT_TIMEOUT_MS || 200);
+
+if (TRUST_PROXY) app.set('trust proxy', 1);
 
 // ============================================================================
 // CORS (come versione precedente)
@@ -43,7 +64,17 @@ app.use(
   })
 );
 
-app.use(express.json());
+app.use((req, res, next) => {
+  if (!SECURITY_HEADERS_ENABLED) return next();
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('X-Frame-Options', 'DENY');
+  res.set('Referrer-Policy', 'no-referrer');
+  res.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+});
+
+app.use(express.json({ limit: '100kb' }));
 app.disable('x-powered-by');
 
 // ============================================================================
@@ -64,6 +95,7 @@ app.use((req, _res, next) => {
 // Cache
 // ============================================================================
 const cache = new Map();
+const inflight = new Map();
 
 function cacheGet(key) {
   const hit = cache.get(key);
@@ -87,6 +119,80 @@ function cacheSet(key, value, ttlMs = CACHE_TTL_MS) {
   return value;
 }
 
+async function withSingleFlight(key, work) {
+  if (inflight.has(key)) return inflight.get(key);
+  const promise = (async () => {
+    try {
+      return await work();
+    } finally {
+      inflight.delete(key);
+    }
+  })();
+  inflight.set(key, promise);
+  return promise;
+}
+
+async function cacheGetOrSet(key, ttlMs, work) {
+  const cached = cacheGet(key);
+  if (cached != null) return cached;
+  return withSingleFlight(key, async () => {
+    const cachedAgain = cacheGet(key);
+    if (cachedAgain != null) return cachedAgain;
+    const value = await work();
+    if (value != null) return cacheSet(key, value, ttlMs);
+    return value;
+  });
+}
+
+// ============================================================================
+// Rate limiting (in-memory, per IP)
+// ============================================================================
+const rateLimitStore = new Map();
+
+function getClientIp(req) {
+  if (TRUST_PROXY) {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (forwarded) return String(forwarded).split(',')[0].trim();
+  }
+  return req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown';
+}
+
+function rateLimit({ max, windowMs, keyPrefix }) {
+  return (req, res, next) => {
+    if (!RATE_LIMIT_ENABLED) return next();
+    const ip = getClientIp(req);
+    const key = `${keyPrefix}:${ip}`;
+    const now = Date.now();
+    let entry = rateLimitStore.get(key);
+
+    if (!entry || entry.resetAt <= now) {
+      entry = { count: 0, resetAt: now + windowMs };
+      rateLimitStore.set(key, entry);
+    }
+
+    entry.count += 1;
+
+    if (rateLimitStore.size > RATE_LIMIT_MAX_ENTRIES) {
+      const oldestKey = rateLimitStore.keys().next().value;
+      if (oldestKey != null) rateLimitStore.delete(oldestKey);
+    }
+
+    const remaining = Math.max(0, max - entry.count);
+    res.set('X-RateLimit-Limit', String(max));
+    res.set('X-RateLimit-Remaining', String(remaining));
+    res.set('X-RateLimit-Reset', String(Math.ceil(entry.resetAt / 1000)));
+
+    if (entry.count > max) {
+      return res.status(429).json({ ok: false, error: 'Troppi tentativi, riprova più tardi.' });
+    }
+
+    return next();
+  };
+}
+
+const rateLimitStandard = rateLimit({ max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS, keyPrefix: 'rl:std' });
+const rateLimitHeavy = rateLimit({ max: RATE_LIMIT_HEAVY_MAX, windowMs: RATE_LIMIT_WINDOW_MS, keyPrefix: 'rl:heavy' });
+
 // ============================================================================
 // Station DB (canonica) - si ragiona sempre per codici stazione (RFI)
 // ============================================================================
@@ -97,6 +203,7 @@ const stationTokensIndex = []; // { id, tokens:Set<string> }
 const lefrecceIdByStationId = new Map(); // stationId -> lefrecceId (number)
 const stationIdByLefrecceId = new Map(); // lefrecceId -> stationId
 const italoCodeByStationId = new Map(); // stationId -> italoCode
+const stationIdByItaloCode = new Map(); // italoCode -> stationId
 
 function normalizeStationNameKey(value) {
   const raw = value == null ? '' : String(value);
@@ -220,6 +327,7 @@ try {
         }
         if (rec.italoCode && !italoCodeByStationId.has(id)) {
           italoCodeByStationId.set(id, rec.italoCode);
+          if (!stationIdByItaloCode.has(rec.italoCode)) stationIdByItaloCode.set(rec.italoCode, id);
         }
       });
 
@@ -289,6 +397,13 @@ function italoCodeByStationIdOrNull(idRaw) {
   return id ? italoCodeByStationId.get(id) || null : null;
 }
 
+function stationNameByItaloCode(italoCodeRaw) {
+  const code = italoCodeRaw != null ? String(italoCodeRaw).trim().toUpperCase() : '';
+  if (!code) return null;
+  const id = stationIdByItaloCode.get(code);
+  return id ? stationNameById(id) : null;
+}
+
 function stationPublicNameFromIdOrName(value) {
   const s = value == null ? '' : String(value).trim();
   if (!s) return null;
@@ -299,6 +414,14 @@ function stationPublicNameFromIdOrName(value) {
   const byName = stationRefFromName(s);
   if (byName) return byName;
   return s || null;
+}
+
+function italoStationNameFromCodeOrName(codeRaw, nameRaw) {
+  const byCode = stationNameByItaloCode(codeRaw);
+  if (byCode) return byCode;
+  if (nameRaw == null) return null;
+  const trimmed = String(nameRaw).trim();
+  return trimmed || null;
 }
 
 function resolveStationCodeOrNull(stationCodeRaw, stationNameRaw) {
@@ -563,7 +686,11 @@ function buildFermatePerGiorno(fermate, allowedDayStarts = null) {
 function normalizeTrainTypeCode(code) {
   const c = String(code || '').trim().toUpperCase();
   if (!c || c === '?') return '?';
-  if (c === 'ICN' || c === 'EC') return 'IC';
+  if (c === 'ICN') return 'ICN';
+  if (c === 'ES') return 'ES';
+  if (c === 'EC') return 'EC';
+  if (c === 'EN') return 'EN';
+  if (c === 'METRO') return 'MET';
   if (c === 'RE' || c === 'R' || c === 'RV' || c === 'REG' || c === 'REX') return 'REG';
   if (c === 'FR' || c === 'FA' || c === 'FB' || c === 'IC') return c;
   return c;
@@ -575,8 +702,13 @@ function trainTypeNameFromCode(code) {
   if (c === 'FA') return 'Frecciargento';
   if (c === 'FB') return 'Frecciabianca';
   if (c === 'IC') return 'InterCity';
+  if (c === 'ICN') return 'InterCity Notte';
+  if (c === 'EC') return 'EuroCity';
+  if (c === 'EN') return 'EuroNight';
+  if (c === 'ES') return 'EuroStar';
   if (c === 'REG') return 'Regionale';
   if (c === 'ITA') return 'Italo';
+  if (c === 'MET') return 'Metropolitana';
   return null;
 }
 
@@ -592,8 +724,11 @@ function formatTrainStatusLabel(status) {
   if (s === 'in viaggio') return 'In viaggio';
   if (s === 'in stazione') return 'In stazione';
   if (s === 'soppresso') return 'Soppresso';
+  if (s === 'parzialmente soppresso' || s === 'parzialmente_soppresso') return 'Parzialmente soppresso';
+  if (s === 'deviato') return 'Deviato';
   if (s === 'variato') return 'Variato';
   if (s === 'programmato') return 'Pianificato';
+  if (s === 'regolare') return 'Regolare';
   if (s === 'concluso') return 'Concluso';
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
@@ -603,6 +738,31 @@ function toTrainNumberValue(value) {
   if (Number.isFinite(n)) return n;
   const s = value != null ? String(value).trim() : '';
   return s || null;
+}
+
+function buildTrainStatusCacheKey({
+  trainNumber,
+  originCodeHint,
+  originNameHint,
+  serviceDateHint,
+  technicalHint,
+  choiceHint,
+  epochMsHint,
+  debug,
+}) {
+  const originNameKey = originNameHint ? normalizeStationNameKey(originNameHint) : '';
+  const epochPart = Number.isFinite(epochMsHint) ? String(epochMsHint) : '';
+  return [
+    'train-status',
+    trainNumber || '',
+    originCodeHint || '',
+    originNameKey,
+    serviceDateHint || '',
+    technicalHint || '',
+    choiceHint ?? '',
+    epochPart,
+    debug ? '1' : '0',
+  ].join('|');
 }
 
 function buildModelResponse({
@@ -617,8 +777,12 @@ function buildModelResponse({
   fermate,
 }) {
   const tipoTrenoPayload = tipoTreno
-    ? { categoria: tipoTreno.sigla ?? null, nomeCat: tipoTreno.nome ?? null }
-    : { categoria: null, nomeCat: null };
+    ? {
+        categoria: tipoTreno.sigla ?? null,
+        nomeCat: tipoTreno.nome ?? null,
+        compagnia: tipoTreno.compagnia ?? null,
+      }
+    : { categoria: null, nomeCat: null, compagnia: null };
   const fermateList = Array.isArray(fermate) ? fermate : [];
   const fermatePulite = fermateList.map((f) => ({
     stazione: f?.stazione ?? null,
@@ -672,6 +836,9 @@ function buildModelResponse({
     statoTreno: {
       deltaTempo: statoTreno?.deltaTempo ?? null,
       stato: statoTreno?.stato ?? null,
+      statoServizio: statoTreno?.statoServizio ?? null,
+      statoServizioRaw: statoTreno?.statoServizioRaw ?? null,
+      statoServizioRfi: statoTreno?.statoServizioRfi ?? null,
       stazioneCorrente: statoTreno?.stazioneCorrente ?? null,
       stazioneSuccessiva: statoTreno?.stazioneSuccessiva ?? null,
       stazionePrecedente: statoTreno?.stazionePrecedente ?? null,
@@ -744,6 +911,67 @@ function parseInfomobilitaTicker(html) {
   return fallback;
 }
 
+function extractTextLinesFromHtml(html) {
+  const decoded = decodeHtmlEntities(
+    String(html || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p\s*>/gi, '\n')
+      .replace(/<\/li\s*>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+  );
+  return decoded
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+function mergeInfoHeadings(lines) {
+  const merged = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const next = lines[i + 1];
+    if (/^(Aggiornamento|Inizio evento|Fine evento|Conclusione evento|Ripresa)\b/i.test(line) && next) {
+      merged.push(`${line}: ${next}`);
+      i += 1;
+      continue;
+    }
+    merged.push(line);
+  }
+  return merged;
+}
+
+function summarizeInfomobilitaLines(lines) {
+  if (!lines || !lines.length) return null;
+  const merged = mergeInfoHeadings(lines);
+  const deduped = [];
+  const seen = new Set();
+  for (const line of merged) {
+    const key = line.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(line);
+  }
+  if (!deduped.length) return null;
+
+  const summary = [deduped[0]];
+  const keywordRegex =
+    /(ritard|cancell|limitaz|bus|instrad|sospes|interrott|regolar|circolaz|ripres|guast|danneggi|lavor|manuten)/i;
+  for (let i = 1; i < deduped.length && summary.length < 3; i += 1) {
+    if (keywordRegex.test(deduped[i])) summary.push(deduped[i]);
+  }
+  if (summary.length < 2 && deduped.length > 1) summary.push(deduped[1]);
+  if (summary.length < 3) {
+    for (let i = 1; i < deduped.length && summary.length < 3; i += 1) {
+      if (!summary.includes(deduped[i])) summary.push(deduped[i]);
+    }
+  }
+
+  let text = summary.join('\n');
+  const maxChars = 700;
+  if (text.length > maxChars) text = `${text.slice(0, maxChars - 3).trimEnd()}...`;
+  return text;
+}
+
 function parseInfomobilitaRSS(html) {
   const input = String(html || '');
   const items = [];
@@ -751,23 +979,24 @@ function parseInfomobilitaRSS(html) {
   let match;
   while ((match = liRegex.exec(input)) !== null) {
     const chunk = match[1] || '';
-    const titleMatch = chunk.match(/<a[^>]*class="[^"]*headingNewsAccordion[^"]*"[^>]*>([\s\S]*?)<\/a>/i);
-    const titleHtml = titleMatch ? titleMatch[1] : '';
+    const titleMatch = chunk.match(/<a[^>]*class="([^"]*headingNewsAccordion[^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
+    const titleHtml = titleMatch ? titleMatch[2] : '';
     const title = decodeHtmlEntities(titleHtml.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
-    const inEvidenza = /headingNewsAccordion[^"]*inEvidenza/i.test(titleMatch ? titleMatch[0] : chunk);
+    const headingClasses = titleMatch ? titleMatch[1] : '';
 
     const dateMatch = chunk.match(/<h4[^>]*>([\s\S]*?)<\/h4>/i);
     const date = dateMatch
       ? decodeHtmlEntities(dateMatch[1].replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim()
       : null;
 
-    const infoMatch = chunk.match(/<div[^>]*class="[^"]*info-text[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-    const infoHtml = infoMatch ? infoMatch[1] : '';
-    const text = decodeHtmlEntities(infoHtml.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' '))
-      .split('\n')
-      .map((line) => line.replace(/\s+/g, ' ').trim())
-      .filter(Boolean)
-      .join('\n');
+    const infoMatch = chunk.match(/<div[^>]*class="([^"]*info-text[^"]*)"[^>]*>([\s\S]*?)<\/div>/i);
+    const infoClasses = infoMatch ? infoMatch[1] : '';
+    const infoHtml = infoMatch ? infoMatch[2] : '';
+    const lines = extractTextLinesFromHtml(infoHtml);
+    const text = summarizeInfomobilitaLines(lines);
+    const inEvidenza =
+      /(?:^|\s)inEvidenza(?:\s|$)/i.test(headingClasses) ||
+      /(?:^|\s)inEvidenza(?:\s|$)/i.test(infoClasses);
 
     if (title || text) {
       items.push({
@@ -781,11 +1010,13 @@ function parseInfomobilitaRSS(html) {
 
   if (items.length) return items;
 
-  const fallback = decodeHtmlEntities(input.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' '))
-    .split('\n')
-    .map((line) => line.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-  return fallback.map((text) => ({ title: null, date: null, text, inEvidenza: false }));
+  const fallback = extractTextLinesFromHtml(input);
+  return fallback.map((line) => ({
+    title: null,
+    date: null,
+    text: summarizeInfomobilitaLines([line]) || line,
+    inEvidenza: false,
+  }));
 }
 
 function encodeDateString(when = 'now') {
@@ -814,6 +1045,35 @@ function parseBool(val, defaultVal = false) {
   if (['true', '1', 'yes', 'y', 'on'].includes(s)) return true;
   if (['false', '0', 'no', 'n', 'off'].includes(s)) return false;
   return defaultVal;
+}
+
+function normalizeErrorMessage(err) {
+  if (EXPOSE_ERRORS) return err?.message || 'Errore interno';
+  if (err?.status) return `Errore upstream (${err.status})`;
+  return 'Errore interno';
+}
+
+function promiseWithTimeout(promise, timeoutMs) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return promise.then((value) => ({ value, timedOut: false }));
+  }
+  let timer = null;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ value: null, timedOut: true }), timeoutMs);
+  });
+  return Promise.race([
+    promise.then((value) => ({ value, timedOut: false })),
+    timeout,
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+function setCacheHeaders(res, ttlMs, swrMs = null) {
+  const ttl = Math.max(0, Math.floor(Number(ttlMs) / 1000));
+  if (!Number.isFinite(ttl) || ttl <= 0) return;
+  const swr = Math.max(0, Math.floor(Number(swrMs != null ? swrMs : ttlMs) / 1000));
+  res.set('Cache-Control', `public, max-age=${ttl}, s-maxage=${ttl}, stale-while-revalidate=${swr}`);
 }
 
 // ============================================================================
@@ -890,7 +1150,8 @@ function resolveTrainKind(...sources) {
   const pick = (code, category) => ({ codice: code, nome: code, categoria: category });
 
   if (/(INTERCITY\s*NOTTE|ICN)\b/.test(hay)) return pick('ICN', 'intercity');
-  if (/(EUROCITY|(^|[^A-Z])EC(\s|$))/.test(hay)) return pick('EC', 'intercity');
+  if (/(EURO\s*CITY|EUROCITY|(^|[^A-Z])EC(\s|$))/.test(hay)) return pick('EC', 'intercity');
+  if (/(EURO\s*NIGHT|EURONIGHT|(^|[^A-Z])EN(\s|$))/.test(hay)) return pick('EN', 'intercity');
   if (/(FRECCIAROSSA|(^|[^A-Z])FR(\s|$))/.test(hay)) return pick('FR', 'high-speed');
   if (/(FRECCIARGENTO|(^|[^A-Z])FA(\s|$))/.test(hay)) return pick('FA', 'high-speed');
   if (/(FRECCIABIANCA|(^|[^A-Z])FB(\s|$))/.test(hay)) return pick('FB', 'intercity');
@@ -900,17 +1161,73 @@ function resolveTrainKind(...sources) {
   if (/(REGIONALE\s+VELOCE|(^|[^A-Z])RV(\s|$))/.test(hay)) return pick('REG', 'regional');
   if (/(REGIONALE|(^|[^A-Z])REG(\s|$)|(^|[^A-Z])RE(\s|$)|(^|[^A-Z])R(\s|$))/.test(hay))
     return pick('REG', 'regional');
+  if (/(^|[^A-Z])MET(\s|$)|METRO|METROPOLITANA/.test(hay)) return pick('MET', 'metro');
   if (/(BUS|SOSTITUTIVO)/.test(hay)) return pick('BUS', 'bus');
   return pick('?', 'unknown');
+}
+
+function resolveTrainKindFromNumber(trainNumberRaw) {
+  const num = trainNumberRaw != null ? String(trainNumberRaw).trim() : '';
+  if (!num) return null;
+  if (num === '99122') return { codice: 'ES', nome: 'ES', categoria: 'high-speed' };
+  return null;
+}
+
+function resolveTrainKindFromCliente(codiceClienteRaw, compNumeroTrenoRaw) {
+  const codiceCliente = Number(codiceClienteRaw);
+  if (!Number.isFinite(codiceCliente)) return null;
+  const pick = (code, category) => ({ codice: code, nome: code, categoria: category });
+
+  if (codiceCliente === 1) return pick('FR', 'high-speed');
+  if (codiceCliente === 2) return pick('REG', 'regional');
+  if (codiceCliente === 4) return pick('IC', 'intercity');
+  if (codiceCliente === 18) return pick('REG', 'regional');
+  if (codiceCliente === 63) return pick('REG', 'regional');
+  if (codiceCliente === 64) return pick('REG', 'regional');
+  return null;
+}
+
+function resolveCompanyCodeFromCliente(codiceClienteRaw) {
+  const codiceCliente = Number(codiceClienteRaw);
+  if (!Number.isFinite(codiceCliente)) return null;
+  if (codiceCliente === 63) return 'TN';
+  if (codiceCliente === 18) return 'TTX';
+  if (codiceCliente === 1 || codiceCliente === 2 || codiceCliente === 4) return 'TI';
+  if (codiceCliente === 64) return 'OBB';
+  return null;
+}
+
+function resolveCompanyCodeFromCompNumeroTreno(compNumeroTrenoRaw) {
+  const comp = String(compNumeroTrenoRaw || '').trim().toUpperCase();
+  if (!comp) return null;
+  if (/ITALO|NTV/.test(comp)) return 'NTV';
+  if (/(^|[^A-Z])TN(\s|$)|TRENORD/.test(comp)) return 'TN';
+  if (/TPER|TTPER|TTX/.test(comp)) return 'TTX';
+  if (/OBB/.test(comp)) return 'OBB';
+  if (/(^|[^A-Z])TI(\s|$)|TRENITALIA/.test(comp)) return 'TI';
+  return null;
+}
+
+function resolveCompanyCode(compNumeroTrenoRaw, codiceClienteRaw) {
+  const fromComp = resolveCompanyCodeFromCompNumeroTreno(compNumeroTrenoRaw);
+  if (fromComp) return fromComp;
+  return resolveCompanyCodeFromCliente(codiceClienteRaw);
 }
 
 // ============================================================================
 // Helpers: platform / epoch
 // ============================================================================
+function normalizePlatformValue(value) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s || s === '0') return null;
+  return s;
+}
+
 function pickFirstString(obj, keys) {
   for (const k of keys) {
     if (!k) continue;
-    const v = obj && obj[k] != null ? String(obj[k]).trim() : '';
+    const v = normalizePlatformValue(obj && obj[k]);
     if (v) return v;
   }
   return null;
@@ -961,7 +1278,11 @@ function mapDepartureEntry(entry) {
     entry?.tipoTreno,
     entry?.compNumeroTreno
   );
-  const tipoTreno = trainTypeInfoFromCode(tipoTrenoRaw.codice);
+  const clienteKind = resolveTrainKindFromCliente(entry?.codiceCliente, entry?.tipoTreno, entry?.compNumeroTreno);
+  const numberKind = resolveTrainKindFromNumber(entry?.numeroTreno);
+  const tipoTrenoFinal = numberKind || (tipoTrenoRaw.codice !== '?' ? tipoTrenoRaw : clienteKind || tipoTrenoRaw);
+  const companyCode = resolveCompanyCodeFromCliente(entry?.codiceCliente);
+  const tipoTreno = { ...trainTypeInfoFromCode(tipoTrenoFinal.codice), ...(companyCode ? { compagnia: companyCode } : {}) };
   // NB: su ViaggiaTreno "partenzaTreno" è spesso la partenza dal capolinea origine,
   // mentre "orarioPartenza" è l'evento (partenza) riferito alla stazione richiesta.
   const partenzaMs = pickEpochMs(entry, ['orarioPartenza', 'partenza', 'partenzaTreno', 'dataPartenzaTreno']);
@@ -997,7 +1318,11 @@ function mapArrivalEntry(entry) {
     entry?.tipoTreno,
     entry?.compNumeroTreno
   );
-  const tipoTreno = trainTypeInfoFromCode(tipoTrenoRaw.codice);
+  const clienteKind = resolveTrainKindFromCliente(entry?.codiceCliente, entry?.tipoTreno, entry?.compNumeroTreno);
+  const numberKind = resolveTrainKindFromNumber(entry?.numeroTreno);
+  const tipoTrenoFinal = numberKind || (tipoTrenoRaw.codice !== '?' ? tipoTrenoRaw : clienteKind || tipoTrenoRaw);
+  const companyCode = resolveCompanyCodeFromCliente(entry?.codiceCliente);
+  const tipoTreno = { ...trainTypeInfoFromCode(tipoTrenoFinal.codice), ...(companyCode ? { compagnia: companyCode } : {}) };
   // NB: su ViaggiaTreno "arrivoTreno" può riferirsi al capolinea, mentre "orarioArrivo" è relativo alla stazione.
   const arrivoMs = pickEpochMs(entry, ['orarioArrivo', 'arrivo', 'arrivoTreno', 'dataArrivoTreno']);
   const { binarioProgrammato, binarioEffettivo } = buildPlatformsForArrival(entry);
@@ -1105,10 +1430,10 @@ function mapItaloArrivalEntry(entry, stationName, referenceMs) {
     parseItaloTimeMs(entry?.OraPassaggio, referenceMs) ??
     parseItaloTimeMs(entry?.NuovoOrario, referenceMs);
   const ritardo = parseDelayMinutes(entry?.Ritardo) ?? 0;
-  const binario = entry?.Binario != null ? String(entry.Binario).trim() : null;
+  const binario = normalizePlatformValue(entry?.Binario);
   return {
     numeroTreno: entry?.Numero != null ? String(entry.Numero) : null,
-    origine: entry?.DescrizioneLocalita != null ? String(entry.DescrizioneLocalita).trim() : null,
+    origine: italoStationNameFromCodeOrName(entry?.CodiceLocalita || entry?.LocationCode, entry?.DescrizioneLocalita),
     destinazione: stationName || null,
     orarioArrivo: scheduledMs,
     orarioArrivoLeggibile: formatHHmmFromMs(scheduledMs),
@@ -1117,7 +1442,7 @@ function mapItaloArrivalEntry(entry, stationName, referenceMs) {
     binarioEffettivo: null,
     arrivato: null,
     circolante: true,
-    tipoTreno: trainTypeInfoFromCode('ITA'),
+    tipoTreno: { ...trainTypeInfoFromCode('ITA'), compagnia: 'NTV' },
   };
 }
 
@@ -1126,11 +1451,11 @@ function mapItaloDepartureEntry(entry, stationName, referenceMs) {
     parseItaloTimeMs(entry?.OraPassaggio, referenceMs) ??
     parseItaloTimeMs(entry?.NuovoOrario, referenceMs);
   const ritardo = parseDelayMinutes(entry?.Ritardo) ?? 0;
-  const binario = entry?.Binario != null ? String(entry.Binario).trim() : null;
+  const binario = normalizePlatformValue(entry?.Binario);
   return {
     numeroTreno: entry?.Numero != null ? String(entry.Numero) : null,
     origine: stationName || null,
-    destinazione: entry?.DescrizioneLocalita != null ? String(entry.DescrizioneLocalita).trim() : null,
+    destinazione: italoStationNameFromCodeOrName(entry?.CodiceLocalita || entry?.LocationCode, entry?.DescrizioneLocalita),
     orarioPartenza: scheduledMs,
     orarioPartenzaLeggibile: formatHHmmFromMs(scheduledMs),
     ritardo: Number.isFinite(ritardo) ? ritardo : null,
@@ -1138,7 +1463,7 @@ function mapItaloDepartureEntry(entry, stationName, referenceMs) {
     binarioEffettivo: null,
     arrivato: null,
     circolante: true,
-    tipoTreno: trainTypeInfoFromCode('ITA'),
+    tipoTreno: { ...trainTypeInfoFromCode('ITA'), compagnia: 'NTV' },
   };
 }
 
@@ -1211,7 +1536,7 @@ function buildItaloStops(schedule, referenceMs) {
 
     rollingMs = realPartenzaMs ?? schedPartenzaMs ?? realArrivoMs ?? schedArrivoMs ?? rollingMs;
 
-    const binario = stop?.ActualArrivalPlatform != null ? String(stop.ActualArrivalPlatform).trim() : null;
+    const binario = normalizePlatformValue(stop?.ActualArrivalPlatform);
     const arrivoFuture = realArrivoMs != null && realArrivoMs > nowMs + 60 * 1000;
     const partenzaFuture = realPartenzaMs != null && realPartenzaMs > nowMs + 60 * 1000;
     const effArrivoMs = arrivoFuture ? null : realArrivoMs;
@@ -1232,7 +1557,7 @@ function buildItaloStops(schedule, referenceMs) {
           : null;
 
     return {
-      stazione: stop?.LocationDescription != null ? String(stop.LocationDescription).trim() : null,
+      stazione: italoStationNameFromCodeOrName(stop?.LocationCode, stop?.LocationDescription),
       tipoFermata: isOrigin ? 'P' : isDestination ? 'A' : 'F',
       orari: {
         arrivo: {
@@ -1701,7 +2026,10 @@ function getLastRealStopIndex(fermateRaw) {
   return -1;
 }
 
-function isTrainVaried(snapshot, fermateRaw) {
+function isTrainVaried(snapshot, fermateRaw, rfiServiceState = null) {
+  const serviceState = rfiServiceState ?? deriveRfiServiceStatus(snapshot)?.stato ?? null;
+  if (serviceState === 'deviato' || serviceState === 'parzialmente_soppresso') return true;
+
   const provvedimento = snapshot?.provvedimento != null ? Number(snapshot.provvedimento) : null;
   if (Number.isFinite(provvedimento) && provvedimento !== 0) return true;
 
@@ -1740,6 +2068,112 @@ function flattenToStrings(value) {
   if (typeof value === 'string') return [value];
   if (typeof value === 'number' || typeof value === 'boolean') return [String(value)];
   return [];
+}
+
+// RFI: tipoTreno + provvedimento codificano la regolarita' del servizio.
+const RFI_TIPO_TRENO_STATUS = {
+  regolare: new Set(['PG']),
+  soppresso: new Set(['ST']),
+  parzialmenteSoppresso: new Set(['PP', 'SI', 'SF', 'SM']),
+  deviato: new Set(['DV', 'VD', 'VO']),
+};
+
+function normalizeRfiTipoTreno(value) {
+  const s = String(value || '').trim().toUpperCase();
+  return s ? s : null;
+}
+
+function normalizeRfiProvvedimento(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function flattenToTokens(value) {
+  if (value == null) return [];
+  if (Array.isArray(value)) return value.flatMap(flattenToTokens);
+  if (typeof value === 'object') return Object.values(value).flatMap(flattenToTokens);
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return [String(value)];
+  return [];
+}
+
+function extractRfiProvvedimentiInfo(snapshot) {
+  const tokens = new Set();
+  const numbers = new Set();
+
+  const addToken = (raw) => {
+    const s = String(raw).trim();
+    if (!s) return;
+    tokens.add(s.toUpperCase());
+    const n = Number(raw);
+    if (Number.isFinite(n)) numbers.add(n);
+  };
+
+  const walk = (value) => {
+    if (value == null) return;
+    if (Array.isArray(value)) {
+      value.forEach(walk);
+      return;
+    }
+    if (typeof value === 'object') {
+      Object.values(value).forEach(walk);
+      return;
+    }
+    addToken(value);
+  };
+
+  walk(snapshot?.provvedimenti);
+  if (snapshot?.provvedimento != null) addToken(snapshot.provvedimento);
+
+  return { tokens, numbers };
+}
+
+function deriveRfiServiceStatus(snapshot) {
+  if (!snapshot) return { stato: null, tipoTreno: null, provvedimento: null };
+
+  const tipoTrenoRaw = normalizeRfiTipoTreno(snapshot?.tipoTreno);
+  const provvedimento = normalizeRfiProvvedimento(snapshot?.provvedimento);
+  const { tokens, numbers } = extractRfiProvvedimentiInfo(snapshot);
+
+  const allCodes = [
+    ...RFI_TIPO_TRENO_STATUS.regolare,
+    ...RFI_TIPO_TRENO_STATUS.soppresso,
+    ...RFI_TIPO_TRENO_STATUS.parzialmenteSoppresso,
+    ...RFI_TIPO_TRENO_STATUS.deviato,
+  ];
+  const tipoFromTokens = allCodes.find((code) => tokens.has(code)) || null;
+  const tipoTreno = tipoTrenoRaw || tipoFromTokens;
+
+  const provMatches = (allowed) => {
+    if (provvedimento != null) return allowed.includes(provvedimento);
+    if (numbers.size) return allowed.some((n) => numbers.has(n));
+    return true;
+  };
+
+  if (tipoTreno && RFI_TIPO_TRENO_STATUS.soppresso.has(tipoTreno) && provMatches([1])) {
+    return { stato: 'soppresso', tipoTreno, provvedimento };
+  }
+  if (tipoTreno && RFI_TIPO_TRENO_STATUS.parzialmenteSoppresso.has(tipoTreno) && provMatches([0, 2])) {
+    return { stato: 'parzialmente_soppresso', tipoTreno, provvedimento };
+  }
+  if (tipoTreno && RFI_TIPO_TRENO_STATUS.deviato.has(tipoTreno) && provMatches([3])) {
+    return { stato: 'deviato', tipoTreno, provvedimento };
+  }
+  if (tipoTreno && RFI_TIPO_TRENO_STATUS.regolare.has(tipoTreno) && provMatches([0])) {
+    return { stato: 'regolare', tipoTreno, provvedimento };
+  }
+
+  const tokenText = Array.from(tokens).join(' ');
+  if (/\b(SOPPRESS|SOPPRES|CANCELL|ANNULL)\b/.test(tokenText)) {
+    return { stato: 'soppresso', tipoTreno, provvedimento };
+  }
+  if (/\b(DEVIA|DEVIAZIONE|VARIAZIONE\s+ORIGINE|VARIAZIONE\s+DESTINAZIONE|DEV)\b/.test(tokenText)) {
+    return { stato: 'deviato', tipoTreno, provvedimento };
+  }
+  if (/\b(REGOL|REGOLARE|PROGRAMM)\b/.test(tokenText)) {
+    return { stato: 'regolare', tipoTreno, provvedimento };
+  }
+
+  return { stato: null, tipoTreno, provvedimento };
 }
 
 function looksLikeSuppressedTrain(snapshot) {
@@ -1781,10 +2215,13 @@ function resolveTrainStatus(snapshot) {
   if (!snapshot) return null;
 
   const fermateRaw = Array.isArray(snapshot.fermate) ? snapshot.fermate : [];
+  const rfiService = deriveRfiServiceStatus(snapshot);
+  const rfiServiceState = rfiService?.stato ?? null;
   const partialSuppression = hasPartialSuppression(fermateRaw);
   const fullySuppressed = hasOnlySuppressedStops(fermateRaw);
 
-  const isSuppressed = (looksLikeSuppressedTrain(snapshot) || fullySuppressed) && !partialSuppression;
+  const isSuppressed =
+    (rfiServiceState === 'soppresso' || looksLikeSuppressedTrain(snapshot) || fullySuppressed) && !partialSuppression;
   if (isSuppressed) return 'soppresso';
 
   const last = fermateRaw.length ? fermateRaw[fermateRaw.length - 1] : null;
@@ -1795,7 +2232,7 @@ function resolveTrainStatus(snapshot) {
   const hasAnyRealStop = getLastRealStopIndex(fermateRaw) >= 0;
   // Non considerare "iniziato" solo perché esiste un rilevamento: per l'app, finché non parte davvero resta "pianificato".
   const hasStarted = hasAnyRealStop || snapshot?.nonPartito === false;
-  const varied = isTrainVaried(snapshot, fermateRaw);
+  const varied = isTrainVaried(snapshot, fermateRaw, rfiServiceState);
 
   if (!hasStarted) {
     const originIdx = getOriginStopIndex(fermateRaw);
@@ -1869,7 +2306,7 @@ function buildPreviousStopSummary(prevStop, index) {
 // ============================================================================
 
 // Autocomplete stazioni
-app.get('/api/viaggiatreno/autocomplete', async (req, res) => {
+app.get('/api/viaggiatreno/autocomplete', rateLimitStandard, async (req, res) => {
   const query = (req.query.query || '').trim();
   if (query.length < 2) return res.json({ ok: true, data: [] });
 
@@ -1884,9 +2321,10 @@ app.get('/api/viaggiatreno/autocomplete', async (req, res) => {
         return stationNameById((codice || '').trim()) || String(nomeUpstream || '').trim() || null;
       })
       .filter(Boolean);
+    setCacheHeaders(res, CACHE_TTL_MS);
     res.json({ ok: true, data });
   } catch (err) {
-    res.status(err.status || 500).json({ ok: false, error: err.message });
+    res.status(err.status || 500).json({ ok: false, error: normalizeErrorMessage(err) });
   }
 });
 
@@ -1985,7 +2423,7 @@ function buildStationAutocompleteMatches(query, limit, options = {}) {
 }
 
 // Autocomplete stazioni (locale: usa stazioni.json, senza chiamate esterne)
-app.get('/api/stations/autocomplete', (req, res) => {
+app.get('/api/stations/autocomplete', rateLimitStandard, (req, res) => {
   const query = (req.query.query || '').trim();
   const limitRaw = req.query.limit;
   const limit = Number.isFinite(Number(limitRaw)) ? Math.max(1, Math.min(50, Number(limitRaw))) : 10;
@@ -2002,11 +2440,12 @@ app.get('/api/stations/autocomplete', (req, res) => {
       }))
     : matches.map((item) => item.name);
 
+  setCacheHeaders(res, CACHE_TTL_MS);
   res.json({ ok: true, data });
 });
 
 // Info stazione (flatten + meteo)
-app.get('/api/stations/info', async (req, res) => {
+app.get('/api/stations/info', rateLimitStandard, async (req, res) => {
   const stationCode = resolveStationCodeOrNull(req.query.stationCode, req.query.stationName || req.query.name);
   if (!stationCode) return res.status(400).json({ ok: false, error: 'stationCode o stationName obbligatorio' });
 
@@ -2022,14 +2461,15 @@ app.get('/api/stations/info', async (req, res) => {
       regione: String(regionId || '').trim() || null,
     });
   } catch (err) {
-    res.status(err.status || 500).json({ ok: false, error: err.message });
+    res.status(err.status || 500).json({ ok: false, error: normalizeErrorMessage(err) });
   }
 });
 
 // Partenze (enriched)
-app.get('/api/stations/departures', async (req, res) => {
+app.get('/api/stations/departures', rateLimitStandard, async (req, res) => {
   const stationCode = resolveStationCodeOrNull(req.query.stationCode, req.query.stationName || req.query.name);
   const when = (req.query.when || 'now').trim();
+  const whenKey = when.toLowerCase() === 'now' ? 'now' : when;
   const raw = ENABLE_RAW_UPSTREAM && parseBool(req.query.raw, false);
 
   if (!stationCode) return res.status(400).json({ ok: false, error: 'stationCode o stationName obbligatorio' });
@@ -2037,7 +2477,9 @@ app.get('/api/stations/departures', async (req, res) => {
   try {
     const whenMs = parseWhenToMs(when);
     const dateStr = encodeDateString(when);
-    const upstream = await fetchJson(`${VT_BASE_URL}/partenze/${encodeURIComponent(stationCode)}/${dateStr}`);
+    const upstream = await cacheGetOrSet(`vt:dep:${stationCode}:${whenKey}`, STATION_DEPARTURES_TTL_MS, () =>
+      fetchJson(`${VT_BASE_URL}/partenze/${encodeURIComponent(stationCode)}/${dateStr}`)
+    );
     const list = Array.isArray(upstream) ? upstream : [];
 
     let italoTreni = [];
@@ -2045,7 +2487,9 @@ app.get('/api/stations/departures', async (req, res) => {
     const stationName = stationNameById(stationCode);
     if (italoCode && shouldUseItaloNow(when)) {
       try {
-        const italoBoard = await fetchItaloStationBoard(italoCode);
+        const italoBoard = await cacheGetOrSet(`italo:board:${italoCode}`, ITALO_BOARD_TTL_MS, () =>
+          fetchItaloStationBoard(italoCode)
+        );
         const italoList = Array.isArray(italoBoard?.ListaTreniPartenza) ? italoBoard.ListaTreniPartenza : [];
         italoTreni = italoList.map((entry) => mapItaloDepartureEntry(entry, stationName, whenMs));
       } catch {
@@ -2062,16 +2506,18 @@ app.get('/api/stations/departures', async (req, res) => {
       treni,
     };
     if (raw) payload.raw = list;
+    setCacheHeaders(res, STATION_DEPARTURES_TTL_MS);
     res.json(payload);
   } catch (err) {
-    res.status(err.status || 500).json({ ok: false, error: err.message });
+    res.status(err.status || 500).json({ ok: false, error: normalizeErrorMessage(err) });
   }
 });
 
 // Arrivi (enriched)
-app.get('/api/stations/arrivals', async (req, res) => {
+app.get('/api/stations/arrivals', rateLimitStandard, async (req, res) => {
   const stationCode = resolveStationCodeOrNull(req.query.stationCode, req.query.stationName || req.query.name);
   const when = (req.query.when || 'now').trim();
+  const whenKey = when.toLowerCase() === 'now' ? 'now' : when;
   const raw = ENABLE_RAW_UPSTREAM && parseBool(req.query.raw, false);
 
   if (!stationCode) return res.status(400).json({ ok: false, error: 'stationCode o stationName obbligatorio' });
@@ -2079,7 +2525,9 @@ app.get('/api/stations/arrivals', async (req, res) => {
   try {
     const whenMs = parseWhenToMs(when);
     const dateStr = encodeDateString(when);
-    const upstream = await fetchJson(`${VT_BASE_URL}/arrivi/${encodeURIComponent(stationCode)}/${dateStr}`);
+    const upstream = await cacheGetOrSet(`vt:arr:${stationCode}:${whenKey}`, STATION_ARRIVALS_TTL_MS, () =>
+      fetchJson(`${VT_BASE_URL}/arrivi/${encodeURIComponent(stationCode)}/${dateStr}`)
+    );
     const list = Array.isArray(upstream) ? upstream : [];
 
     let italoTreni = [];
@@ -2087,7 +2535,9 @@ app.get('/api/stations/arrivals', async (req, res) => {
     const stationName = stationNameById(stationCode);
     if (italoCode && shouldUseItaloNow(when)) {
       try {
-        const italoBoard = await fetchItaloStationBoard(italoCode);
+        const italoBoard = await cacheGetOrSet(`italo:board:${italoCode}`, ITALO_BOARD_TTL_MS, () =>
+          fetchItaloStationBoard(italoCode)
+        );
         const italoList = Array.isArray(italoBoard?.ListaTreniArrivo) ? italoBoard.ListaTreniArrivo : [];
         italoTreni = italoList.map((entry) => mapItaloArrivalEntry(entry, stationName, whenMs));
       } catch {
@@ -2104,9 +2554,10 @@ app.get('/api/stations/arrivals', async (req, res) => {
       treni,
     };
     if (raw) payload.raw = list;
+    setCacheHeaders(res, STATION_ARRIVALS_TTL_MS);
     res.json(payload);
   } catch (err) {
-    res.status(err.status || 500).json({ ok: false, error: err.message });
+    res.status(err.status || 500).json({ ok: false, error: normalizeErrorMessage(err) });
   }
 });
 
@@ -2172,10 +2623,22 @@ function buildItaloModelPayload(italo, trainNumber) {
 
   const principali = {
     numeroTreno: String(schedule?.TrainNumber || trainNumber),
-    tipoTreno: trainTypeInfoFromCode('ITA'),
+    tipoTreno: { ...trainTypeInfoFromCode('ITA'), compagnia: 'NTV' },
     tratta: {
-      origine: schedule?.DepartureStationDescription || firstStop?.stazione || null,
-      destinazione: schedule?.ArrivalStationDescription || lastStop?.stazione || null,
+      origine:
+        firstStop?.stazione ||
+        italoStationNameFromCodeOrName(
+          schedule?.DepartureStationCode || schedule?.DepartureStationId,
+          schedule?.DepartureStationDescription
+        ) ||
+        null,
+      destinazione:
+        lastStop?.stazione ||
+        italoStationNameFromCodeOrName(
+          schedule?.ArrivalStationCode || schedule?.ArrivalStationId,
+          schedule?.ArrivalStationDescription
+        ) ||
+        null,
     },
     stato: statoTreno,
     isSoppresso: false,
@@ -2239,6 +2702,53 @@ function buildItaloModelPayload(italo, trainNumber) {
   });
 }
 
+function isItaloPayloadCompleted(payload) {
+  const state = payload?.statoTreno?.stato;
+  return typeof state === 'string' && state.trim().toLowerCase() === 'concluso';
+}
+
+async function resolveItaloPayloadCached(trainNumber) {
+  const liveKey = `italo:live:${trainNumber}`;
+  const lastKey = `italo:last:${trainNumber}`;
+  const cachedLive = cacheGet(liveKey);
+  if (cachedLive) return { entry: cachedLive, stale: false };
+
+  return withSingleFlight(liveKey, async () => {
+    const cachedAgain = cacheGet(liveKey);
+    if (cachedAgain) return { entry: cachedAgain, stale: false };
+
+    try {
+      const raw = await fetchItaloTrainStatus(trainNumber);
+      const payload = buildItaloModelPayload(raw, trainNumber);
+      if (payload) {
+        const entry = { payload, raw, cachedAt: Date.now() };
+        const liveTtl = isItaloPayloadCompleted(payload) ? ITALO_LAST_KNOWN_TTL_MS : ITALO_STATUS_TTL_MS;
+        cacheSet(liveKey, entry, liveTtl);
+        cacheSet(lastKey, entry, ITALO_LAST_KNOWN_TTL_MS);
+        return { entry, stale: false };
+      }
+    } catch (err) {
+      const last = cacheGet(lastKey);
+      if (last) {
+        const liveTtl = isItaloPayloadCompleted(last.payload) ? ITALO_LAST_KNOWN_TTL_MS : ITALO_STATUS_TTL_MS;
+        cacheSet(liveKey, last, liveTtl);
+        return { entry: last, stale: true };
+      }
+      throw err;
+    }
+
+    const last = cacheGet(lastKey);
+    if (last) {
+      const liveTtl = isItaloPayloadCompleted(last.payload) ? ITALO_LAST_KNOWN_TTL_MS : ITALO_STATUS_TTL_MS;
+      cacheSet(liveKey, last, liveTtl);
+      return { entry: last, stale: true };
+    }
+    const negativeEntry = { payload: null, raw: null, cachedAt: Date.now() };
+    cacheSet(liveKey, negativeEntry, ITALO_STATUS_TTL_MS);
+    return { entry: negativeEntry, stale: false };
+  });
+}
+
 // Stato treno (raw + campi principali)
 async function handleItaloTrainStatus(req, res) {
   const trainNumber = (req.query.numeroTreno || req.query.trainNumber || '').trim();
@@ -2247,19 +2757,20 @@ async function handleItaloTrainStatus(req, res) {
   if (!trainNumber) return res.status(400).json({ ok: false, error: 'numeroTreno obbligatorio' });
 
   try {
-    const italo = await fetchItaloTrainStatus(trainNumber);
-    const payload = buildItaloModelPayload(italo, trainNumber);
+    const { entry } = await resolveItaloPayloadCached(trainNumber);
+    const payload = entry?.payload ? { ...entry.payload } : null;
     if (!payload) {
       return res.json({ ok: true, data: null, message: 'Nessun treno Italo trovato per questo numero' });
     }
-    if (raw) payload.raw = italo;
+    if (raw && entry?.raw) payload.raw = entry.raw;
+    setCacheHeaders(res, TRAIN_STATUS_TTL_MS);
     res.json(payload);
   } catch (err) {
-    res.status(err.status || 500).json({ ok: false, error: err.message });
+    res.status(err.status || 500).json({ ok: false, error: normalizeErrorMessage(err) });
   }
 }
 
-app.get('/api/italo/trains/status', handleItaloTrainStatus);
+app.get('/api/italo/trains/status', rateLimitHeavy, handleItaloTrainStatus);
 
 const handleTrainStatus = async (req, res) => {
   const trainNumber = (req.query.numeroTreno || req.query.trainNumber || '').trim();
@@ -2275,13 +2786,37 @@ const handleTrainStatus = async (req, res) => {
   let epochMsHint =
     Number.isFinite(epochMsHintExplicit) ? epochMsHintExplicit : Number.isFinite(epochMsHintFromDate) ? epochMsHintFromDate : null;
   const debug = ENABLE_DEBUG_RAW && parseBool(req.query.debug, false);
+  const responseCacheKey = buildTrainStatusCacheKey({
+    trainNumber,
+    originCodeHint,
+    originNameHint,
+    serviceDateHint,
+    technicalHint,
+    choiceHint,
+    epochMsHint,
+    debug,
+  });
+  const cachedResponse = cacheGet(responseCacheKey);
 
   if (!trainNumber) return res.status(400).json({ ok: false, error: 'numeroTreno obbligatorio' });
+  if (cachedResponse) {
+    setCacheHeaders(res, TRAIN_STATUS_TTL_MS);
+    return res.json(cachedResponse);
+  }
 
   try {
-    const italoPromise = fetchItaloTrainStatus(trainNumber)
-      .then((italo) => buildItaloModelPayload(italo, trainNumber))
+    function sendCached(payload) {
+      if (payload && payload.ok) {
+        cacheSet(responseCacheKey, payload, TRAIN_STATUS_TTL_MS);
+        setCacheHeaders(res, TRAIN_STATUS_TTL_MS);
+      }
+      res.json(payload);
+    }
+
+    const italoPromise = resolveItaloPayloadCached(trainNumber)
+      .then(({ entry }) => entry?.payload ?? null)
       .catch(() => null);
+    const italoSoftPromise = promiseWithTimeout(italoPromise, ITALO_SOFT_TIMEOUT_MS);
 
     function parseEpochFromDisplay(displayStr) {
       const s = String(displayStr || '').trim();
@@ -2324,23 +2859,32 @@ const handleTrainStatus = async (req, res) => {
       return buildDateDisponibiliFromEpochs([baseDay, prevDay]);
     }
 
-    const textSearch = await fetchText(
-      `${VT_BASE_URL}/cercaNumeroTrenoTrenoAutocomplete/${encodeURIComponent(trainNumber)}`
+    const searchKey = `vt:search:${trainNumber}`;
+    const textSearch = await cacheGetOrSet(searchKey, TRAIN_SEARCH_TTL_MS, () =>
+      fetchText(`${VT_BASE_URL}/cercaNumeroTrenoTrenoAutocomplete/${encodeURIComponent(trainNumber)}`)
     );
-    const italoPayload = await italoPromise;
-    const italoFound = !!italoPayload;
+    let italoPayload = null;
+    let italoFound = false;
     const lines = textSearch
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean);
 
     if (!lines.length) {
+      italoPayload = await italoPromise;
+      italoFound = !!italoPayload;
       if (italoPayload) {
-        return res.json(attachCorrispondenza(italoPayload, false, true));
+        return sendCached(attachCorrispondenza(italoPayload, false, true));
       }
-      return res.json(
+      return sendCached(
         attachCorrispondenza({ ok: true, data: null, message: 'Nessun treno trovato per questo numero' }, false, false)
       );
+    }
+
+    {
+      const soft = await italoSoftPromise;
+      italoPayload = soft.timedOut ? null : soft.value;
+      italoFound = !!italoPayload;
     }
 
     const candidates = lines
@@ -2417,7 +2961,7 @@ const handleTrainStatus = async (req, res) => {
     // Quando il numero è ambiguo (origini diverse), chiediamo solo la scelta dell'origine.
     // La scelta per data (oggi/ieri o giorni diversi) è riservata ai casi con origine univoca.
     if (!technicalHint && !originCodeHint && !originCodeFromName && !Number.isFinite(choiceHint) && originGroups.length > 1) {
-      return res.json(
+      return sendCached(
         attachCorrispondenza(
           {
             ok: true,
@@ -2441,7 +2985,7 @@ const handleTrainStatus = async (req, res) => {
       !Number.isFinite(choiceHint) &&
       dateDisponibiliUnique.length > 1
     ) {
-      return res.json(
+      return sendCached(
         attachCorrispondenza(
           {
             ok: true,
@@ -2497,25 +3041,28 @@ const handleTrainStatus = async (req, res) => {
       null;
 
     if (!selected) {
-      return res.json(
+      return sendCached(
         attachCorrispondenza({ ok: false, error: 'Impossibile determinare il codice origine del treno' }, true, italoFound)
       );
     }
 
-    if (!Number.isFinite(epochMsHint) && technicalHint && Number.isFinite(selected.epochMs)) {
+    if (!Number.isFinite(epochMsHint) && Number.isFinite(selected?.epochMs)) {
       epochMsHint = selected.epochMs;
     }
 
     async function fetchSnapshot(ts) {
-      const url = `${VT_BASE_URL}/andamentoTreno/${encodeURIComponent(selected.originCode)}/${encodeURIComponent(
-        selected.trainNumber
-      )}/${ts}`;
-      try {
-        return await fetchJson(url);
-      } catch (err) {
-        if (err.status === 204) return null;
-        throw err;
-      }
+      const cacheKey = `vt:snapshot:${selected.originCode}:${selected.trainNumber}:${ts}`;
+      return cacheGetOrSet(cacheKey, TRAIN_SNAPSHOT_TTL_MS, async () => {
+        const url = `${VT_BASE_URL}/andamentoTreno/${encodeURIComponent(selected.originCode)}/${encodeURIComponent(
+          selected.trainNumber
+        )}/${ts}`;
+        try {
+          return await fetchJson(url);
+        } catch (err) {
+          if (err.status === 204) return null;
+          throw err;
+        }
+      });
     }
 
     function runLooksFuture(snap, nowMs) {
@@ -2600,10 +3147,12 @@ const handleTrainStatus = async (req, res) => {
     }
 
     if (!snapshot) {
+      italoPayload = await italoPromise;
+      italoFound = !!italoPayload;
       if (italoPayload) {
-        return res.json(attachCorrispondenza(italoPayload, true, true));
+        return sendCached(attachCorrispondenza(italoPayload, true, true));
       }
-      return res.json(
+      return sendCached(
         attachCorrispondenza(
           {
             ok: true,
@@ -2611,7 +3160,7 @@ const handleTrainStatus = async (req, res) => {
             message: 'Nessuna informazione di andamento disponibile per il numero fornito.',
           },
           true,
-          false
+          italoFound
         )
       );
     }
@@ -2623,6 +3172,8 @@ const handleTrainStatus = async (req, res) => {
     const originStop = originIdx != null ? fermateRaw[originIdx] : null;
     const destinationStop = destinationIdx != null ? fermateRaw[destinationIdx] : null;
     const readyAtOrigin = !!(originStop && hasEffectiveDeparturePlatform(originStop));
+    const rfiService = deriveRfiServiceStatus(snapshot);
+    const rfiServiceState = rfiService?.stato ?? null;
 
     const tipoTreno = resolveTrainKind(
       snapshot?.compNumeroTreno,
@@ -2630,13 +3181,11 @@ const handleTrainStatus = async (req, res) => {
       snapshot?.categoria,
       snapshot?.tipoTreno
     );
+    const clienteKind = resolveTrainKindFromCliente(snapshot?.codiceCliente, snapshot?.tipoTreno, snapshot?.compNumeroTreno);
     // Fallback su codiceCliente (RFI) quando non c'è abbastanza testo per riconoscere la categoria.
-    const tipoTrenoFinal =
-      tipoTreno.codice !== '?' || snapshot?.codiceCliente == null
-        ? tipoTreno
-        : Number(snapshot.codiceCliente) === 1
-          ? { codice: 'FR', nome: 'FR', categoria: 'high-speed' }
-          : tipoTreno;
+    const numberKind = resolveTrainKindFromNumber(snapshot?.numeroTreno || selected.trainNumber || trainNumber);
+    const tipoTrenoFinal = numberKind || (tipoTreno.codice !== '?' ? tipoTreno : clienteKind || tipoTreno);
+    const companyCode = resolveCompanyCodeFromCliente(snapshot?.codiceCliente);
 
     const orientamentoCodice =
       snapshot?.orientamento != null && String(snapshot.orientamento).trim() ? String(snapshot.orientamento).trim().toUpperCase() : null;
@@ -2683,7 +3232,7 @@ const handleTrainStatus = async (req, res) => {
     const lastDetectionStation = snapshot?.stazioneUltimoRilevamento
       ? String(snapshot.stazioneUltimoRilevamento)
       : null;
-    const lastDetectionStationPublic = stationPublicNameFromIdOrName(lastDetectionStation);
+    const lastDetectionStationPublic = lastDetectionStation ? String(lastDetectionStation).trim() : null;
     const lastDetectionOrario = formatHHmmFromMs(lastDetectionMs);
     const lastDetectionText =
       [lastDetectionOrario, lastDetectionStationPublic].filter(Boolean).join(' - ').trim() || null;
@@ -2733,8 +3282,9 @@ const handleTrainStatus = async (req, res) => {
     const statoTreno = stoppedAtDestination && statoRaw !== 'soppresso' ? 'concluso' : statoRaw;
     const partialSuppression = hasPartialSuppression(fermateRaw);
     const fullySuppressed = hasOnlySuppressedStops(fermateRaw);
-    const isSoppresso = (looksLikeSuppressedTrain(snapshot) || fullySuppressed) && !partialSuppression;
-    const isVariato = isTrainVaried(snapshot, fermateRaw) && !isSoppresso;
+    const isSoppresso =
+      (rfiServiceState === 'soppresso' || looksLikeSuppressedTrain(snapshot) || fullySuppressed) && !partialSuppression;
+    const isVariato = isTrainVaried(snapshot, fermateRaw, rfiServiceState) && !isSoppresso;
 
     // Se il treno è ancora pianificato, non esporre "prossima fermata" e "ultimo rilevamento"
     // finché dalla stazione di partenza non arriva il binario effettivo (treno in stazione e pronto a partire).
@@ -2767,7 +3317,7 @@ const handleTrainStatus = async (req, res) => {
 
     const principali = {
       numeroTreno: String(snapshot.numeroTreno || selected.trainNumber || trainNumber),
-      tipoTreno: trainTypeInfoFromCode(tipoTrenoFinal.codice),
+      tipoTreno: { ...trainTypeInfoFromCode(tipoTrenoFinal.codice), ...(companyCode ? { compagnia: companyCode } : {}) },
       tratta: {
         origine: stationNameById(first.id),
         destinazione: stationNameById(last.id),
@@ -2815,6 +3365,16 @@ const handleTrainStatus = async (req, res) => {
         ])
       : [];
 
+    const statoServizioRaw = rfiServiceState ?? null;
+    const statoServizio = formatTrainStatusLabel(statoServizioRaw);
+    const statoServizioRfi =
+      rfiService?.tipoTreno != null || rfiService?.provvedimento != null
+        ? {
+            tipoTreno: rfiService?.tipoTreno ?? null,
+            provvedimento: rfiService?.provvedimento ?? null,
+          }
+        : null;
+
     const responseStateRaw = statoTreno === 'programmato' && readyAtOrigin ? 'in stazione' : statoTreno;
     const stazioneCorrente =
       responseStateRaw === 'in stazione'
@@ -2847,6 +3407,9 @@ const handleTrainStatus = async (req, res) => {
       statoTreno: {
         deltaTempo: globalDelay ?? null,
         stato: formatTrainStatusLabel(responseStateRaw),
+        statoServizio,
+        statoServizioRaw,
+        statoServizioRfi,
         stazioneCorrente,
         stazioneSuccessiva:
           statoTreno === 'concluso'
@@ -2870,19 +3433,20 @@ const handleTrainStatus = async (req, res) => {
     });
 
     if (debug) response.debug = { dataRiferimento: formatDateItalianFromMs(referenceTimestamp) };
-    res.json(attachCorrispondenza(response, true, italoFound));
+    const finalPayload = attachCorrispondenza(response, true, italoFound);
+    sendCached(finalPayload);
   } catch (err) {
-    res.status(err.status || 500).json({ ok: false, error: err.message });
+    res.status(err.status || 500).json({ ok: false, error: normalizeErrorMessage(err) });
   }
 };
 
-app.get('/api/trains/status', handleTrainStatus);
+app.get('/api/trains/status', rateLimitHeavy, handleTrainStatus);
 
 // ============================================================================
 // API: LeFrecce
 // ============================================================================
 
-app.get('/api/lefrecce/autocomplete', async (req, res) => {
+app.get('/api/lefrecce/autocomplete', rateLimitStandard, async (req, res) => {
   const query = (req.query.query || '').trim();
   const includeIds = parseBool(req.query.includeIds, false);
   const limitRaw = req.query.limit;
@@ -2904,6 +3468,7 @@ app.get('/api/lefrecce/autocomplete', async (req, res) => {
         : {}),
     };
   });
+  setCacheHeaders(res, CACHE_TTL_MS);
   res.json({ ok: true, data });
 });
 
@@ -2980,7 +3545,7 @@ function extractTrainNumberOnly(value) {
   return matches[matches.length - 1];
 }
 
-app.get('/api/solutions', async (req, res) => {
+app.get('/api/solutions', rateLimitHeavy, async (req, res) => {
   try {
     const {
       fromId,
@@ -3166,14 +3731,14 @@ app.get('/api/solutions', async (req, res) => {
       soluzioni,
     });
   } catch (err) {
-    res.status(err.status || 500).json({ ok: false, error: err.message });
+    res.status(err.status || 500).json({ ok: false, error: normalizeErrorMessage(err) });
   }
 });
 
 // ============================================================================
 // Extra endpoint utili
 // ============================================================================
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', rateLimitStandard, (_req, res) => {
   res.json({
     ok: true,
     stationDb: {
@@ -3183,18 +3748,23 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-app.get('/api/viaggiatreno/station-board', async (req, res) => {
+app.get('/api/viaggiatreno/station-board', rateLimitStandard, async (req, res) => {
   const stationCode = resolveStationCodeOrNull(req.query.stationCode, req.query.stationName || req.query.name);
   const raw = ENABLE_RAW_UPSTREAM && parseBool(req.query.raw, false);
   if (!stationCode) return res.status(400).json({ ok: false, error: 'stationCode o stationName obbligatorio' });
   try {
     const dateStr = encodeDateString('now');
     const [departures, arrivals] = await Promise.all([
-      fetchJson(`${VT_BASE_URL}/partenze/${encodeURIComponent(stationCode)}/${dateStr}`).catch(() => []),
-      fetchJson(`${VT_BASE_URL}/arrivi/${encodeURIComponent(stationCode)}/${dateStr}`).catch(() => []),
+      cacheGetOrSet(`vt:board:dep:${stationCode}`, STATION_BOARD_TTL_MS, () =>
+        fetchJson(`${VT_BASE_URL}/partenze/${encodeURIComponent(stationCode)}/${dateStr}`)
+      ).catch(() => []),
+      cacheGetOrSet(`vt:board:arr:${stationCode}`, STATION_BOARD_TTL_MS, () =>
+        fetchJson(`${VT_BASE_URL}/arrivi/${encodeURIComponent(stationCode)}/${dateStr}`)
+      ).catch(() => []),
     ]);
     const departuresList = Array.isArray(departures) ? departures : [];
     const arrivalsList = Array.isArray(arrivals) ? arrivals : [];
+    setCacheHeaders(res, STATION_BOARD_TTL_MS);
     res.json({
       ok: true,
       stazione: stationNameById(stationCode),
@@ -3205,32 +3775,38 @@ app.get('/api/viaggiatreno/station-board', async (req, res) => {
       ...(raw ? { raw: { departures: departuresList, arrivals: arrivalsList } } : {}),
     });
   } catch (err) {
-    res.status(err.status || 500).json({ ok: false, error: err.message });
+    res.status(err.status || 500).json({ ok: false, error: normalizeErrorMessage(err) });
   }
 });
 
-app.get('/api/stations/board', async (req, res) => {
+app.get('/api/stations/board', rateLimitStandard, async (req, res) => {
   const stationCode = (req.query.stationCode || '').trim().toUpperCase();
   if (!stationCode) return res.status(400).json({ ok: false, error: 'stationCode obbligatorio' });
   try {
     const dateStr = encodeDateString('now');
-    const html = await fetchText(`${VT_BOARD_BASE_URL}/partenze/${encodeURIComponent(stationCode)}/${dateStr}`);
+    const html = await cacheGetOrSet(`vt:board:html:${stationCode}`, STATION_BOARD_TTL_MS, () =>
+      fetchText(`${VT_BOARD_BASE_URL}/partenze/${encodeURIComponent(stationCode)}/${dateStr}`)
+    );
+    setCacheHeaders(res, STATION_BOARD_TTL_MS);
     res.type('text/html').send(html);
   } catch (err) {
-    res.status(err.status || 500).json({ ok: false, error: err.message });
+    res.status(err.status || 500).json({ ok: false, error: normalizeErrorMessage(err) });
   }
 });
 
-app.get('/api/news', async (req, res) => {
+app.get('/api/news', rateLimitStandard, async (req, res) => {
   try {
     const works = parseBool(req.query.works || req.query.lavori, false);
-    const html = await fetchText(`${VT_BASE_URL}/infomobilitaRSS/${works ? 'true' : 'false'}`);
+    const html = await cacheGetOrSet(`vt:news:${works ? 'works' : 'news'}`, NEWS_TTL_MS, () =>
+      fetchText(`${VT_BASE_URL}/infomobilitaRSS/${works ? 'true' : 'false'}`)
+    );
     const data = parseInfomobilitaRSS(html);
     const payload = { ok: true, works, data };
     if (ENABLE_RAW_UPSTREAM) payload.raw = html;
+    setCacheHeaders(res, NEWS_TTL_MS);
     res.json(payload);
   } catch (err) {
-    res.status(err.status || 500).json({ ok: false, error: err.message });
+    res.status(err.status || 500).json({ ok: false, error: normalizeErrorMessage(err) });
   }
 });
 

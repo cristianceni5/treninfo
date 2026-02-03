@@ -12,6 +12,11 @@
 [functions]
   included_files = ["stazioni.json"]
 
+# Env per funzioni serverless (rate limit per IP reale)
+[functions.environment]
+  TRUST_PROXY = "1"
+  EXPOSE_ERRORS = "1"
+
 # /api/* → /.netlify/functions/api (la function api gestisce già /api/...)
 [[redirects]]
   from = "/api/*"

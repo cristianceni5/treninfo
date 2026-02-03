@@ -8,6 +8,42 @@ Base URL: `https://treninfo.netlify.app/api`
 
 Nota: gli autocomplete usano solo `stazioni.json` locale. Se `lefrecceId` e null, la stazione non e supportata da LeFrecce.
 
+## Formato stazioni.json
+Campi principali (ogni stazione):
+- `nome`: nome pubblico stazione.
+- `viaggiatrenoId`: codice RFI (es. `S01700`). Può essere `null` per voci aggregate.
+- `id`: **nuovo** codice alternativo quando manca `viaggiatrenoId` (es. `LF830005999` per "Tutte le stazioni").
+- `lefrecceId`: ID stazione LeFrecce (numero) o `null`.
+- `italoId`: codice stazione Italo (stringa) o `null`.
+- `regionId`, `lat`, `lon`, `disuso`.
+
+## Sicurezza e performance
+- Rate limiting per IP (in-memory): default 120 req/min standard, 30 req/min per endpoint pesanti (`/trains/status`, `/italo/trains/status`, `/solutions`).
+- Cache in-memory con TTL brevi per ridurre chiamate upstream (news, tabelloni, treni, Italo).
+- Header `Cache-Control` per caching CDN (quando disponibile).
+- Security headers base per API JSON.
+- In serverless la cache è volatile: funziona finché la funzione resta "warm".
+
+Variabili ambiente principali:
+- `TRUST_PROXY` = 1 per usare `X-Forwarded-For` nel rate limiting (default 0)
+- `RATE_LIMIT_ENABLED` = 1 (default), `RATE_LIMIT_WINDOW_MS` = 60000, `RATE_LIMIT_MAX` = 120, `RATE_LIMIT_HEAVY_MAX` = 30, `RATE_LIMIT_MAX_ENTRIES` = 10000
+- `SECURITY_HEADERS_ENABLED` = 1 (default), `EXPOSE_ERRORS` = 1 per esporre i messaggi upstream
+- `NEWS_TTL_MS` = 60000, `STATION_BOARD_TTL_MS` = 30000, `STATION_DEPARTURES_TTL_MS` = 30000, `STATION_ARRIVALS_TTL_MS` = 30000, `ITALO_BOARD_TTL_MS` = 30000
+- `TRAIN_STATUS_TTL_MS` = 30000, `TRAIN_SEARCH_TTL_MS` = 600000, `TRAIN_SNAPSHOT_TTL_MS` = 30000, `ITALO_STATUS_TTL_MS` = 30000, `ITALO_LAST_KNOWN_TTL_MS` = 43200000
+- `ITALO_SOFT_TIMEOUT_MS` = 200 (non blocca la risposta RFI se Italo è lento)
+
+## Classificazione treni
+- `tipoTreno.compagnia`: `TI` (Trenitalia), `TN` (Trenord), `TTX` (Trenitalia TPer), `NTV` (Italo).
+- Codici cliente (RFI):
+  - `1` → AV (`FR`)
+  - `2` → Regionali (`REG`) o `MET` se indicato
+  - `4` → Intercity (`IC`/`ICN`): se `compNumeroTreno` contiene `ICN` o `IC` usa quello, altrimenti `DV` → `ICN`, `PG` → `IC`
+  - `18` → Trenitalia TPer (`TTX`, tipo `REG`)
+  - `63` → Trenord (`TN`, tipo `REG`)
+- EC/EN: riconosciuti come `EC` (EuroCity) e `EN` (EuroNight), non classificati come AV.
+- MET: riconosciuto come `MET` (metropolitana/circumvesuviana).
+- ES: il treno `99122` viene forzato come `ES` (EuroStar).
+
 ## Endpoints
 
 ### GET /health
@@ -116,7 +152,7 @@ Response (esempio):
       "binarioEffettivo": "7",
       "arrivato": false,
       "circolante": true,
-      "tipoTreno": {"sigla": "FR AV", "nome": "Frecciarossa"}
+      "tipoTreno": {"sigla": "FR AV", "nome": "Frecciarossa", "compagnia": "TI"}
     }
   ]
 }
@@ -129,6 +165,20 @@ Request (query string):
 - `trainNumber` (o `numeroTreno`)
 - opzionali: `choice`, `originName`, `date`, `timestampRiferimento`
 
+Cache e deduplica:
+- Le risposte vengono cache per breve tempo per ridurre le chiamate upstream quando molti utenti chiedono lo stesso treno.
+- La ricerca `cercaNumeroTreno` e gli snapshot `andamentoTreno` sono cache per evitare burst verso ViaggiaTreno.
+- Per Italo, l'ultimo stato valido viene conservato anche dopo la fine corsa (quando l'API Italo smette di rispondere).
+Nota: la cache è in-memory (funzioni serverless), quindi è efficace finché la funzione resta "warm".
+
+Note:
+- `ultimo rilevamento`: il luogo è riportato **pari pari** come fornito da RFI, senza mapping.
+- `binari`: se ViaggiaTreno non fornisce il binario (o lo restituisce `0`), il valore è `null`.
+- Italo: quando disponibile, i nomi stazione vengono risolti tramite **codice Italo** nel DB locale; altrimenti rimane il nome raw.
+- `statoServizio`: stato servizio RFI derivato da `tipoTreno`/`provvedimento` (es. Regolare, Deviato, Parzialmente soppresso, Soppresso).
+- `statoServizioRaw`: valore grezzo normalizzato (es. `deviato`, `parzialmente_soppresso`).
+- `statoServizioRfi`: dettaglio tecnico `{ tipoTreno, provvedimento }` quando disponibile.
+
 Response (esempio sintetico):
 ```json
 {
@@ -136,7 +186,7 @@ Response (esempio sintetico):
   "dataRiferimento": "27/01/2026",
   "compagnia": "rfi",
   "numeroTreno": 9510,
-  "tipoTreno": {"categoria": "FR AV", "nomeCat": "Frecciarossa"},
+  "tipoTreno": {"categoria": "FR AV", "nomeCat": "Frecciarossa", "compagnia": "TI"},
   "tratta": {
     "stazionePartenzaZero": "Milano Centrale",
     "orarioPartenzaZero": "10:00",
@@ -206,10 +256,10 @@ Response (esempio):
 ```
 
 ### GET /news
-Infomobilità ViaggiaTreno in formato JSON.
+Infomobilità ViaggiaTreno in formato JSON (notizie e lavori/perturbazioni).
 
 Request (query string):
-- `works` (opzionale, `1` per info lavori/perturbazioni)
+- `works` oppure `lavori` (opzionale, `1`/`true` per info lavori e perturbazioni; default `false`)
 
 Response (esempio):
 ```json
@@ -219,35 +269,25 @@ Response (esempio):
   "data": [
     {
       "title": "CIRCOLAZIONE REGOLARE SULLA RETE ALTA VELOCITÀ",
-      "date": "27.01.2026",
-      "text": "In questo momento la circolazione si svolge regolarmente sull'intera rete Alta Velocità.",
+      "date": "03.02.2026",
+      "text": "In questo momento la circolazione si svolge regolarmente sull'intera rete Alta Velocità.\nEventuali ritardi registrati si riferiscono a precedenti inconvenienti già risolti.\nREGULAR TRAFFIC ON THE HIGH-SPEED RAILWAY NETWORK\nAt the moment, the railway traffic is regular on the whole High-Speed network.",
       "inEvidenza": true
     }
   ]
 }
 ```
 
+Note sui campi di `data`:
+- `title`: titolo della notizia
+- `date`: data in formato `DD.MM.YYYY` (come fornita da ViaggiaTreno)
+- `text`: testo pulito dall'HTML, con paragrafi separati da `\n`; è un riassunto compatto (max 3 righe) e può includere più lingue
+- `inEvidenza`: `true` se la notizia è marcata "in evidenza" nel feed ViaggiaTreno
+
 Response errore (esempio):
 ```json
 {
   "ok": false,
-  "idRicerca": null,
-  "stazioni": {"from": "Firenze Campo Marte", "to": "Roma Tiburtina"},
-  "soluzioni": [],
-  "error": "We are sorry. An error has occurred.",
-  "status": 400
-}
-```
-
-### GET /news
-Request:
-- Nessun parametro.
-
-Response (esempio):
-```json
-{
-  "ok": true,
-  "data": []
+  "error": "We are sorry. An error has occurred."
 }
 ```
 
